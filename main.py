@@ -52,11 +52,10 @@ def ensure_in_colab():
 
 
 def setup_auth_first():
-    print("\n" + "="*60)
-    print("  🔐 SOLICITANDO AUTORIZAÇÕES (APENAS UMA VEZ)")
-    print("="*60)
-    print("\n📋 Pedindo permissões do Google Drive agora...")
-    print("   (Assim você não precisará autorizar no meio do processo)\n")
+    print("  🔐 Solicitando permissões do Google Drive")
+    print("-"*60)
+    print("\n📋 Preciso dessa permissão para utilizar a pasta no google drive...")
+    print("   (Dica, você pode inserir arquivos nessa pasta e o PesquisAI pode interagir com ele)\n")
     
     try:
         from google.colab import drive, auth
@@ -209,7 +208,7 @@ def run():
     show_loading_message()
     
     print("\n" + "="*50)
-    print("  🚀 INICIANDO PESQUISAI")
+    print("  🧑‍🔬  INICIANDO PESQUISAI")
     print("="*50)
     
     folder_path, drive_url = setup_auth_first()
@@ -229,7 +228,7 @@ def run():
     print(f"\n{next_joke_extra()}")
     launch()
     
-    print(f"\n{next_joke_extra()}")
+    print(f"\n ")
 
 
 if __name__ == "__main__":
