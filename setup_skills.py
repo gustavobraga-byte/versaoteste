@@ -11,11 +11,34 @@ SKILLS = [
     ("https://github.com/gustavobraga-byte/PesquisAI.git", "pesquisai"),
 ]
 
+JOKES_SKILLS = [
+    "🧬 Se a evolução dependesse dessa velocidade, ainda seríamos amebas.",
+    "💻 Mais lento que bubble sort em 1 milhão de elementos.",
+    "🧬 Mais lento que a duplicação do DNA em uma lesma.",
+    "💻 Deadlock: você e o download estão esperando um pelo outro.",
+    "🧬 Seu progresso está em metáfase: parado no meio.",
+    "💻 Loop infinito: while not terminou: espere()",
+    "🧬 A paciência é o gene dominante nesse momento.",
+    "💻 Complexidade O(n²), onde n = sua paciência.",
+    "🧬 Célula em G0: fase de espera prolongada.",
+    "💻 Pilha de chamada: você está no fundo da pilha.",
+]
+
+_joke_index = 0
+
+def next_joke():
+    global _joke_index
+    if _joke_index < len(JOKES_SKILLS):
+        joke = JOKES_SKILLS[_joke_index]
+        _joke_index += 1
+        return joke
+    return JOKES_SKILLS[-1]
+
 
 def run(cmd, check=True, **kw):
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True, **kw)
     if check and result.returncode != 0:
-        print(f"⚠️  Aviso: comando falhou: {cmd}\n{result.stderr}")
+        print(f"⚠️  Aviso: comando falhou: {cmd}")
     return result
 
 
@@ -29,19 +52,22 @@ def clone_skill(repo_url, dest_name):
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        print(f"❌ Falha ao clonar {repo_url}: {result.stderr.strip()}")
+        print(f"❌ Falha ao clonar {repo_url}")
         return False
     print(f"✅ {dest_name} clonado.")
     return True
 
 
 def install_skills():
+    print(f"\n{next_joke()}")
+    print("🔧 Instalando skills...")
     os.makedirs(SKILLS_DIR, exist_ok=True)
     
     for repo, name in SKILLS:
         clone_skill(repo, name)
     
-    print("\n📋 Copiando skills para o diretório do agente...")
+    print(f"\n{next_joke()}")
+    print("📋 Copiando skills para o diretório do agente...")
     
     mappings = [
         ("/tmp/skill_ibge-br", "ibge-br"),
@@ -57,6 +83,7 @@ def install_skills():
             shutil.copytree(src, dest, dirs_exist_ok=True)
             print(f"✅ {dest_name} instalado.")
     
+    print(f"\n{next_joke()}")
     print("\n🎉 Todas as skills instaladas com sucesso!")
 
 

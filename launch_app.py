@@ -21,6 +21,32 @@ TERMINAL_PORT = 8000
 WRAPPER_PORT = 8001
 WRAPPER_DIR = "/tmp/pesquisai-wrapper"
 
+JOKES_LAUNCH = [
+    "📊 Oportunidade de espera: o que você poderia estar fazendo agora.",
+    "📋 Planejamento estratégico: plano A = esperar, plano B = continuar esperando.",
+    "💰 Valor presente líquido (VPL): negativo.",
+    "📊 Inflação da paciência: cada minuto vale menos que o anterior.",
+    "📋 Missão, Visão, Valores: Missão = esperar, Visão = ver o botão.",
+    "💰 Retorno sobre investimento (ROI): investiu tempo, retorno zero.",
+    "📊 Juros compostos: sua frustração cresce exponencialmente.",
+    "📋 Ciclo PDCA: Plan, Do, Check, Agora esperar de novo.",
+    "💰 Fluxo de caixa: só saída (de paciência), sem entrada.",
+    "📊 Custo de oportunidade: muito alto para esse retorno zero.",
+    "📋 Metas SMART: esse download não atinge nem a letra S.",
+    "💰 Payback: período de retorno = nunca.",
+]
+
+_joke_index = 0
+
+def next_joke():
+    global _joke_index
+    if _joke_index < len(JOKES_LAUNCH):
+        joke = JOKES_LAUNCH[_joke_index]
+        _joke_index += 1
+        return joke
+    return JOKES_LAUNCH[-1]
+
+
 _opencode_bin = None
 _env = None
 _drive_url = "https://drive.google.com/drive/my-drive"
@@ -76,6 +102,7 @@ def resolve_opencode():
 
 
 def install_ttyd():
+    print(f"\n{next_joke()}")
     print("📦 Instalando ttyd...")
     subprocess.run(
         "apt-get update -qq && apt-get install -y -qq ttyd",
@@ -93,6 +120,7 @@ def kill_previous():
 
 
 def start_ttyd():
+    print(f"\n{next_joke()}")
     opencode_bin, env = resolve_opencode()
     
     subprocess.Popen(
@@ -598,7 +626,55 @@ def start_wrapper_server():
         target=lambda: HTTPServer(("0.0.0.0", WRAPPER_PORT), Handler).serve_forever(),
         daemon=True,
     ).start()
+    print(f"\n{next_joke()}")
     print(f"🚀 Servidor wrapper iniciado na porta {WRAPPER_PORT}")
+
+
+def show_ready_message():
+    if not IN_COLAB or not display or not HTML:
+        print("\n✨ PesquisAI pronto!\n")
+        return
+    
+    display(HTML(f"""
+<style>
+@keyframes glow {{
+    0%, 100% {{ box-shadow: 0 0 20px rgba(93, 186, 126, 0.3); }}
+    50% {{ box-shadow: 0 0 40px rgba(93, 186, 126, 0.6); }}
+}}
+.ready-container {{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 20px 0px 20px;
+}}
+.ready-badge {{
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 32px;
+    background: rgba(93, 186, 126, 0.12);
+    border: 2px solid rgba(93, 186, 126, 0.4);
+    border-radius: 12px;
+    animation: glow 2s ease-in-out infinite;
+}}
+.ready-icon {{
+    font-size: 28px;
+}}
+.ready-text {{
+    font-family: 'DM Mono', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    color: #5dba7e;
+}}
+</style>
+<div class="ready-container">
+    <div class="ready-badge">
+        <span class="ready-icon">✨</span>
+        <span class="ready-text">PesquisAI pronto!</span>
+    </div>
+</div>
+"""))
 
 
 def show_launch_button(banner_url):
@@ -722,6 +798,7 @@ def launch():
     start_wrapper_server()
     
     time.sleep(1)
+    show_ready_message()
     show_launch_button(banner_url)
     
     return banner_url
