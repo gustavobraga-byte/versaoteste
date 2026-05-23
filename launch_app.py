@@ -564,9 +564,9 @@ def start_wrapper_server():
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             
-            if p == "/api/backup":
+                if p == "/api/backup":
                 session_id = body.get("session_id", "")
-                ts = time.strftime("%Y%m%d_%H%M%S")
+                ts = time.strftime("%H-%M-%S_%d-%m-%Y")
                 
                 if not session_id:
                     r = _run([_opencode_bin, "session", "list", "--format", "json"])
