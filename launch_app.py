@@ -324,6 +324,26 @@ def create_wrapper_html(terminal_url, drive_url):
     .footer-oc {{ color:var(--ink-muted); letter-spacing:.03em; }}
     .footer-oc a {{ color:var(--ink-muted); text-decoration:none; }}
     .footer-oc a:hover {{ color:var(--accent); }}
+
+    .btn-provider {{
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 0 10px; height: 24px;
+      font-family: "DM Mono", monospace; font-size: 10px;
+      font-weight: 500; letter-spacing: .03em;
+      border-radius: var(--radius); cursor: pointer;
+      border: 1px solid rgba(79,195,247,.18);
+      color: rgba(79,195,247,.55);
+      background: transparent;
+      transition: background .15s, color .15s, border-color .15s;
+      white-space: nowrap;
+    }}
+    .btn-provider:hover {{
+      background: var(--accent-dim);
+      color: var(--accent);
+      border-color: rgba(79,195,247,.4);
+    }}
+    .btn-provider:active {{ transform: scale(.96); }}
+    .btn-provider svg {{ width:10px; height:10px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }}
   </style>
 </head>
 <body>
@@ -387,6 +407,11 @@ def create_wrapper_html(terminal_url, drive_url):
     <span style="color:var(--ink-muted)">UFV · Viçosa, MG</span>
 
     <div class="footer-right">
+      <button class="btn-provider" onclick="connectProvider()" title="Conectar novo provedor de IA">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+        + provedor
+      </button>
+      <span class="footer-sep"></span>
       <span class="footer-oc">
         Powered by <a href="https://opencode.ai" target="_blank">OpenCode</a>
       </span>
@@ -402,6 +427,47 @@ def create_wrapper_html(terminal_url, drive_url):
         <div class="modal-empty">Carregando backups…</div>
       </div>
       <button class="modal-close" onclick="closeModal()">Fechar</button>
+    </div>
+  </div>
+
+  <!-- Modal: Conectar Provedor -->
+  <div id="provider-overlay" onclick="if(event.target===this)closeProvider()" style="
+    position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;
+    z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:24px;width:420px;max-width:92vw;box-shadow:0 24px 64px rgba(0,0,0,.6);">
+      <div class="modal-title">🔌 Conectar Provedor de IA</div>
+      <p style="font-size:11.5px;color:var(--ink-muted);margin-bottom:16px;line-height:1.6;">
+        Cole sua API key abaixo. Ela será salva no Drive (pasta backups) e carregada automaticamente na próxima vez.
+        O terminal vai rodar <code style="color:var(--accent);background:rgba(79,195,247,.08);padding:1px 5px;border-radius:3px;">opencode auth login</code>.
+      </p>
+      <label style="display:block;font-size:10.5px;color:var(--ink-muted);margin-bottom:6px;letter-spacing:.05em;">API KEY</label>
+      <input id="provider-key-input" type="password" placeholder="sk-..." autocomplete="off" style="
+        display:block;width:100%;padding:9px 12px;
+        background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);
+        color:var(--ink);font-family:'DM Mono',monospace;font-size:12px;
+        outline:none;margin-bottom:16px;transition:border-color .15s;" 
+        onfocus="this.style.borderColor='rgba(79,195,247,.4)'"
+        onblur="this.style.borderColor='var(--line)'"
+        onkeydown="if(event.key==='Enter')confirmProvider()"/>
+      <div style="display:flex;gap:10px;">
+        <button onclick="confirmProvider()" style="
+          flex:1;padding:9px;background:var(--accent-dim);border:1px solid rgba(79,195,247,.3);
+          border-radius:var(--radius);color:var(--accent);font-family:'DM Mono',monospace;font-size:12px;
+          cursor:pointer;transition:background .15s;" 
+          onmouseover="this.style.background='var(--accent-glow)'"
+          onmouseout="this.style.background='var(--accent-dim)'">
+          Salvar e Conectar
+        </button>
+        <button onclick="closeProvider()" style="
+          padding:9px 16px;background:rgba(255,255,255,.05);border:1px solid var(--line);
+          border-radius:var(--radius);color:var(--ink-muted);font-family:'DM Mono',monospace;font-size:12px;
+          cursor:pointer;transition:background .15s;"
+          onmouseover="this.style.background='rgba(255,255,255,.1)'"
+          onmouseout="this.style.background='rgba(255,255,255,.05)'">
+          Cancelar
+        </button>
+      </div>
     </div>
   </div>
 
@@ -473,23 +539,92 @@ def create_wrapper_html(terminal_url, drive_url):
         }});
         const d = await r.json();
 
-if (d.ok) {{
-  toast("✅ " + (d.message || "Sessão importada!"), "ok");
+        if (d.ok) {{
+          toast("✅ " + (d.message || "Sessão importada!"), "ok");
 
-  setTimeout(() => {{
-    if (window.confirm("Sessão restaurada com sucesso! Para acessar a sessão restaurada você deve acessar 'switch session' no menu Ctrl + p .  Você deseja atualizar página agora?")) {{
-      window.location.reload();
-    }}
-  }}, 800);
+          setTimeout(() => {{
+            if (window.confirm("Sessão restaurada com sucesso! Para acessar a sessão restaurada você deve acessar 'switch session' no menu Ctrl + p.  Você deseja reiniciar o OpenCode agora?")) {{
+              const sessionId = d.session_id || "";
+              if (sessionId) {{
+                fetch(BASE + "/api/run_terminal", {{
+                  method: "POST",
+                  headers: {{ "Content-Type": "application/json" }},
+                  body: JSON.stringify({{ command: "opencode -s " + sessionId }})
+                }}).catch(() => {{}});
+                toast("🔄 Reiniciando sessão " + sessionId + "…", "info");
+              }} else {{
+                fetch(BASE + "/api/run_terminal", {{
+                  method: "POST",
+                  headers: {{ "Content-Type": "application/json" }},
+                  body: JSON.stringify({{ command: "opencode" }})
+                }}).catch(() => {{}});
+                toast("🔄 Reiniciando OpenCode…", "info");
+              }}
+            }}
+          }}, 800);
 
-}} else {{
-  toast("❌ " + (d.error || "Erro ao importar"), "err");
-}}
+        }} else {{
+          toast("❌ " + (d.error || "Erro ao importar"), "err");
+        }}
 
       }} catch(e) {{
         toast("❌ Falha na conexão: " + e.message, "err");
       }}
     }}
+
+    /* ── Provider / API Key ─────────────────────────────────────── */
+
+    function connectProvider() {{
+      const overlay = document.getElementById("provider-overlay");
+      overlay.style.opacity = "1";
+      overlay.style.pointerEvents = "all";
+      // Pre-fill with saved key if any
+      fetch(BASE + "/api/apikey").then(r => r.json()).then(d => {{
+        if (d.apikey) {{
+          document.getElementById("provider-key-input").value = d.apikey;
+        }}
+      }}).catch(() => {{}});
+      setTimeout(() => document.getElementById("provider-key-input").focus(), 120);
+    }}
+
+    function closeProvider() {{
+      const overlay = document.getElementById("provider-overlay");
+      overlay.style.opacity = "0";
+      overlay.style.pointerEvents = "none";
+      document.getElementById("provider-key-input").value = "";
+    }}
+
+    async function confirmProvider() {{
+      const key = document.getElementById("provider-key-input").value.trim();
+      if (!key) {{ toast("⚠️ Insira uma API key válida.", "err"); return; }}
+      closeProvider();
+      toast("💾 Salvando API key…", "info");
+      try {{
+        await fetch(BASE + "/api/apikey", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ apikey: key }})
+        }});
+      }} catch(e) {{ /* non-blocking */ }}
+      toast("🔌 Iniciando autenticação do provedor…", "info");
+      try {{
+        await fetch(BASE + "/api/run_terminal", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ command: "opencode auth login" }})
+        }});
+      }} catch(e) {{ /* non-blocking */ }}
+    }}
+
+    /* ── Load saved API key on startup ─────────────────────────── */
+    window.addEventListener("load", () => {{
+      fetch(BASE + "/api/apikey").then(r => r.json()).then(d => {{
+        if (d.apikey) {{
+          // Key exists — set into environment via backend silently
+          fetch(BASE + "/api/apikey/apply", {{ method: "POST" }}).catch(() => {{}});
+        }}
+      }}).catch(() => {{}});
+    }});
   </script>
 </body>
 </html>"""
@@ -502,6 +637,19 @@ if (d.ok) {{
 def start_wrapper_server():
     DRIVE_BACKUP_DIR = os.path.join(_folder_path, "backups")
     os.makedirs(DRIVE_BACKUP_DIR, exist_ok=True)
+    
+    # Auto-load saved API key into environment on startup
+    _keyfile = os.path.join(DRIVE_BACKUP_DIR, ".apikey")
+    if os.path.exists(_keyfile):
+        try:
+            with open(_keyfile, "r") as _kf:
+                _saved_key = _kf.read().strip()
+            if _saved_key:
+                os.environ["OPENCODE_API_KEY"] = _saved_key
+                _env["OPENCODE_API_KEY"] = _saved_key
+                print(f"🔑 API key carregada do Drive.")
+        except Exception:
+            pass
     
     def _run(cmd, **kw):
         return subprocess.run(cmd, capture_output=True, text=True, env=_env, **kw)
@@ -557,6 +705,19 @@ def start_wrapper_server():
                 self._json(200, {"backups": files})
                 return
             
+            if p == "/api/apikey":
+                keyfile = os.path.join(DRIVE_BACKUP_DIR, ".apikey")
+                if os.path.exists(keyfile):
+                    try:
+                        with open(keyfile, "r") as f:
+                            key = f.read().strip()
+                        self._json(200, {"apikey": key})
+                    except Exception:
+                        self._json(200, {"apikey": ""})
+                else:
+                    self._json(200, {"apikey": ""})
+                return
+            
             self.send_error(404)
         
         def do_POST(self):
@@ -564,7 +725,62 @@ def start_wrapper_server():
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             
+            if p == "/api/apikey":
+                key = body.get("apikey", "").strip()
+                if not key:
+                    self._json(400, {"error": "API key vazia."})
+                    return
+                keyfile = os.path.join(DRIVE_BACKUP_DIR, ".apikey")
+                try:
+                    with open(keyfile, "w") as f:
+                        f.write(key)
+                    # Also set in current environment for subsequent processes
+                    os.environ["OPENCODE_API_KEY"] = key
+                    _env["OPENCODE_API_KEY"] = key
+                    self._json(200, {"ok": True})
+                except Exception as e:
+                    self._json(500, {"error": str(e)})
+                return
+            
+            if p == "/api/apikey/apply":
+                keyfile = os.path.join(DRIVE_BACKUP_DIR, ".apikey")
+                if os.path.exists(keyfile):
+                    try:
+                        with open(keyfile, "r") as f:
+                            key = f.read().strip()
+                        if key:
+                            os.environ["OPENCODE_API_KEY"] = key
+                            _env["OPENCODE_API_KEY"] = key
+                        self._json(200, {"ok": True})
+                    except Exception as e:
+                        self._json(500, {"error": str(e)})
+                else:
+                    self._json(200, {"ok": False, "reason": "no key stored"})
+                return
+            
+            if p == "/api/run_terminal":
+                cmd = body.get("command", "").strip()
+                if not cmd:
+                    self._json(400, {"error": "Comando vazio."})
+                    return
+                # Send the command to all running ttyd bash sessions via a temp script
+                script = f"""#!/bin/bash
+for pts in /dev/pts/[0-9]*; do
+  echo $'\\033c' > "$pts" 2>/dev/null || true
+  echo '{cmd}' > "$pts" 2>/dev/null || true
+done
+"""
+                scriptfile = "/tmp/_pesquisai_cmd.sh"
+                with open(scriptfile, "w") as sf:
+                    sf.write(script)
+                os.chmod(scriptfile, 0o755)
+                subprocess.Popen(["bash", scriptfile], env=_env)
+                self._json(200, {"ok": True, "command": cmd})
+                return
+            
             if p == "/api/backup":
+                os.makedirs(DRIVE_BACKUP_DIR, exist_ok=True)
+                
                 session_id = body.get("session_id", "")
                 ts = time.strftime("%H-%M-%S_%d-%m-%Y")
                 
@@ -617,7 +833,20 @@ def start_wrapper_server():
                     self._json(500, {"error": r.stderr or "Falha ao importar."})
                     return
                 
-                self._json(200, {"ok": True, "file": fname, "message": "Sessão importada com sucesso."})
+                # Try to extract session_id from the backup JSON
+                session_id = ""
+                try:
+                    with open(fpath, "r", encoding="utf-8") as jf:
+                        bdata = json.load(jf)
+                    session_id = (
+                        bdata.get("sessionID") or
+                        bdata.get("session_id") or
+                        bdata.get("id") or ""
+                    )
+                except Exception:
+                    pass
+                
+                self._json(200, {"ok": True, "file": fname, "session_id": session_id, "message": "Sessão importada com sucesso."})
                 return
             
             self.send_error(404)

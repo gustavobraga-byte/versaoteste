@@ -9,6 +9,7 @@ SKILLS = [
     ("https://github.com/gustavobraga-byte/Skill-DataSus.git", "opendatasus"),
     ("https://github.com/K-Dense-AI/scientific-agent-skills.git", "scientific"),
     ("https://github.com/gustavobraga-byte/PesquisAI.git", "pesquisai"),
+    ("https://github.com/gustavobraga-byte/UFV-ABNT.git", "ufv-abnt"),
 ]
 
 JOKES_SKILLS = [
@@ -22,6 +23,9 @@ JOKES_SKILLS = [
     "💻 Complexidade O(n²), onde n = sua paciência.",
     "🧬 Célula em G0: fase de espera prolongada.",
     "💻 Pilha de chamada: você está no fundo da pilha.",
+    "📚 Instalando ABNT: a única regra que não muda é que ela sempre muda.",
+    "📖 Formatação ABNT: transformando sua tese em dor de cabeça desde 1940.",
+    "📝 Citações ABNT: porque referenciar um autor deveria ser mais complicado que a própria pesquisa.",
 ]
 
 _joke_index = 0
@@ -73,6 +77,7 @@ def install_skills():
         ("/tmp/skill_ibge-br", "ibge-br"),
         ("/tmp/skill_opendatasus", "opendatasus"),
         ("/tmp/skill_scientific/scientific-skills", "scientific"),
+        ("/tmp/skill_ufv-abnt", "ufv-abnt"),
     ]
     
     for src, dest_name in mappings:
