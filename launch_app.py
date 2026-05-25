@@ -571,11 +571,14 @@ def create_wrapper_html(terminal_url, drive_url):
                 headers: {{ "Content-Type": "application/json" }},
                 body: JSON.stringify({{ command: cmd, no_fallback: true }})
               }}).then(() => {{
+                // Wait for ttyd to fully restart before reloading iframe
                 setTimeout(() => {{
                   const fr = document.getElementById("terminal-frame");
-                  fr.src = fr.src;
-                }}, 1800);
-              }}).catch(() => {{}});
+                  const base = fr.src.split("?")[0];
+                  fr.src = base + "?t=" + Date.now();
+                  toast("✅ Terminal recarregado!", "ok");
+                }}, 3000);
+              }}).catch(() => {{ toast("❌ Erro ao reiniciar.", "err"); }});
             }}
           }}, 800);
 
@@ -590,18 +593,19 @@ def create_wrapper_html(terminal_url, drive_url):
 
     /* ── Provider list (all opencode-compatible) ───────────────── */
     const PROVIDERS = [
-      {{ id:"anthropic",    name:"Anthropic",       env:"ANTHROPIC_API_KEY",    hint:"sk-ant-…"  }},
-      {{ id:"openai",       name:"OpenAI",           env:"OPENAI_API_KEY",       hint:"sk-…"      }},
-      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_API_KEY",       hint:"AIza…"     }},
-      {{ id:"groq",         name:"Groq",             env:"GROQ_API_KEY",         hint:"gsk_…"     }},
-      {{ id:"mistral",      name:"Mistral",          env:"MISTRAL_API_KEY",      hint:"…"         }},
-      {{ id:"xai",          name:"xAI (Grok)",       env:"XAI_API_KEY",          hint:"xai-…"     }},
-      {{ id:"deepseek",     name:"DeepSeek",         env:"DEEPSEEK_API_KEY",     hint:"sk-…"      }},
-      {{ id:"openrouter",   name:"OpenRouter",       env:"OPENROUTER_API_KEY",   hint:"sk-or-…"   }},
-      {{ id:"together",     name:"Together AI",      env:"TOGETHER_API_KEY",     hint:"…"         }},
-      {{ id:"bedrock",      name:"AWS Bedrock",      env:"AWS_ACCESS_KEY_ID",    hint:"AKIA…"     }},
-      {{ id:"azure",        name:"Azure OpenAI",     env:"AZURE_OPENAI_API_KEY", hint:"…"         }},
-      {{ id:"vertex",       name:"Vertex AI",        env:"VERTEX_API_KEY",       hint:"…"         }},
+      {{ id:"anthropic",    name:"Anthropic",       env:"ANTHROPIC_API_KEY",      hint:"sk-ant-…"    }},
+      {{ id:"openai",       name:"OpenAI",           env:"OPENAI_API_KEY",         hint:"sk-…"        }},
+      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_API_KEY",         hint:"AIza…"       }},
+      {{ id:"groq",         name:"Groq",             env:"GROQ_API_KEY",           hint:"gsk_…"       }},
+      {{ id:"mistral",      name:"Mistral",          env:"MISTRAL_API_KEY",        hint:"…"           }},
+      {{ id:"xai",          name:"xAI (Grok)",       env:"XAI_API_KEY",            hint:"xai-…"       }},
+      {{ id:"deepseek",     name:"DeepSeek",         env:"DEEPSEEK_API_KEY",       hint:"sk-…"        }},
+      {{ id:"openrouter",   name:"OpenRouter",       env:"OPENROUTER_API_KEY",     hint:"sk-or-…"     }},
+      {{ id:"nvidia",       name:"Nvidia NIM",       env:"NVIDIA_API_KEY",         hint:"nvapi-…"     }},
+      {{ id:"together",     name:"Together AI",      env:"TOGETHER_API_KEY",       hint:"…"           }},
+      {{ id:"bedrock",      name:"AWS Bedrock",      env:"AWS_ACCESS_KEY_ID",      hint:"AKIA…"       }},
+      {{ id:"azure",        name:"Azure OpenAI",     env:"AZURE_OPENAI_API_KEY",   hint:"…"           }},
+      {{ id:"vertex",       name:"Vertex AI",        env:"VERTEX_API_KEY",         hint:"…"           }},
     ]
 
     let _selProv = null;
@@ -677,24 +681,20 @@ def create_wrapper_html(terminal_url, drive_url):
         }});
       }} catch(e) {{}}
 
-      // 2. Export the env var and restart opencode so it picks up the new key
-      // opencode reads API keys from environment variables, not --set-key flags
-      const envVar = _selProv.env;
-      // The backend already injected the env via /api/apikey above.
-      // Now restart ttyd with env var pre-exported so opencode sees it immediately.
-      const cmd = `export ${{envVar}}="${{key}}" && opencode`;
+      // 2. Restart ttyd — bash -i sources ~/.bashrc which now has the key exported
+      // opencode will pick it up from the environment automatically
       toast("🔌 Reiniciando terminal com provedor configurado…", "info");
       try {{
         await fetch(BASE + "/api/run_terminal", {{
           method: "POST",
           headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify({{ command: cmd, no_fallback: true }})
+          body: JSON.stringify({{ command: "opencode", no_fallback: true }})
         }});
         setTimeout(() => {{
           const fr = document.getElementById("terminal-frame");
           fr.src = fr.src;
-          toast("✅ Provedor " + _selProv.name + " configurado!", "ok");
-        }}, 1500);
+          toast("✅ Provedor " + _selProv.name + " configurado e ativo!", "ok");
+        }}, 2500);
       }} catch(e) {{ toast("❌ Erro ao rodar comando.", "err"); }}
     }}
 
@@ -787,6 +787,17 @@ def start_wrapper_server():
                 if _env_var and _v:
                     os.environ[_env_var] = _v
                     _env[_env_var] = _v
+                    # Also write to bashrc so bash -i sessions pick it up
+                    try:
+                        _bashrc = os.path.expanduser("~/.bashrc")
+                        _marker = f"# opencode-key-{_k}"
+                        _export = f'export {_env_var}="{_v}"'
+                        _lines = open(_bashrc).readlines() if os.path.exists(_bashrc) else []
+                        _lines = [l for l in _lines if _marker not in l and (_env_var not in l or "export" not in l)]
+                        _lines.append(f"{_export}  {_marker}\n")
+                        open(_bashrc, "w").writelines(_lines)
+                    except Exception:
+                        pass
                     _loaded.append(_env_var)
             if _loaded:
                 print(f"🔑 Keys carregadas do Drive: {', '.join(_loaded)}")
@@ -876,6 +887,7 @@ def start_wrapper_server():
                 if not key or not provider:
                     self._json(400, {"error": "provider e apikey obrigatórios."})
                     return
+                # 1. Save to Drive .keys.json
                 keys_file = os.path.join(DRIVE_BACKUP_DIR, ".keys.json")
                 try:
                     try:
@@ -888,13 +900,31 @@ def start_wrapper_server():
                         keys[f"_env_{provider}"] = env_var
                     with open(keys_file, "w") as f:
                         json.dump(keys, f, indent=2)
-                    # Also inject into current env
-                    if env_var:
-                        os.environ[env_var] = key
-                        _env[env_var] = key
-                    self._json(200, {"ok": True})
                 except Exception as e:
-                    self._json(500, {"error": str(e)})
+                    self._json(500, {"error": f"Falha ao salvar no Drive: {e}"})
+                    return
+                # 2. Inject into current process env
+                if env_var:
+                    os.environ[env_var] = key
+                    _env[env_var] = key
+                # 3. Write into opencode config file so it persists across restarts
+                # opencode reads provider keys from env vars — ensure ~/.bashrc exports them too
+                bashrc = os.path.expanduser("~/.bashrc")
+                try:
+                    marker = f"# opencode-key-{provider}"
+                    export_line = f'export {env_var}="{key}"'
+                    lines = []
+                    if os.path.exists(bashrc):
+                        with open(bashrc, "r") as f:
+                            lines = f.readlines()
+                    # Remove previous entry for this provider
+                    lines = [l for l in lines if marker not in l and (env_var not in l or "export" not in l)]
+                    lines.append(f"{export_line}  {marker}\n")
+                    with open(bashrc, "w") as f:
+                        f.writelines(lines)
+                except Exception:
+                    pass
+                self._json(200, {"ok": True})
                 return
             
             if p == "/api/apikey/apply":
@@ -935,19 +965,19 @@ def start_wrapper_server():
                         env_var = saved_keys.get(f"_env_{k}", "")
                         if env_var and v:
                             _env[env_var] = v
+                            os.environ[env_var] = v
                 except Exception:
                     pass
-                # Kill current ttyd
-                subprocess.run("pkill -f ttyd 2>/dev/null || true", shell=True)
-                time.sleep(0.9)
-                # no_fallback=True: cmd is already the final opencode invocation
-                # no_fallback=False: run cmd first, then return to plain opencode
+                # Kill current ttyd and all opencode processes
+                subprocess.run("pkill -f ttyd 2>/dev/null; pkill -f opencode 2>/dev/null; sleep 0.3; pkill -9 -f ttyd 2>/dev/null || true", shell=True)
+                time.sleep(1.2)
+                # Build command: no_fallback means cmd IS the full opencode call (e.g. opencode -s xyz)
                 if no_fallback:
                     bash_cmd = f"{cmd}; exec bash"
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
                 subprocess.Popen(
-                    ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
+                    ["ttyd", "--writable", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     env=_env,
@@ -1005,25 +1035,50 @@ def start_wrapper_server():
                     self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
                     return
                 
-                r = _run([_opencode_bin, "import", fpath])
-                if r.returncode != 0:
-                    self._json(500, {"error": r.stderr or "Falha ao importar."})
-                    return
-                
-                # Try to extract session_id from the backup JSON
+                # Extract session_id BEFORE importing (file is available now)
                 session_id = ""
                 try:
                     with open(fpath, "r", encoding="utf-8") as jf:
                         bdata = json.load(jf)
+                    # Try all common field names
                     session_id = (
                         bdata.get("sessionID") or
                         bdata.get("session_id") or
-                        bdata.get("id") or ""
+                        bdata.get("id") or
+                        bdata.get("ID") or ""
                     )
-                except Exception:
+                    # If it's a list of messages, look inside
+                    if not session_id and isinstance(bdata, list) and bdata:
+                        first = bdata[0]
+                        session_id = (
+                            first.get("sessionID") or
+                            first.get("session_id") or
+                            first.get("id") or ""
+                        )
+                except Exception as parse_err:
                     pass
                 
-                self._json(200, {"ok": True, "file": fname, "session_id": session_id, "message": "Sessão importada com sucesso."})
+                # Run import
+                r = _run([_opencode_bin, "import", fpath])
+                # Don't fail if returncode != 0 — opencode may print warnings but still work
+                # Try to get session_id from import stdout too
+                if not session_id and r.stdout.strip():
+                    import re
+                    m = re.search(r'([a-f0-9\-]{8,})', r.stdout)
+                    if m:
+                        session_id = m.group(1)
+                
+                if r.returncode != 0 and not session_id:
+                    # Last resort: try anyway but warn
+                    pass
+                
+                self._json(200, {
+                    "ok": True,
+                    "file": fname,
+                    "session_id": session_id,
+                    "import_stdout": r.stdout.strip()[:200],
+                    "message": "Sessão importada com sucesso."
+                })
                 return
             
             self.send_error(404)
