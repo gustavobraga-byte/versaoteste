@@ -545,21 +545,19 @@ def create_wrapper_html(terminal_url, drive_url):
           setTimeout(() => {{
             if (window.confirm("Sessão restaurada com sucesso! Para acessar a sessão restaurada você deve acessar 'switch session' no menu Ctrl + p.  Você deseja reiniciar o OpenCode agora?")) {{
               const sessionId = d.session_id || "";
-              if (sessionId) {{
-                fetch(BASE + "/api/run_terminal", {{
-                  method: "POST",
-                  headers: {{ "Content-Type": "application/json" }},
-                  body: JSON.stringify({{ command: "opencode -s " + sessionId }})
-                }}).catch(() => {{}});
-                toast("🔄 Reiniciando sessão " + sessionId + "…", "info");
-              }} else {{
-                fetch(BASE + "/api/run_terminal", {{
-                  method: "POST",
-                  headers: {{ "Content-Type": "application/json" }},
-                  body: JSON.stringify({{ command: "opencode" }})
-                }}).catch(() => {{}});
-                toast("🔄 Reiniciando OpenCode…", "info");
-              }}
+              const cmd = sessionId ? "opencode -s " + sessionId : "opencode";
+              fetch(BASE + "/api/run_terminal", {{
+                method: "POST",
+                headers: {{ "Content-Type": "application/json" }},
+                body: JSON.stringify({{ command: cmd }})
+              }}).then(() => {{
+                toast("🔄 Reiniciando terminal…", "info");
+                // Reload the iframe after ttyd restarts (give it 1.5s)
+                setTimeout(() => {{
+                  const fr = document.getElementById("terminal-frame");
+                  fr.src = fr.src;
+                }}, 1500);
+              }}).catch(() => {{}});
             }}
           }}, 800);
 
@@ -596,24 +594,42 @@ def create_wrapper_html(terminal_url, drive_url):
 
     async function confirmProvider() {{
       const key = document.getElementById("provider-key-input").value.trim();
-      if (!key) {{ toast("⚠️ Insira uma API key válida.", "err"); return; }}
       closeProvider();
-      toast("💾 Salvando API key…", "info");
+      if (key) {{
+        toast("💾 Salvando API key…", "info");
+        try {{
+          await fetch(BASE + "/api/apikey", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ apikey: key }})
+          }});
+        }} catch(e) {{ /* non-blocking */ }}
+      }}
+      toast("🔌 Reiniciando terminal com auth login…", "info");
       try {{
-        await fetch(BASE + "/api/apikey", {{
-          method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify({{ apikey: key }})
-        }});
-      }} catch(e) {{ /* non-blocking */ }}
-      toast("🔌 Iniciando autenticação do provedor…", "info");
-      try {{
+        // Restart ttyd running: opencode auth login → then opencode → then bash
         await fetch(BASE + "/api/run_terminal", {{
           method: "POST",
           headers: {{ "Content-Type": "application/json" }},
           body: JSON.stringify({{ command: "opencode auth login" }})
         }});
+        // Reload iframe after ttyd restarts
+        setTimeout(() => {{
+          const fr = document.getElementById("terminal-frame");
+          fr.src = fr.src;
+        }}, 1500);
       }} catch(e) {{ /* non-blocking */ }}
+      // After a delay, show a prompt to save config to Drive
+      setTimeout(() => {{
+        if (window.confirm("Após concluir o login no terminal, clique OK para salvar as credenciais no Drive.")) {{
+          fetch(BASE + "/api/apikey/save_config", {{ method: "POST" }})
+            .then(r => r.json())
+            .then(d => {{
+              if (d.ok) toast("✅ Credenciais salvas no Drive!", "ok");
+              else toast("⚠️ Config não encontrada ainda. Tente salvar depois.", "err");
+            }}).catch(() => toast("❌ Falha ao salvar config.", "err"));
+        }}
+      }}, 3000);
     }}
 
     /* ── Load saved API key on startup ─────────────────────────── */
@@ -637,6 +653,64 @@ def create_wrapper_html(terminal_url, drive_url):
 def start_wrapper_server():
     DRIVE_BACKUP_DIR = os.path.join(_folder_path, "backups")
     os.makedirs(DRIVE_BACKUP_DIR, exist_ok=True)
+    
+    # Possible opencode config/auth file locations
+    OPENCODE_CONFIG_CANDIDATES = [
+        os.path.expanduser("~/.config/opencode/auth.json"),
+        os.path.expanduser("~/.config/opencode/config.json"),
+        os.path.expanduser("~/.opencode/auth.json"),
+        os.path.expanduser("~/.opencode/config.json"),
+        "/root/.config/opencode/auth.json",
+        "/root/.config/opencode/config.json",
+        "/root/.opencode/auth.json",
+        "/root/.opencode/config.json",
+    ]
+    DRIVE_CONFIG_BACKUP = os.path.join(DRIVE_BACKUP_DIR, "opencode_auth.json")
+    
+    def find_opencode_config():
+        """Return the first existing opencode config/auth file."""
+        for p in OPENCODE_CONFIG_CANDIDATES:
+            if os.path.exists(p):
+                return p
+        # Also search dynamically
+        try:
+            r = subprocess.run(
+                ["find", "/root", os.path.expanduser("~"), "-name", "auth.json", "-path", "*/opencode/*"],
+                capture_output=True, text=True, timeout=3
+            )
+            hits = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+            if hits:
+                return hits[0]
+        except Exception:
+            pass
+        return None
+    
+    def save_opencode_config_to_drive():
+        """Copy opencode auth/config to Drive backup folder."""
+        src = find_opencode_config()
+        if src and os.path.exists(src):
+            shutil.copy2(src, DRIVE_CONFIG_BACKUP)
+            return src
+        return None
+    
+    def restore_opencode_config_from_drive():
+        """Restore opencode auth/config from Drive backup if it exists."""
+        if not os.path.exists(DRIVE_CONFIG_BACKUP):
+            return False
+        # Restore to all candidate locations to ensure opencode finds it
+        restored = False
+        for dest in OPENCODE_CONFIG_CANDIDATES:
+            try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copy2(DRIVE_CONFIG_BACKUP, dest)
+                restored = True
+            except Exception:
+                pass
+        return restored
+    
+    # Auto-restore opencode config from Drive on startup
+    if restore_opencode_config_from_drive():
+        print(f"🔑 Config do OpenCode restaurada do Drive.")
     
     # Auto-load saved API key into environment on startup
     _keyfile = os.path.join(DRIVE_BACKUP_DIR, ".apikey")
@@ -758,23 +832,31 @@ def start_wrapper_server():
                     self._json(200, {"ok": False, "reason": "no key stored"})
                 return
             
+            if p == "/api/apikey/save_config":
+                # Called after opencode auth login completes — copy config to Drive
+                src = save_opencode_config_to_drive()
+                if src:
+                    self._json(200, {"ok": True, "source": src})
+                else:
+                    self._json(200, {"ok": False, "reason": "config file not found"})
+                return
+            
             if p == "/api/run_terminal":
                 cmd = body.get("command", "").strip()
                 if not cmd:
                     self._json(400, {"error": "Comando vazio."})
                     return
-                # Send the command to all running ttyd bash sessions via a temp script
-                script = f"""#!/bin/bash
-for pts in /dev/pts/[0-9]*; do
-  echo $'\\033c' > "$pts" 2>/dev/null || true
-  echo '{cmd}' > "$pts" 2>/dev/null || true
-done
-"""
-                scriptfile = "/tmp/_pesquisai_cmd.sh"
-                with open(scriptfile, "w") as sf:
-                    sf.write(script)
-                os.chmod(scriptfile, 0o755)
-                subprocess.Popen(["bash", scriptfile], env=_env)
+                # Restart ttyd with the new command, then return to opencode when done
+                subprocess.run("pkill -f ttyd 2>/dev/null || true", shell=True)
+                time.sleep(0.8)
+                # Build bash -c string: run the requested cmd, then fall back to opencode
+                bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
+                subprocess.Popen(
+                    ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=_env,
+                )
                 self._json(200, {"ok": True, "command": cmd})
                 return
             
