@@ -564,11 +564,10 @@ def create_wrapper_html(terminal_url, drive_url):
           const cmd = sessionId ? "opencode -s " + sessionId : "opencode";
           toast("✅ Importado! session_id: " + (sessionId || "(não encontrado)"), "ok");
           setTimeout(() => {{
-            if (window.confirm(
-              "Sessão restaurada!\n" +
+            const msg = "Sessão restaurada!\\n" +
               (sessionId ? "Vai abrir: " + cmd : "Sem sessionId — vai abrir opencode padrão.") +
-              "\n\nReiniciar o terminal agora?"
-            )) {{
+              "\\n\\nReiniciar o terminal agora?";
+            if (window.confirm(msg)) {{
               toast("🔄 Rodando: " + cmd, "info");
               fetch(BASE + "/api/run_terminal", {{
                 method: "POST",
