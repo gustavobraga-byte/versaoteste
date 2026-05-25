@@ -560,27 +560,32 @@ def create_wrapper_html(terminal_url, drive_url):
         const d = await r.json();
 
         if (d.ok) {{
-          toast("✅ " + (d.message || "Sessão importada!"), "ok");
+          const sessionId = d.session_id || "";
+          const cmd = sessionId ? "opencode -s " + sessionId : "opencode";
+          toast("✅ Importado! session_id: " + (sessionId || "(não encontrado)"), "ok");
           setTimeout(() => {{
-            if (window.confirm("Sessão restaurada com sucesso! Para acessar a sessão restaurada você deve acessar 'switch session' no menu Ctrl + p.  Você deseja reiniciar o OpenCode agora?")) {{
-              const sessionId = d.session_id || "";
-              const cmd = sessionId ? "opencode -s " + sessionId : "opencode";
-              toast("🔄 Reiniciando com: " + cmd, "info");
+            if (window.confirm(
+              "Sessão restaurada!\n" +
+              (sessionId ? "Vai abrir: " + cmd : "Sem sessionId — vai abrir opencode padrão.") +
+              "\n\nReiniciar o terminal agora?"
+            )) {{
+              toast("🔄 Rodando: " + cmd, "info");
               fetch(BASE + "/api/run_terminal", {{
                 method: "POST",
                 headers: {{ "Content-Type": "application/json" }},
                 body: JSON.stringify({{ command: cmd, no_fallback: true }})
               }}).then(() => {{
-                // Wait for ttyd to fully restart before reloading iframe
+                // Force iframe reload: blank → original URL after ttyd restarts
+                const fr = document.getElementById("terminal-frame");
+                const origSrc = fr.src.split("?")[0];
+                fr.src = "about:blank";
                 setTimeout(() => {{
-                  const fr = document.getElementById("terminal-frame");
-                  const base = fr.src.split("?")[0];
-                  fr.src = base + "?t=" + Date.now();
-                  toast("✅ Terminal recarregado!", "ok");
-                }}, 3000);
-              }}).catch(() => {{ toast("❌ Erro ao reiniciar.", "err"); }});
+                  fr.src = origSrc + "?t=" + Date.now();
+                  toast("✅ Terminal recarregado com sessão!", "ok");
+                }}, 3500);
+              }}).catch(e => {{ toast("❌ Erro: " + e.message, "err"); }});
             }}
-          }}, 800);
+          }}, 600);
 
         }} else {{
           toast("❌ " + (d.error || "Erro ao importar"), "err");
@@ -671,30 +676,40 @@ def create_wrapper_html(terminal_url, drive_url):
       if (!_selProv) return;
       closeProvider();
 
-      // 1. Save key to Drive
+      // 1. Save key to Drive (backend also writes to ~/.bashrc and _env)
       toast("💾 Salvando key no Drive…", "info");
       try {{
-        await fetch(BASE + "/api/apikey", {{
+        const sr = await fetch(BASE + "/api/apikey", {{
           method: "POST",
           headers: {{ "Content-Type": "application/json" }},
           body: JSON.stringify({{ provider: _selProv.id, env: _selProv.env, apikey: key }})
         }});
-      }} catch(e) {{}}
+        const sd = await sr.json();
+        if (!sd.ok) {{ toast("❌ Erro ao salvar: " + (sd.error || ""), "err"); return; }}
+        toast("✅ Key salva no Drive!", "ok");
+      }} catch(e) {{
+        toast("❌ Falha ao salvar key: " + e.message, "err");
+        return;
+      }}
 
-      // 2. Restart ttyd — bash -i sources ~/.bashrc which now has the key exported
-      // opencode will pick it up from the environment automatically
-      toast("🔌 Reiniciando terminal com provedor configurado…", "info");
+      // 2. Run in terminal: export ENV="key" then opencode (sequential in one bash -c)
+      const envVar = _selProv.env;
+      const cmd = `export ${{envVar}}="${{key}}" && opencode`;
+      toast("🔌 Configurando provedor e reiniciando terminal…", "info");
       try {{
         await fetch(BASE + "/api/run_terminal", {{
           method: "POST",
           headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify({{ command: "opencode", no_fallback: true }})
+          body: JSON.stringify({{ command: cmd, no_fallback: true }})
         }});
+        // Force iframe reload: blank first, then restore after ttyd is up
+        const fr = document.getElementById("terminal-frame");
+        const origSrc = fr.src.split("?")[0];
+        fr.src = "about:blank";
         setTimeout(() => {{
-          const fr = document.getElementById("terminal-frame");
-          fr.src = fr.src;
-          toast("✅ Provedor " + _selProv.name + " configurado e ativo!", "ok");
-        }}, 2500);
+          fr.src = origSrc + "?t=" + Date.now();
+          toast("✅ " + _selProv.name + " configurado! Terminal reaberto.", "ok");
+        }}, 3500);
       }} catch(e) {{ toast("❌ Erro ao rodar comando.", "err"); }}
     }}
 
@@ -712,8 +727,17 @@ def create_wrapper_html(terminal_url, drive_url):
 
 
 def start_wrapper_server():
-    DRIVE_BACKUP_DIR = os.path.join(_folder_path, "backups")
+    # Determine correct backup dir — prefer the known Drive path
+    _pesquisai_drive = "/content/drive/My Drive/PesquisAI"
+    if os.path.isdir(_pesquisai_drive):
+        _base = _pesquisai_drive
+    elif os.path.isdir(_folder_path) and "drive" in _folder_path.lower():
+        _base = _folder_path
+    else:
+        _base = _folder_path
+    DRIVE_BACKUP_DIR = os.path.join(_base, "backups")
     os.makedirs(DRIVE_BACKUP_DIR, exist_ok=True)
+    print(f"📁 Backup dir: {DRIVE_BACKUP_DIR}")
     
     # Possible opencode config/auth file locations
     OPENCODE_CONFIG_CANDIDATES = [
@@ -850,12 +874,34 @@ def start_wrapper_server():
             if p == "/api/backups":
                 try:
                     files = sorted(
-                        [f for f in os.listdir(DRIVE_BACKUP_DIR) if f.endswith(".json")],
+                        [f for f in os.listdir(DRIVE_BACKUP_DIR) if f.endswith(".json") and not f.startswith(".")],
                         reverse=True
                     )
                 except Exception:
                     files = []
                 self._json(200, {"backups": files})
+                return
+            
+            if p == "/api/debug":
+                keys_file = os.path.join(DRIVE_BACKUP_DIR, ".keys.json")
+                keys_exist = os.path.exists(keys_file)
+                keys_data = {}
+                if keys_exist:
+                    try:
+                        with open(keys_file) as f:
+                            raw = json.load(f)
+                        # Mask key values for security
+                        keys_data = {k: (v[:6]+"…" if not k.startswith("_env_") and v else v) for k, v in raw.items()}
+                    except Exception as e:
+                        keys_data = {"error": str(e)}
+                self._json(200, {
+                    "drive_backup_dir": DRIVE_BACKUP_DIR,
+                    "drive_dir_exists": os.path.isdir(DRIVE_BACKUP_DIR),
+                    "keys_file_exists": keys_exist,
+                    "keys_data": keys_data,
+                    "opencode_bin": _opencode_bin,
+                    "env_keys": [k for k in _env if "KEY" in k or "TOKEN" in k or "SECRET" in k],
+                })
                 return
             
             if p == "/api/apikey":
@@ -968,16 +1014,22 @@ def start_wrapper_server():
                             os.environ[env_var] = v
                 except Exception:
                     pass
-                # Kill current ttyd and all opencode processes
-                subprocess.run("pkill -f ttyd 2>/dev/null; pkill -f opencode 2>/dev/null; sleep 0.3; pkill -9 -f ttyd 2>/dev/null || true", shell=True)
-                time.sleep(1.2)
-                # Build command: no_fallback means cmd IS the full opencode call (e.g. opencode -s xyz)
+                # Hard kill ttyd + opencode
+                subprocess.run(
+                    "pkill -9 -f ttyd 2>/dev/null; pkill -9 -f opencode 2>/dev/null; true",
+                    shell=True
+                )
+                time.sleep(1.5)
+                # Build bash -c command string
+                # no_fallback=True → cmd is already the final invocation (e.g. "opencode -s xyz")
+                # no_fallback=False → run cmd, then return to opencode afterwards
                 if no_fallback:
                     bash_cmd = f"{cmd}; exec bash"
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
                 subprocess.Popen(
-                    ["ttyd", "--writable", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
+                    ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
+                     "bash", "-i", "-c", bash_cmd],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     env=_env,
@@ -1035,48 +1087,51 @@ def start_wrapper_server():
                     self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
                     return
                 
-                # Extract session_id BEFORE importing (file is available now)
+                # 1. Extract session_id from JSON content
                 session_id = ""
                 try:
                     with open(fpath, "r", encoding="utf-8") as jf:
                         bdata = json.load(jf)
-                    # Try all common field names
-                    session_id = (
-                        bdata.get("sessionID") or
-                        bdata.get("session_id") or
-                        bdata.get("id") or
-                        bdata.get("ID") or ""
-                    )
-                    # If it's a list of messages, look inside
-                    if not session_id and isinstance(bdata, list) and bdata:
-                        first = bdata[0]
+                    if isinstance(bdata, dict):
+                        session_id = (
+                            bdata.get("sessionID") or
+                            bdata.get("session_id") or
+                            bdata.get("id") or
+                            bdata.get("ID") or ""
+                        )
+                    elif isinstance(bdata, list) and bdata:
+                        first = bdata[0] if isinstance(bdata[0], dict) else {}
                         session_id = (
                             first.get("sessionID") or
                             first.get("session_id") or
                             first.get("id") or ""
                         )
-                except Exception as parse_err:
+                except Exception:
                     pass
                 
-                # Run import
-                r = _run([_opencode_bin, "import", fpath])
-                # Don't fail if returncode != 0 — opencode may print warnings but still work
-                # Try to get session_id from import stdout too
-                if not session_id and r.stdout.strip():
-                    import re
-                    m = re.search(r'([a-f0-9\-]{8,})', r.stdout)
+                # 2. Fallback: extract from filename pattern backup_{session_id[:12]}_{ts}.json
+                if not session_id:
+                    import re as _re
+                    m = _re.match(r"backup_([a-zA-Z0-9_\-]+?)_\d{2}-\d{2}", fname)
                     if m:
                         session_id = m.group(1)
                 
-                if r.returncode != 0 and not session_id:
-                    # Last resort: try anyway but warn
-                    pass
+                # 3. Run opencode import
+                r = _run([_opencode_bin, "import", fpath])
+                
+                # 4. Try to get session_id from import stdout if still missing
+                if not session_id and r.stdout.strip():
+                    import re as _re2
+                    m2 = _re2.search(r'([a-zA-Z0-9]{8,})', r.stdout)
+                    if m2:
+                        session_id = m2.group(1)
                 
                 self._json(200, {
                     "ok": True,
                     "file": fname,
                     "session_id": session_id,
-                    "import_stdout": r.stdout.strip()[:200],
+                    "import_stdout": r.stdout.strip()[:300],
+                    "import_stderr": r.stderr.strip()[:300],
                     "message": "Sessão importada com sucesso."
                 })
                 return
