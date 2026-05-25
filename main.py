@@ -2,7 +2,7 @@ import sys
 import os
 import random
 
-REPO_URL = "https://github.com/gustavobraga-byte/PesquisAI.git"
+REPO_URL = "https://github.com/gustavobraga-byte/versaoteste.git"
 
 JOKES_EXTRA = [
     "👥 Recrutamento: você foi recrutado para a equipe da espera.",
