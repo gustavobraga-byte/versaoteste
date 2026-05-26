@@ -672,16 +672,17 @@ def create_wrapper_html(terminal_url, drive_url):
     async function confirmProvider() {{
       const key = document.getElementById("prov-key-input").value.trim();
       if (!key) {{ toast("⚠️ Insira a API key.", "err"); return; }}
-      if (!_selProv) return;
+      if (!_selProv) {{ toast("⚠️ Selecione um provedor.", "err"); return; }}
+      const prov = _selProv; // capture before closeProvider() sets _selProv = null
       closeProvider();
 
-      // 1. Save key to Drive (backend also writes to ~/.bashrc and _env)
+      // 1. Save key to Drive
       toast("💾 Salvando key no Drive…", "info");
       try {{
         const sr = await fetch(BASE + "/api/apikey", {{
           method: "POST",
           headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify({{ provider: _selProv.id, env: _selProv.env, apikey: key }})
+          body: JSON.stringify({{ provider: prov.id, env: prov.env, apikey: key }})
         }});
         const sd = await sr.json();
         if (!sd.ok) {{ toast("❌ Erro ao salvar: " + (sd.error || ""), "err"); return; }}
@@ -691,9 +692,8 @@ def create_wrapper_html(terminal_url, drive_url):
         return;
       }}
 
-      // 2. Run in terminal: export ENV="key" then opencode (sequential in one bash -c)
-      const envVar = _selProv.env;
-      const cmd = `export ${{envVar}}="${{key}}" && opencode`;
+      // 2. Run: export ENV="key" && opencode
+      const cmd = `export ${{prov.env}}="${{key}}" && opencode`;
       toast("🔌 Configurando provedor e reiniciando terminal…", "info");
       try {{
         await fetch(BASE + "/api/run_terminal", {{
@@ -701,13 +701,12 @@ def create_wrapper_html(terminal_url, drive_url):
           headers: {{ "Content-Type": "application/json" }},
           body: JSON.stringify({{ command: cmd, no_fallback: true }})
         }});
-        // Force iframe reload: blank first, then restore after ttyd is up
         const fr = document.getElementById("terminal-frame");
         const origSrc = fr.src.split("?")[0];
         fr.src = "about:blank";
         setTimeout(() => {{
           fr.src = origSrc + "?t=" + Date.now();
-          toast("✅ " + _selProv.name + " configurado! Terminal reaberto.", "ok");
+          toast("✅ " + prov.name + " configurado! Terminal reaberto.", "ok");
         }}, 3500);
       }} catch(e) {{ toast("❌ Erro ao rodar comando.", "err"); }}
     }}
@@ -1086,25 +1085,28 @@ def start_wrapper_server():
                     self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
                     return
                 
-                # 1. Extract session_id from JSON content
+                # 1. Extract session_id from JSON — structure: {"info": {"id": "ses_..."}, ...}
                 session_id = ""
                 try:
                     with open(fpath, "r", encoding="utf-8") as jf:
                         bdata = json.load(jf)
                     if isinstance(bdata, dict):
-                        session_id = (
-                            bdata.get("sessionID") or
-                            bdata.get("session_id") or
-                            bdata.get("id") or
-                            bdata.get("ID") or ""
-                        )
+                        # Primary: {"info": {"id": "ses_..."}}
+                        info = bdata.get("info", {})
+                        if isinstance(info, dict):
+                            session_id = info.get("id", "")
+                        # Fallbacks at root level
+                        if not session_id:
+                            session_id = (
+                                bdata.get("sessionID") or
+                                bdata.get("session_id") or
+                                bdata.get("id") or ""
+                            )
                     elif isinstance(bdata, list) and bdata:
                         first = bdata[0] if isinstance(bdata[0], dict) else {}
-                        session_id = (
-                            first.get("sessionID") or
-                            first.get("session_id") or
-                            first.get("id") or ""
-                        )
+                        info = first.get("info", {})
+                        session_id = (info.get("id") if isinstance(info, dict) else "") or \
+                                     first.get("sessionID") or first.get("session_id") or first.get("id") or ""
                 except Exception:
                     pass
                 
