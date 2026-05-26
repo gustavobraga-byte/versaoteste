@@ -599,7 +599,7 @@ def create_wrapper_html(terminal_url, drive_url):
     const PROVIDERS = [
       {{ id:"anthropic",    name:"Anthropic",       env:"ANTHROPIC_API_KEY",      hint:"sk-ant-…"    }},
       {{ id:"openai",       name:"OpenAI",           env:"OPENAI_API_KEY",         hint:"sk-…"        }},
-      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_API_KEY",         hint:"AIza…"       }},
+      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_GENERATIVE_AI_API_KEY",         hint:"AIza…"       }},
       {{ id:"groq",         name:"Groq",             env:"GROQ_API_KEY",           hint:"gsk_…"       }},
       {{ id:"mistral",      name:"Mistral",          env:"MISTRAL_API_KEY",        hint:"…"           }},
       {{ id:"xai",          name:"xAI (Grok)",       env:"XAI_API_KEY",            hint:"xai-…"       }},
@@ -1085,52 +1085,46 @@ def start_wrapper_server():
                     self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
                     return
                 
-                # 1. Extract session_id from JSON — structure: {"info": {"id": "ses_..."}, ...}
+                # Extract session_id: read raw file and find ses_... pattern (full id)
                 session_id = ""
+                parse_error = ""
                 try:
                     with open(fpath, "r", encoding="utf-8") as jf:
-                        bdata = json.load(jf)
-                    if isinstance(bdata, dict):
-                        # Primary: {"info": {"id": "ses_..."}}
-                        info = bdata.get("info", {})
-                        if isinstance(info, dict):
-                            session_id = info.get("id", "")
-                        # Fallbacks at root level
-                        if not session_id:
-                            session_id = (
-                                bdata.get("sessionID") or
-                                bdata.get("session_id") or
-                                bdata.get("id") or ""
-                            )
-                    elif isinstance(bdata, list) and bdata:
-                        first = bdata[0] if isinstance(bdata[0], dict) else {}
-                        info = first.get("info", {})
-                        session_id = (info.get("id") if isinstance(info, dict) else "") or \
-                                     first.get("sessionID") or first.get("session_id") or first.get("id") or ""
-                except Exception:
-                    pass
-                
-                # 2. Fallback: extract from filename pattern backup_{session_id[:12]}_{ts}.json
-                if not session_id:
+                        raw = jf.read(4096)  # read first 4KB — id is always near the top
+                    
                     import re as _re
-                    m = _re.match(r"backup_([a-zA-Z0-9_\-]+?)_\d{2}-\d{2}", fname)
+                    # Match ses_ followed by all alphanumeric chars (full length, no truncation)
+                    m = _re.search(r'"id"\s*:\s*"(ses_[a-zA-Z0-9]+)"', raw)
                     if m:
                         session_id = m.group(1)
+                    
+                    # Fallback: parse JSON and try info.id / root id
+                    if not session_id:
+                        bdata = json.loads(raw + jf.read()) if len(raw) < 4096 else json.loads(raw)
+                        if isinstance(bdata, dict):
+                            info = bdata.get("info", {})
+                            session_id = str(
+                                (info.get("id") if isinstance(info, dict) else "") or
+                                bdata.get("sessionID") or bdata.get("session_id") or bdata.get("id") or ""
+                            )
+                except Exception as e:
+                    parse_error = str(e)
                 
-                # 3. Run opencode import
-                r = _run([_opencode_bin, "import", fpath])
-                
-                # 4. Try to get session_id from import stdout if still missing
-                if not session_id and r.stdout.strip():
+                # Last resort: filename (has truncated id — 12 chars only)
+                if not session_id:
                     import re as _re2
-                    m2 = _re2.search(r'([a-zA-Z0-9]{8,})', r.stdout)
+                    m2 = _re2.match(r"backup_([a-zA-Z0-9_\-]+?)_\d{2}-\d{2}", fname)
                     if m2:
                         session_id = m2.group(1)
+                
+                # Run opencode import
+                r = _run([_opencode_bin, "import", fpath])
                 
                 self._json(200, {
                     "ok": True,
                     "file": fname,
                     "session_id": session_id,
+                    "parse_error": parse_error,
                     "import_stdout": r.stdout.strip()[:300],
                     "import_stderr": r.stderr.strip()[:300],
                     "message": "Sessão importada com sucesso."
