@@ -1085,48 +1085,33 @@ def start_wrapper_server():
                     self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
                     return
                 
-                # Extract session_id: read raw file and find ses_... pattern (full id)
+                # 1. Run import FIRST — block if it fails
+                r = _run([_opencode_bin, "import", fpath])
+                if r.returncode != 0:
+                    self._json(500, {"error": r.stderr.strip() or "Falha ao importar."})
+                    return
+                
+                # 2. Extract full session_id from file content via regex
                 session_id = ""
                 parse_error = ""
                 try:
-                    with open(fpath, "r", encoding="utf-8") as jf:
-                        raw = jf.read(4096)  # read first 4KB — id is always near the top
-                    
                     import re as _re
-                    # Match ses_ followed by all alphanumeric chars (full length, no truncation)
+                    with open(fpath, "r", encoding="utf-8") as jf:
+                        raw = jf.read(4096)
+                    # Matches "id": "ses_XXXX" anywhere in the first 4KB
                     m = _re.search(r'"id"\s*:\s*"(ses_[a-zA-Z0-9]+)"', raw)
                     if m:
                         session_id = m.group(1)
-                    
-                    # Fallback: parse JSON and try info.id / root id
-                    if not session_id:
-                        bdata = json.loads(raw + jf.read()) if len(raw) < 4096 else json.loads(raw)
-                        if isinstance(bdata, dict):
-                            info = bdata.get("info", {})
-                            session_id = str(
-                                (info.get("id") if isinstance(info, dict) else "") or
-                                bdata.get("sessionID") or bdata.get("session_id") or bdata.get("id") or ""
-                            )
                 except Exception as e:
                     parse_error = str(e)
                 
-                # Last resort: filename (has truncated id — 12 chars only)
-                if not session_id:
-                    import re as _re2
-                    m2 = _re2.match(r"backup_([a-zA-Z0-9_\-]+?)_\d{2}-\d{2}", fname)
-                    if m2:
-                        session_id = m2.group(1)
-                
-                # Run opencode import
-                r = _run([_opencode_bin, "import", fpath])
-                
+                # 3. Respond — frontend will call run_terminal with opencode -s {session_id}
                 self._json(200, {
                     "ok": True,
                     "file": fname,
                     "session_id": session_id,
                     "parse_error": parse_error,
                     "import_stdout": r.stdout.strip()[:300],
-                    "import_stderr": r.stderr.strip()[:300],
                     "message": "Sessão importada com sucesso."
                 })
                 return
