@@ -599,7 +599,7 @@ def create_wrapper_html(terminal_url, drive_url):
     const PROVIDERS = [
       {{ id:"anthropic",    name:"Anthropic",       env:"ANTHROPIC_API_KEY",      hint:"sk-ant-…"    }},
       {{ id:"openai",       name:"OpenAI",           env:"OPENAI_API_KEY",         hint:"sk-…"        }},
-      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_GENERATIVE_AI_API_KEY",         hint:"AIza…"       }},
+      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_API_KEY",         hint:"AIza…"       }},
       {{ id:"groq",         name:"Groq",             env:"GROQ_API_KEY",           hint:"gsk_…"       }},
       {{ id:"mistral",      name:"Mistral",          env:"MISTRAL_API_KEY",        hint:"…"           }},
       {{ id:"xai",          name:"xAI (Grok)",       env:"XAI_API_KEY",            hint:"xai-…"       }},
@@ -829,6 +829,61 @@ def start_wrapper_server():
     def _run(cmd, **kw):
         return subprocess.run(cmd, capture_output=True, text=True, env=_env, **kw)
     
+    def _run_import(fpath):
+        """Run opencode import for potentially large files — avoids pipe buffer limits."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.out', delete=False) as fo, \
+             tempfile.NamedTemporaryFile(mode='w', suffix='.err', delete=False) as fe:
+            out_path, err_path = fo.name, fe.name
+        try:
+            proc = subprocess.Popen(
+                [_opencode_bin, "import", fpath],
+                stdout=open(out_path, 'w'),
+                stderr=open(err_path, 'w'),
+                env=_env,
+            )
+            proc.wait(timeout=300)  # 5 min max for very large files
+            with open(out_path, 'r', errors='replace') as f:
+                stdout = f.read()
+            with open(err_path, 'r', errors='replace') as f:
+                stderr = f.read()
+            return proc.returncode, stdout, stderr
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return 1, "", "Timeout: importação demorou mais de 5 minutos."
+        except Exception as e:
+            return 1, "", str(e)
+        finally:
+            for p in (out_path, err_path):
+                try: os.unlink(p)
+                except: pass
+
+    def _run_export(cmd, outpath):
+        """Run opencode export writing directly to outpath — avoids pipe buffer limits."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.err', delete=False) as fe:
+            err_path = fe.name
+        try:
+            with open(outpath, 'w') as fout:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=fout,
+                    stderr=open(err_path, 'w'),
+                    env=_env,
+                )
+                proc.wait(timeout=300)
+            with open(err_path, 'r', errors='replace') as f:
+                stderr = f.read()
+            return proc.returncode, stderr
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return 1, "Timeout: exportação demorou mais de 5 minutos."
+        except Exception as e:
+            return 1, str(e)
+        finally:
+            try: os.unlink(err_path)
+            except: pass
+    
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_): pass
         
@@ -1057,14 +1112,16 @@ def start_wrapper_server():
                 fname = f"backup_{session_id[:12]}_{ts}.json"
                 outpath = os.path.join(DRIVE_BACKUP_DIR, fname)
                 
-                r = _run([_opencode_bin, "export", session_id, "--format", outpath])
-                if r.returncode != 0 or not os.path.exists(outpath):
+                # Use _run_export to stream directly to file — avoids pipe buffer limit on large sessions
+                rc, err = _run_export([_opencode_bin, "export", session_id, "--format", outpath], outpath)
+                if rc != 0 or not os.path.exists(outpath) or os.path.getsize(outpath) == 0:
+                    # Fallback: let opencode write to its own path, we copy it
                     r2 = _run([_opencode_bin, "export", session_id])
                     if r2.returncode == 0 and r2.stdout.strip():
                         with open(outpath, "w") as f:
                             f.write(r2.stdout)
                     else:
-                        self._json(500, {"error": r.stderr or r2.stderr or "Falha ao exportar."})
+                        self._json(500, {"error": err or r2.stderr or "Falha ao exportar."})
                         return
                 
                 self._json(200, {
@@ -1086,9 +1143,9 @@ def start_wrapper_server():
                     return
                 
                 # 1. Run import FIRST — block if it fails
-                r = _run([_opencode_bin, "import", fpath])
-                if r.returncode != 0:
-                    self._json(500, {"error": r.stderr.strip() or "Falha ao importar."})
+                returncode, stdout, stderr = _run_import(fpath)
+                if returncode != 0:
+                    self._json(500, {"error": stderr.strip() or "Falha ao importar."})
                     return
                 
                 # 2. Extract full session_id from file content via regex
@@ -1098,7 +1155,6 @@ def start_wrapper_server():
                     import re as _re
                     with open(fpath, "r", encoding="utf-8") as jf:
                         raw = jf.read(4096)
-                    # Matches "id": "ses_XXXX" anywhere in the first 4KB
                     m = _re.search(r'"id"\s*:\s*"(ses_[a-zA-Z0-9]+)"', raw)
                     if m:
                         session_id = m.group(1)
@@ -1111,7 +1167,7 @@ def start_wrapper_server():
                     "file": fname,
                     "session_id": session_id,
                     "parse_error": parse_error,
-                    "import_stdout": r.stdout.strip()[:300],
+                    "import_stdout": stdout.strip()[:300],
                     "message": "Sessão importada com sucesso."
                 })
                 return
