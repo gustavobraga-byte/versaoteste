@@ -17,34 +17,9 @@ except ImportError:
     display = None
     HTML = None
 
-TERMINAL_PORT = 8000
-WRAPPER_PORT = 8001
-WRAPPER_DIR = "/tmp/pesquisai-wrapper"
-
-JOKES_LAUNCH = [
-    "📊 Oportunidade de espera: o que você poderia estar fazendo agora.",
-    "📋 Planejamento estratégico: plano A = esperar, plano B = continuar esperando.",
-    "💰 Valor presente líquido (VPL): negativo.",
-    "📊 Inflação da paciência: cada minuto vale menos que o anterior.",
-    "📋 Missão, Visão, Valores: Missão = esperar, Visão = ver o botão.",
-    "💰 Retorno sobre investimento (ROI): investiu tempo, retorno zero.",
-    "📊 Juros compostos: sua frustração cresce exponencialmente.",
-    "📋 Ciclo PDCA: Plan, Do, Check, Agora esperar de novo.",
-    "💰 Fluxo de caixa: só saída (de paciência), sem entrada.",
-    "📊 Custo de oportunidade: muito alto para esse retorno zero.",
-    "📋 Metas SMART: esse download não atinge nem a letra S.",
-    "💰 Payback: período de retorno = nunca.",
-]
-
-_joke_index = 0
-
-def next_joke():
-    global _joke_index
-    if _joke_index < len(JOKES_LAUNCH):
-        joke = JOKES_LAUNCH[_joke_index]
-        _joke_index += 1
-        return joke
-    return JOKES_LAUNCH[-1]
+from constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, logger
+from jokes import next_joke
+from opencode_utils import find_opencode, build_env
 
 
 _opencode_bin = None
@@ -61,56 +36,40 @@ def set_drive_info(folder_path, drive_url):
 
 def resolve_opencode():
     global _opencode_bin, _env
-    
-    if "OPENCODE_BIN" in os.environ and os.path.isfile(os.environ["OPENCODE_BIN"]):
-        _opencode_bin = os.environ["OPENCODE_BIN"]
-    else:
-        _candidates = [
-            os.path.expanduser("~/.local/bin/opencode"),
-            os.path.expanduser("~/bin/opencode"),
-            "/root/.local/bin/opencode",
-            "/root/bin/opencode",
-            "/usr/local/bin/opencode",
-            "/usr/bin/opencode",
-        ]
-        _found = next((p for p in _candidates if os.path.isfile(p)), None)
-        
-        if _found is None:
-            _which = shutil.which("opencode")
-            if _which:
-                _found = _which
-            else:
-                result = subprocess.run(
-                    ["find", "/root", "/home", "/usr/local", "-name", "opencode", "-type", "f"],
-                    capture_output=True, text=True
-                )
-                hits = [l.strip() for l in result.stdout.splitlines() if l.strip()]
-                _found = hits[0] if hits else "opencode"
-        
-        _opencode_bin = _found
-    
-    _extra_path = os.path.dirname(_opencode_bin) if os.path.isfile(_opencode_bin) else os.path.expanduser("~/.local/bin")
-    
-    _env = {
-        **os.environ,
-        "OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT": "1",
-        "PATH": os.environ.get("PATH", "") + ":" + _extra_path,
-    }
-    
+    try:
+        _opencode_bin = find_opencode()
+    except FileNotFoundError:
+        logger.warning("opencode não encontrado, usando fallback 'opencode'")
+        _opencode_bin = "opencode"
+    _env = build_env()
     print(f"🔍 OpenCode binário: {_opencode_bin}")
     return _opencode_bin, _env
 
 
 def install_ttyd():
-    print(f"\n{next_joke()}")
+    print(f"\n{next_joke('economia')}")
     print("📦 Instalando ttyd...")
-    subprocess.run(
+    r1 = subprocess.run(
         "apt-get update -qq && apt-get install -y -qq ttyd",
         shell=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
-    print("✅ ttyd instalado.")
+    if r1.returncode != 0:
+        print("⚠️  apt-get falhou. Tentando download manual do ttyd...")
+        url = "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64"
+        r2 = subprocess.run(
+            f"curl -fsSL {url} -o /usr/local/bin/ttyd && chmod +x /usr/local/bin/ttyd",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        if r2.returncode != 0:
+            print("⚠️  Download manual do ttyd também falhou. Continuando mesmo assim.")
+        else:
+            print("✅ ttyd baixado manualmente.")
+    else:
+        print("✅ ttyd instalado.")
 
 
 def kill_previous():
@@ -120,7 +79,7 @@ def kill_previous():
 
 
 def start_ttyd():
-    print(f"\n{next_joke()}")
+    print(f"\n{next_joke('economia')}")
     opencode_bin, env = resolve_opencode()
     
     subprocess.Popen(
@@ -599,7 +558,7 @@ def create_wrapper_html(terminal_url, drive_url):
     const PROVIDERS = [
       {{ id:"anthropic",    name:"Anthropic",       env:"ANTHROPIC_API_KEY",      hint:"sk-ant-…"    }},
       {{ id:"openai",       name:"OpenAI",           env:"OPENAI_API_KEY",         hint:"sk-…"        }},
-      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_API_KEY",         hint:"AIza…"       }},
+      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_GENERATIVE_AI_API_KEY",         hint:"AIza…"       }},
       {{ id:"groq",         name:"Groq",             env:"GROQ_API_KEY",           hint:"gsk_…"       }},
       {{ id:"mistral",      name:"Mistral",          env:"MISTRAL_API_KEY",        hint:"…"           }},
       {{ id:"xai",          name:"xAI (Grok)",       env:"XAI_API_KEY",            hint:"xai-…"       }},
@@ -829,61 +788,6 @@ def start_wrapper_server():
     def _run(cmd, **kw):
         return subprocess.run(cmd, capture_output=True, text=True, env=_env, **kw)
     
-    def _run_import(fpath):
-        """Run opencode import for potentially large files — avoids pipe buffer limits."""
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.out', delete=False) as fo, \
-             tempfile.NamedTemporaryFile(mode='w', suffix='.err', delete=False) as fe:
-            out_path, err_path = fo.name, fe.name
-        try:
-            proc = subprocess.Popen(
-                [_opencode_bin, "import", fpath],
-                stdout=open(out_path, 'w'),
-                stderr=open(err_path, 'w'),
-                env=_env,
-            )
-            proc.wait(timeout=300)  # 5 min max for very large files
-            with open(out_path, 'r', errors='replace') as f:
-                stdout = f.read()
-            with open(err_path, 'r', errors='replace') as f:
-                stderr = f.read()
-            return proc.returncode, stdout, stderr
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            return 1, "", "Timeout: importação demorou mais de 5 minutos."
-        except Exception as e:
-            return 1, "", str(e)
-        finally:
-            for p in (out_path, err_path):
-                try: os.unlink(p)
-                except: pass
-
-    def _run_export(cmd, outpath):
-        """Run opencode export writing directly to outpath — avoids pipe buffer limits."""
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.err', delete=False) as fe:
-            err_path = fe.name
-        try:
-            with open(outpath, 'w') as fout:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=fout,
-                    stderr=open(err_path, 'w'),
-                    env=_env,
-                )
-                proc.wait(timeout=300)
-            with open(err_path, 'r', errors='replace') as f:
-                stderr = f.read()
-            return proc.returncode, stderr
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            return 1, "Timeout: exportação demorou mais de 5 minutos."
-        except Exception as e:
-            return 1, str(e)
-        finally:
-            try: os.unlink(err_path)
-            except: pass
-    
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_): pass
         
@@ -1112,16 +1016,14 @@ def start_wrapper_server():
                 fname = f"backup_{session_id[:12]}_{ts}.json"
                 outpath = os.path.join(DRIVE_BACKUP_DIR, fname)
                 
-                # Use _run_export to stream directly to file — avoids pipe buffer limit on large sessions
-                rc, err = _run_export([_opencode_bin, "export", session_id, "--format", outpath], outpath)
-                if rc != 0 or not os.path.exists(outpath) or os.path.getsize(outpath) == 0:
-                    # Fallback: let opencode write to its own path, we copy it
+                r = _run([_opencode_bin, "export", session_id, "--format", outpath])
+                if r.returncode != 0 or not os.path.exists(outpath):
                     r2 = _run([_opencode_bin, "export", session_id])
                     if r2.returncode == 0 and r2.stdout.strip():
                         with open(outpath, "w") as f:
                             f.write(r2.stdout)
                     else:
-                        self._json(500, {"error": err or r2.stderr or "Falha ao exportar."})
+                        self._json(500, {"error": r.stderr or r2.stderr or "Falha ao exportar."})
                         return
                 
                 self._json(200, {
@@ -1143,9 +1045,9 @@ def start_wrapper_server():
                     return
                 
                 # 1. Run import FIRST — block if it fails
-                returncode, stdout, stderr = _run_import(fpath)
-                if returncode != 0:
-                    self._json(500, {"error": stderr.strip() or "Falha ao importar."})
+                r = _run([_opencode_bin, "import", fpath])
+                if r.returncode != 0:
+                    self._json(500, {"error": r.stderr.strip() or "Falha ao importar."})
                     return
                 
                 # 2. Extract full session_id from file content via regex
@@ -1155,6 +1057,7 @@ def start_wrapper_server():
                     import re as _re
                     with open(fpath, "r", encoding="utf-8") as jf:
                         raw = jf.read(4096)
+                    # Matches "id": "ses_XXXX" anywhere in the first 4KB
                     m = _re.search(r'"id"\s*:\s*"(ses_[a-zA-Z0-9]+)"', raw)
                     if m:
                         session_id = m.group(1)
@@ -1167,7 +1070,7 @@ def start_wrapper_server():
                     "file": fname,
                     "session_id": session_id,
                     "parse_error": parse_error,
-                    "import_stdout": stdout.strip()[:300],
+                    "import_stdout": r.stdout.strip()[:300],
                     "message": "Sessão importada com sucesso."
                 })
                 return
@@ -1178,7 +1081,7 @@ def start_wrapper_server():
         target=lambda: HTTPServer(("0.0.0.0", WRAPPER_PORT), Handler).serve_forever(),
         daemon=True,
     ).start()
-    print(f"\n{next_joke()}")
+    print(f"\n{next_joke('economia')}")
     print(f"🚀 Servidor wrapper iniciado na porta {WRAPPER_PORT}")
 
 

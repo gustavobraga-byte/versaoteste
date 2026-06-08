@@ -1,6 +1,6 @@
 # 🔬 PesquisAI — Agente de IA para Pesquisadores Científicos
 
- [![Abrir no Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
+ [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
@@ -18,11 +18,15 @@ O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arq
 ## ✨ O que ele faz
 
 | Capacidade | Descrição |
-|---|---|
+|---|---|---|
 | 📊 **Dados IBGE** | Consulta e extração de dados estatísticos, demográficos e socioeconômicos |
 | 🏥 **Dados DataSUS** | Acesso e análise de dados públicos de saúde via OpenDataSUS |
+| 🌾 **Dados Agro & Ambientais** | Acesso a dados do agronegócio brasileiro e cadastro ambiental rural |
+| 🇧🇷 **Dados Brasil** | Conjunto amplo de indicadores e datasets oficiais brasileiros |
 | 📚 **Pesquisa científica** | Mineração de textos, revisão bibliográfica e suporte metodológico |
 | ✍️ **Redação acadêmica** | Auxílio na estruturação e revisão de artigos científicos |
+| 🔬 **Análise qualitativa** | Análise de conteúdo com métodos clássicos e avançados (Reinert, similitude, codificação) |
+| 📐 **Normas ABNT/UFV** | Formatação e normalização de trabalhos acadêmicos |
 
 ---
 
@@ -37,25 +41,7 @@ A forma mais rápida. Nenhuma configuração necessária:
 3. Aguarde ~2 minutos para o ambiente carregar
 4. Role até a última célula e clique em **🤖 Abrir o PesquisAI**
 
-### Opção 2 — Instalação local
 
-**Pré-requisitos:** Python 3.10+ e [uv](https://github.com/astral-sh/uv)
-
-```bash
-# Clone o repositório
-git clone https://github.com/gustavobraga-byte/PesquisAI.git
-cd PesquisAI
-
-# Instale as dependências
-uv sync
-
-# Configure sua chave de API
-cp .env.example .env
-# Edite o .env com sua chave
-
-# Execute
-uv run pesquisai
-```
 
 ---
 
@@ -72,8 +58,17 @@ Integração com o OpenDataSUS para coleta e análise de dados de saúde públic
 ### `skill-UFV-ABNT` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
 Formatação e normalização de trabalhos acadêmicos conforme as normas da Universidade Federal de Viçosa (UFV) e da ABNT.
 
+### `skill-analise-qualitativa` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Possibilita uma análise qualititativa e de conteúdo completa, substituindo sofwares especializados como NVivo e Iramuteq executando metódos clássicos e avançados (por exemplo, análise fatorial, análise de similitude, codificação qualitativa, método de Reinert, ...).
+
 ### `scientific-skills` · [@K-Dense-AI](https://github.com/K-Dense-AI)
 Ferramentas focadas em pesquisa acadêmica: mineração de textos científicos, revisão bibliográfica e suporte metodológico.
+
+### `skill-dados-brasil` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Conjunto amplo de indicadores e datasets oficiais brasileiros, complementando as bases do IBGE e DataSUS com outras fontes nacionais.
+
+### `skill-agrobr` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Dados do agronegócio brasileiro: produção agrícola, pecuária, comércio internacional do setor e cadastro ambiental rural (CAR).
 
 ---
 
@@ -121,7 +116,12 @@ Google Colab
     └── opencode (runtime do agente)
         ├── skill-ibge
         ├── skill-datasus
-        └── scientific-skills
+        ├── skill-dados-brasil
+        ├── skill-agrobr
+        ├── ufv-abnt
+        ├── skill-analise-qualitativa
+        ├── scientific-skills
+        └── pesquisai (instruções do agente)
 ```
 
 As dependências são gerenciadas pelo [uv (Astral)](https://github.com/astral-sh/uv) para instalação ultrarrápida e ambientes reproduzíveis.
@@ -138,7 +138,47 @@ O PesquisAI:
 - 🚨 **ATENÇÃO:** Sempre revise e confirme a precisão de todas as informações geradas por esta IA antes de utilizá-las em decisões ou projetos críticos.
 
 ---
+---
 
+## Citação
+
+**ABNT NBR 6023:2018:**
+
+```
+BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para pesquisa
+científica. Versão 1.0. Viçosa: Universidade Federal de Viçosa, 2026.
+Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
+Acesso em: DD mês. AAAA.
+```
+
+**BibTeX:**
+
+```bibtex
+@software{braga2026pesquisai,
+  author       = {Gustavo Bastos Braga},
+  title        = {{PesquisAI}: Agente de Intelig{\^e}ncia Artificial
+                  para Pesquisa Cient{\'\i}fica},
+  year         = {2026},
+  version      = {1.0},
+  institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
+  url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
+}
+```
+
+---
+
+## Declaração de Uso de IA
+
+O uso do PesquisAI em trabalhos acadêmicos **deve ser declarado** conforme diretrizes do COPE, CAPES e principais periódicos. Consulte o arquivo [`declaracao_uso_ia.md`](declaracao_uso_ia.md) para modelos prontos (ABNT, ICMJE, Nature, Science, Elsevier, Springer).
+
+---
+
+## Disclaimer
+
+O PesquisAI é um **software experimental fornecido "como está"**, sem garantias. LLMs podem **alucinar** — é responsabilidade exclusiva do usuário validar todos os dados, análises e referências gerados. Consulte o [`disclaimer_pesquisai.md`](disclaimer_pesquisai.md) para os termos completos.
+
+
+---
 ## 📬 Contato
 
 Desenvolvido por **Gustavo Bastos Braga** na Universidade Federal de Viçosa (UFV).
