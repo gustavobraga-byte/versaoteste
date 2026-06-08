@@ -18,7 +18,7 @@ O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arq
 ## ✨ O que ele faz
 
 | Capacidade | Descrição |
-|---|---|---|
+|---|---|
 | 📊 **Dados IBGE** | Consulta e extração de dados estatísticos, demográficos e socioeconômicos |
 | 🏥 **Dados DataSUS** | Acesso e análise de dados públicos de saúde via OpenDataSUS |
 | 🌾 **Dados Agro & Ambientais** | Acesso a dados do agronegócio brasileiro e cadastro ambiental rural |
