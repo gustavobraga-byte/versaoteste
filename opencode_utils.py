@@ -1,3 +1,5 @@
+"""Utilitários para localizar e configurar o binário do OpenCode."""
+
 import os
 import shutil
 import subprocess
@@ -17,15 +19,21 @@ CANDIDATES = [
 
 
 def _search() -> str | None:
-    result = subprocess.run(
-        ["find", "/root", "/home", "/usr/local", "-name", "opencode", "-type", "f"],
-        capture_output=True, text=True
-    )
-    hits = [l.strip() for l in result.stdout.splitlines() if l.strip()]
-    return hits[0] if hits else None
+    """Procure o binário opencode no sistema via find."""
+    try:
+        result = subprocess.run(
+            ["find", "/root", "/home", "/usr/local", "-name", "opencode", "-type", "f"],
+            capture_output=True, text=True, timeout=5
+        )
+        hits = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+        return hits[0] if hits else None
+    except subprocess.TimeoutExpired:
+        logger.warning("find para opencode excedeu timeout de 5s")
+        return None
 
 
 def find_opencode() -> str:
+    """Localize o binário do OpenCode no sistema."""
     global OPENCODE_BIN
     if OPENCODE_BIN:
         return OPENCODE_BIN
@@ -48,6 +56,7 @@ def find_opencode() -> str:
 
 
 def ensure_opencode_in_path():
+    """Garanta que o opencode esteja no PATH do sistema."""
     bin_path = find_opencode()
     bin_dir = os.path.dirname(bin_path)
     if bin_dir not in os.environ.get("PATH", ""):
@@ -57,6 +66,7 @@ def ensure_opencode_in_path():
 
 
 def build_env(extra_vars: dict | None = None) -> dict:
+    """Construa o dicionário de ambiente para execução do opencode."""
     env = {**os.environ}
     env["OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"] = "1"
     bin_path = find_opencode()

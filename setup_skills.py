@@ -1,6 +1,9 @@
+"""Clonagem e instalação das skills do PesquisAI a partir de repositórios Git."""
+
 import subprocess
 import os
 import shutil
+import time
 
 from constants import SKILLS_DIR, logger
 from jokes import next_joke
@@ -24,20 +27,31 @@ def run(cmd, check=True, **kw):
     return result
 
 
-def clone_skill(repo_url, dest_name):
+def _retry_clone(repo_url, dest_name, max_attempts=3, delay=2):
+    """Clone um repositório Git com retry e exponential backoff."""
     tmp = f"/tmp/skill_{dest_name}"
-    if os.path.exists(tmp):
-        shutil.rmtree(tmp)
-    
-    result = subprocess.run(
-        ["git", "clone", "--depth", "1", repo_url, tmp],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print(f"❌ Falha ao clonar {repo_url}")
-        return False
-    print(f"✅ {dest_name} clonado.")
-    return True
+    for attempt in range(1, max_attempts + 1):
+        if os.path.exists(tmp):
+            shutil.rmtree(tmp)
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, tmp],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(f"✅ {dest_name} clonado.")
+            return True
+        if attempt < max_attempts:
+            logger.warning("Tentativa %d/%d falhou para %s. Tentando novamente em %ds...",
+                           attempt, max_attempts, dest_name, delay)
+            time.sleep(delay)
+            delay *= 2
+    print(f"❌ Falha ao clonar {repo_url} após {max_attempts} tentativas")
+    return False
+
+
+def clone_skill(repo_url, dest_name):
+    """Clone uma skill do GitHub."""
+    return _retry_clone(repo_url, dest_name)
 
 
 def install_skills():

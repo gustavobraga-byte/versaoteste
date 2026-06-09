@@ -1,3 +1,5 @@
+"""Banco de piadas temáticas exibidas durante o carregamento do PesquisAI."""
+
 FISICA = [
     "⚛️ Relatividade geral: o tempo passa mais devagar quando você olha para o progresso.",
     "⚛️ Schrödinger já desistiu: esse download está e não está terminando.",
@@ -212,6 +214,7 @@ ALL_JOKES = sum(
 _index: dict[str, int] = {}
 
 def next_joke(category: str = "aleatorio") -> str:
+    """Retorne a próxima piada da categoria especificada."""
     if category == "aleatorio" or category not in JOKES_BY_CATEGORY:
         import random
         return random.choice(ALL_JOKES)

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PesquisAI</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0b0d0f; color: #dde4e8; font-family: 'DM Mono', monospace; }
+  .header { display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 20px; background: #131618; border-bottom: 1px solid #263035; }
+  .header h1 { font-size: 14px; color: #4fc3f7; font-weight: 600; }
+  .header a { color: #7e8f97; text-decoration: none; font-size: 12px; margin-left: 16px; }
+  .header a:hover { color: #4fc3f7; }
+  iframe { width: 100%; height: calc(100vh - 41px); border: none; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🔬 PesquisAI</h1>
+  <div>
+    <a href="{{TERMINAL_URL}}" target="_blank">Terminal</a>
+    <a href="{{DRIVE_URL}}" target="_blank">Drive</a>
+    <a href="/api/health">Status</a>
+  </div>
+</div>
+<iframe src="{{TERMINAL_URL}}"></iframe>
+</body>
+</html>

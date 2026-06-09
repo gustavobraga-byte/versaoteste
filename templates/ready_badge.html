@@ -1,0 +1,27 @@
+<style>
+@keyframes glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(93, 186, 126, 0.3); }
+    50% { box-shadow: 0 0 40px rgba(93, 186, 126, 0.6); }
+}
+.ready-container {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 20px 20px 0px 20px;
+}
+.ready-badge {
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 16px 32px; background: rgba(93, 186, 126, 0.12);
+    border: 2px solid rgba(93, 186, 126, 0.4);
+    border-radius: 12px; animation: glow 2s ease-in-out infinite;
+}
+.ready-icon { font-size: 28px; }
+.ready-text {
+    font-family: 'DM Mono', monospace; font-size: 18px;
+    font-weight: 600; color: #5dba7e;
+}
+</style>
+<div class="ready-container">
+    <div class="ready-badge">
+        <span class="ready-icon">✨</span>
+        <span class="ready-text">PesquisAI pronto!</span>
+    </div>
+</div>

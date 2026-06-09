@@ -1,0 +1,31 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500;700&family=Syne:wght@700;800&display=swap');
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(79,195,247,0.3), 0 4px 12px rgba(0,0,0,0.3); }
+  50% { box-shadow: 0 0 40px rgba(79,195,247,0.6), 0 6px 20px rgba(0,0,0,0.4); }
+}
+.btn-container {
+  display: flex; justify-content: center; padding: 20px; margin-top: 10px;
+}
+.pesquisai-launch {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 16px; padding: 24px 56px;
+  font-family: "Syne", sans-serif; font-size: 22px; font-weight: 800;
+  letter-spacing: 0.08em; color: #0d0f10;
+  background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 50%, #03a9f4 100%);
+  border: none; border-radius: 14px; cursor: pointer; text-decoration: none;
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+.pesquisai-launch:hover { transform: translateY(-4px) scale(1.02); filter: brightness(1.1); }
+.btn-main { font-size: 22px; font-weight: 800; }
+.btn-icon { font-size: 28px; }
+.arrow { font-size: 28px; transition: transform 0.2s ease; }
+.pesquisai-launch:hover .arrow { transform: translateX(8px); }
+</style>
+<div class="btn-container">
+  <a href="{{BANNER_URL}}" target="_blank" class="pesquisai-launch">
+    <span class="btn-icon">🚀</span>
+    <span class="btn-main">ABRIR O PESQUISAI</span>
+    <span class="arrow">→</span>
+  </a>
+</div>

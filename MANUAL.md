@@ -424,11 +424,7 @@ O PesquisAI é uma **ferramenta de amplificação**. Ele tira de você o trabalh
 
 ## 1. Primeiros Passos
 
----
-
-## 2. Primeiros Passos
-
-### 2.1 Abrindo no Colab
+### 1.1 Abrindo no Colab
 
 1. **Upload** do arquivo `PesquisAI_Colab.ipynb` para o seu Google Drive
 2. Clique duas vezes para abrir no **Google Colab**
