@@ -400,7 +400,7 @@ def create_wrapper_html(terminal_url, drive_url):
       GitHub
     </a>
     <span class="footer-sep"></span>
-    <span style="color:var(--ink-muted)">UFV · Viçosa, MG</span>
+    <span style="color:var(--ink-muted)">UFV · Viçosa, MG - Brasil</span>
 
     <div class="footer-right">
       <button class="btn-provider" onclick="connectProvider()" title="Conectar novo provedor de IA">

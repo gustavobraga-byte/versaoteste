@@ -15,7 +15,7 @@ Disponível em: https://colab.research.google.com/github/gustavobraga-byte/Pesqu
 Acesso em: DD mês. AAAA.
 
 Projeto registrado no SisPPG/UFV sob nº 10356285004.
-Verificar autenticidade em: https://www.sisppg.ufv.br
+Verificar autenticidade em: http://sisppg.ufv.br
 ```
 
 ### Formato simplificado (para nota de rodapé):

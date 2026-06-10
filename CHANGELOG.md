@@ -23,18 +23,42 @@
 - `show_ready_message()` e `show_launch_button()` reexibidos após limpeza
 - `Ctrl+Shift+C` no ttyd para copiar (atalho padrão, funciona no Chrome)
 - `Ctrl+C` mantém SIGINT (interromper comandos)
+- Footer alterado para "UFV · Viçosa, MG - Brasil"
+
+### Provedores
+- Lista de provedores ordenada alfabeticamente
+- Adicionados **OpenCode Zen** (`OPENCODE_ZEN_API_KEY`) e **OpenCode Go** (`OPENCODE_GO_API_KEY`)
+
+### Registro SisPPG/UFV
+- Badge SisPPG com nº **10356285004** adicionado ao README
+- Citações ABNT atualizadas com nº de registro em README, MANUAL, citacao_pesquisai, declaracao_uso_ia
+- Rodapé do AGENTS.md com nº SisPPG
+- Notebooks atualizados com citação e badge
+- URL corrigida: `https://www.sisppg.ufv.br` → `http://sisppg.ufv.br`
+
+### Notebook
+- Loading animado via `IPython.display`
+- Repositório usa `git pull` se já existe (não recria toda execução)
+- `clear_output()` antes de rodar (interface mais limpa)
+- Markdown simplificado e reorganizado
 
 ### Arquivos Novos
 - `run_fast.py` — Versão otimizada com paralelismo e cache, substitui o fluxo do `main.py`
 - `CHANGELOG.md` — Este arquivo
+- `SisPPG - Sistema de Pesquisa e Pós-Graduação.pdf` — Comprovante de registro
 
 ### Alterações em Arquivos Existentes
 - `AGENTS.md` — Versão `v0.01` → `v0.2`
 - `.gitignore` — Criado
-- `MANUAL.md` — Numeração corrigida
-- `launch_app.py` — Função `load_keys_from_drive()` extraída
+- `MANUAL.md` — Numeração corrigida + citações com SisPPG
+- `launch_app.py` — Função `load_keys_from_drive()` extraída; provedores ordenados + Zen/Go
 - `progress_bar.py` — `finish()` com `clear_output(wait=True)`
 - `main.py` — Simplificado para delegar a `run_fast.py`
+- `README.md` — Badge SisPPG + citação atualizada
+- `citacao_pesquisai.md` — Citação com SisPPG
+- `declaracao_uso_ia.md` — Citação com SisPPG
+- `PesquisAI.ipynb` — Loading animado, git pull, markdown simplificado
+- `PesquisAI_Colab.ipynb` — Badge SisPPG
 
 ## v0.001 (2026-06-10)
 

@@ -766,7 +766,7 @@ Disponível em: https://colab.research.google.com/github/gustavobraga-byte/Pesqu
 Acesso em: DD mês. AAAA.
 
 Projeto registrado no SisPPG/UFV sob nº 10356285004.
-Verificar autenticidade em: https://www.sisppg.ufv.br
+Verificar autenticidade em: http://sisppg.ufv.br
 ```
 
 **Formato simplificado (nota de rodapé):**
@@ -876,7 +876,7 @@ Referência da ferramenta:
 BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para
 pesquisa científica. Versão 0.2. Viçosa: UFV, 2026. Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
-Registro SisPPG/UFV nº 10356285004 — https://www.sisppg.ufv.br
+Registro SisPPG/UFV nº 10356285004 — http://sisppg.ufv.br
 ```
 
 ### Modelo B — Materiais e Métodos (Artigo Científico)
