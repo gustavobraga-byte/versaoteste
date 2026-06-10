@@ -144,7 +144,6 @@ def run():
 
     try:
         launch()
-        progress.advance(3)
     except Exception as e:
         logger.error("Falha ao lançar interface: %s", e)
         print(f"\n❌ {_('launch_error')}")

@@ -629,8 +629,60 @@ def show_launch_button(banner_url):
     if not IN_COLAB or not display or not HTML:
         print(f"\n🎉 Acesse: {banner_url}")
         return
-    from html_template import render_launch_button_html
-    display(HTML(render_launch_button_html(banner_url)))
+
+    display(HTML(f"""
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500;700&family=Syne:wght@700;800&display=swap');
+  @keyframes pulse-glow {{
+    0%, 100% {{ box-shadow: 0 0 20px rgba(79,195,247,0.3), 0 4px 12px rgba(0,0,0,0.3); }}
+    50% {{ box-shadow: 0 0 40px rgba(79,195,247,0.6), 0 6px 20px rgba(0,0,0,0.4); }}
+  }}
+  .btn-container {{
+    display: flex; justify-content: center; padding: 20px; margin-top: 10px;
+  }}
+  .pesquisai-launch {{
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 16px; padding: 24px 56px;
+    font-family: "Syne", sans-serif; font-size: 22px; font-weight: 800;
+    letter-spacing: 0.08em; color: #0d0f10;
+    background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 50%, #03a9f4 100%);
+    border: none; border-radius: 14px; cursor: pointer; text-decoration: none;
+    animation: pulse-glow 2.5s ease-in-out infinite;
+    position: relative; overflow: hidden;
+  }}
+  .pesquisai-launch::before {{
+    content: ''; position: absolute; top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    transition: left 0.5s;
+  }}
+  .pesquisai-launch:hover::before {{ left: 100%; }}
+  .pesquisai-launch:hover {{
+    transform: translateY(-4px) scale(1.02); filter: brightness(1.1);
+    box-shadow: 0 12px 40px rgba(79,195,247,0.5), 0 8px 24px rgba(0,0,0,0.4);
+  }}
+  .pesquisai-launch:active {{ transform: translateY(-1px) scale(0.99); }}
+  .btn-icon {{ font-size: 28px; }}
+  .btn-text {{ display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }}
+  .btn-main {{ font-size: 22px; font-weight: 800; }}
+  .btn-sub {{
+    font-family: "DM Mono", monospace; font-size: 11px; font-weight: 500;
+    opacity: 0.8; letter-spacing: 0.1em;
+  }}
+  .arrow {{ font-size: 28px; font-weight: 500; transition: transform 0.2s ease; }}
+  .pesquisai-launch:hover .arrow {{ transform: translateX(8px); }}
+</style>
+<div class="btn-container">
+  <a href="{banner_url}" target="_blank" class="pesquisai-launch">
+    <span class="btn-icon">🚀</span>
+    <span class="btn-text">
+      <span class="btn-main">ABRIR O PESQUISAI</span>
+      <span class="btn-sub">clique para começar</span>
+    </span>
+    <span class="arrow">→</span>
+  </a>
+</div>
+"""))
 
 
 def cleanup():
