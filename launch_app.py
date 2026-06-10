@@ -119,7 +119,7 @@ def start_ttyd():
     opencode_bin, env = resolve_opencode()
     
     subprocess.Popen(
-        ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
+        ["ttyd", "--client-option", "copyOnSelect=true", "--client-option", 'keybindings={"Ctrl+C":"copySelection","Ctrl+Alt+C":"sendInterrupt"}', "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
@@ -966,7 +966,7 @@ def start_wrapper_server():
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
                 subprocess.Popen(
-                    ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
+                    ["ttyd", "--client-option", "copyOnSelect=true", "--client-option", 'keybindings={"Ctrl+C":"copySelection","Ctrl+Alt+C":"sendInterrupt"}', "--writable", "-p", str(TERMINAL_PORT),
                      "bash", "-i", "-c", bash_cmd],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
