@@ -1,5 +1,3 @@
-"""Configurações e constantes compartilhadas do PesquisAI."""
-
 import os
 import logging
 

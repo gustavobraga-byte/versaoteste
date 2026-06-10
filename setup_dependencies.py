@@ -1,63 +1,46 @@
-"""Instalação de dependências: OpenCode, uv, ferramentas de sistema e pacotes Python."""
-
 import os
 import json
 import subprocess
 import shutil
-import time
 
 from constants import THEME_DIR, AGENT_DIR, TUI_JSON, OPENCODE_CFG, logger
 from opencode_utils import find_opencode, ensure_opencode_in_path
 from jokes import next_joke
 
 
-def _retry(cmd, max_attempts=3, delay=2, check=True, **kw):
-    """Execute um comando shell com retry e exponential backoff."""
-    for attempt in range(1, max_attempts + 1):
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, **kw)
-        if result.returncode == 0:
-            return result
-        if attempt < max_attempts:
-            logger.warning("Tentativa %d/%d falhou. Tentando novamente em %ds...", attempt, max_attempts, delay)
-            time.sleep(delay)
-            delay *= 2
-    if check:
-        raise RuntimeError(f"Command failed after {max_attempts} attempts: {cmd}\n{result.stderr}")
+def run(cmd, check=True, **kw):
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, **kw)
+    if check and result.returncode != 0:
+        raise RuntimeError(f"Command failed: {cmd}\n{result.stderr}")
     return result
 
 
-def run(cmd, check=True, **kw):
-    """Execute um comando shell uma única vez (wrapper para _retry)."""
-    return _retry(cmd, max_attempts=1, check=check, **kw)
-
-
 def install_opencode():
-    """Instale o OpenCode CLI via curl, pip ou npm (fallback chain)."""
     print(next_joke("fisica"))
     print("📦 Instalando OpenCode...")
 
-    r1 = _retry("curl -fsSL https://opencode.ai/install | bash", max_attempts=3, check=False)
+    r1 = run("curl -fsSL https://opencode.ai/install | bash", check=False)
     if r1.returncode != 0:
         print("⚠️  Script oficial falhou. Tentando pip install opencode...")
-        r2 = _retry("pip install opencode", max_attempts=2, check=False)
+        r2 = run("pip install opencode", check=False)
         if r2.returncode != 0:
             print("⚠️  pip falhou. Tentando npm install -g @opencode/cli...")
-            r3 = _retry("npm install -g @opencode/cli", max_attempts=2, check=False)
+            r3 = run("npm install -g @opencode/cli", check=False)
             if r3.returncode != 0:
                 print("❌ Todas as tentativas de instalação do opencode falharam.")
                 return
 
     print(next_joke("fisica"))
     print("📦 Instalando uv...")
-    _retry("curl -LsSf https://astral.sh/uv/install.sh | sh", max_attempts=3, check=False)
+    run("curl -LsSf https://astral.sh/uv/install.sh | sh", check=False)
 
     print(next_joke("fisica"))
     print("📦 Instalando ferramentas de clipboard...")
-    _retry("apt-get update -qq && apt-get install -y -qq xclip xsel", max_attempts=3, check=False)
+    run("apt-get update -qq && apt-get install -y -qq xclip xsel", check=False)
 
     print(next_joke("fisica"))
     print("📦 Instalando dependências Python...")
-    _retry("pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib --quiet", max_attempts=3, check=False)
+    run("pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib --quiet", check=False)
 
     try:
         ensure_opencode_in_path()
@@ -68,14 +51,12 @@ def install_opencode():
 
 
 def create_directories():
-    """Crie os diretórios de configuração do OpenCode."""
     for d in [THEME_DIR, AGENT_DIR]:
         os.makedirs(d, exist_ok=True)
     os.makedirs(os.path.dirname(OPENCODE_CFG), exist_ok=True)
 
 
 def setup_theme():
-    """Configure o tema personalizado PesquisAI para o OpenCode."""
     pesquisai_theme = {
         "$schema": "https://opencode.ai/theme.json",
         "defs": {
@@ -157,7 +138,6 @@ def setup_theme():
 
 
 def setup_agent():
-    """Configure o agente PesquisAI como padrão no OpenCode."""
     agents_md_path = os.path.join(os.path.dirname(__file__), "AGENTS.md")
     if os.path.exists(agents_md_path):
         with open(agents_md_path, "r", encoding="utf-8") as f:
@@ -195,7 +175,6 @@ color: "#4fc3f7"
 
 
 def run_all():
-    """Execute o pipeline completo de instalação de dependências."""
     install_opencode()
     create_directories()
     setup_theme()

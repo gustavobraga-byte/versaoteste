@@ -1,5 +1,8 @@
 # 🔬 PesquisAI — Agente de IA para Pesquisadores Científicos
 
+ [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
+
+
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
 [![Abrir no Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
@@ -15,7 +18,7 @@ O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arq
 ## ✨ O que ele faz
 
 | Capacidade | Descrição |
-|---|---|---|
+|---|---|
 | 📊 **Dados IBGE** | Consulta e extração de dados estatísticos, demográficos e socioeconômicos |
 | 🏥 **Dados DataSUS** | Acesso e análise de dados públicos de saúde via OpenDataSUS |
 | 🌾 **Dados Agro & Ambientais** | Acesso a dados do agronegócio brasileiro e cadastro ambiental rural |

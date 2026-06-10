@@ -1,5 +1,3 @@
-"""Montagem e autenticação do Google Drive para o Colab."""
-
 import os
 
 from constants import DRIVE_PATH, MOUNT_PATH, FALLBACK_URL, logger
@@ -12,7 +10,6 @@ _already_authenticated = False
 
 
 def is_drive_mounted():
-    """Verifique se o Google Drive já está montado."""
     return os.path.exists(os.path.join(MOUNT_PATH, "My Drive"))
 
 
@@ -49,10 +46,9 @@ def mount_drive():
                 return folder_path, FALLBACK_URL
 
     os.makedirs(DRIVE_PATH, exist_ok=True)
-    _orig_cwd = os.getcwd()
     os.chdir(DRIVE_PATH)
     folder_path = DRIVE_PATH
-    print(f"📂 Diretório de trabalho: {os.getcwd()} (original: {_orig_cwd})")
+    print(f"📂 Diretório de trabalho: {os.getcwd()}")
 
     try:
         print(next_joke("astronomia"))
@@ -86,7 +82,6 @@ def mount_drive():
 
 
 def get_drive_info():
-    """Retorne o caminho e URL atuais do Drive."""
     return folder_path, url_direta
 
 

@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
+build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "pesquisai"
@@ -10,13 +10,10 @@ authors = [{ name = "Gustavo Bastos Braga", email = "gustavo.braga@ufv.br" }]
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
-    "google-api-python-client>=2.0,<3.0",
-    "google-auth-httplib2>=0.2,<1.0",
-    "google-auth-oauthlib>=1.0,<2.0",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
 ]
 
 [project.urls]
 Repository = "https://github.com/gustavobraga-byte/PesquisAI"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
