@@ -44,15 +44,17 @@ def run():
     try:
         print(f"\n{next_joke('administracao')}")
         progress(4, 4, "Iniciando servidores e interface web...")
-        from launch_app import launch, set_drive_info
+        from launch_app import launch, set_drive_info, show_ready_message, show_launch_button
         set_drive_info(folder_path, drive_url)
-        launch()
+        banner_url = launch()
     except Exception as e:
         logger.error("Falha ao lançar interface: %s", e)
         print("\n❌ Erro ao iniciar a interface web.")
+        return
 
     progress_finish()
-    print(f"\n ")
+    show_ready_message()
+    show_launch_button(banner_url)
 
 
 if __name__ == "__main__":

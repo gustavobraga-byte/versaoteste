@@ -2,12 +2,15 @@ import time
 
 IN_COLAB = False
 _handle = None
+_clear = None
 try:
-    from IPython.display import display, HTML
+    from IPython.display import display, HTML, clear_output
+    _clear = clear_output
     IN_COLAB = True
 except ImportError:
     display = None
     HTML = None
+    clear_output = None
 
 
 STAGES = [
@@ -86,5 +89,9 @@ def show(step=0, total=4, message="Iniciando..."):
 
 
 def finish():
-    show(step=4, total=4, message="Concluído!")
-    time.sleep(0.5)
+    global _handle
+    if IN_COLAB and _clear:
+        _clear(wait=True)
+        _handle = None
+    else:
+        print()
