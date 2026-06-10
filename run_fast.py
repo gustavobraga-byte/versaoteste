@@ -37,7 +37,13 @@ def _run(cmd, **kw):
 
 
 def _check_bin(name):
-    return shutil.which(name) is not None
+    if shutil.which(name):
+        return True
+    for d in ["~/.local/bin", "~/.npm-global/bin", "~/.opencode/bin", "/usr/local/bin"]:
+        path = os.path.expanduser(os.path.join(d, name))
+        if os.path.isfile(path):
+            return True
+    return False
 
 
 # ── Etapa 1: Google Drive ────────────────────────────────────
@@ -88,8 +94,6 @@ def _install_opencode_if_missing():
     print("📦 Instalando OpenCode...")
     for cmd in [
         "curl -fsSL https://opencode.ai/install | bash",
-        "pip install opencode --quiet",
-        "npm install -g @opencode/cli",
     ]:
         r = _run(cmd, check=False)
         if r.returncode == 0 and _check_bin("opencode"):
@@ -203,7 +207,7 @@ def _setup_theme_and_agent():
     content = open(agents_md, encoding="utf-8").read() if os.path.exists(agents_md) else "# PesquisAI"
     agent_md = f"""---
 name: PesquisAI
-description: Agente de pesquisa científica com foco em dados brasileiros (IBGE, DataSUS), normas ABNT/UFV e integridade científica.
+description: Agente de pesquisa científica com foco em dados brasileiros (IBGE, DataSUS e outros), normas ABNT/UFV e integridade científica.
 color: "#4fc3f7"
 ---
 {content}
@@ -325,7 +329,7 @@ def run():
     setup_launch(folder_path, drive_url)
 
     elapsed = time.time() - t0
-    print(f"\n⚡ Inicializado em {elapsed:.0f}s (com otimizações paralelas)")
+    print(f"\n⚡ Inicializado em {elapsed:.0f}s ")
     print(f"\n ")
 
 

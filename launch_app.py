@@ -119,7 +119,7 @@ def start_ttyd():
     opencode_bin, env = resolve_opencode()
     
     subprocess.Popen(
-       ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
+        ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
@@ -346,7 +346,7 @@ def create_wrapper_html(terminal_url, drive_url):
   <div id="topbar">
     <div class="logo">
       <span class="logo-p">Pesquis</span><span class="logo-ai">AI</span>
-      <span class="logo-tag">v1.0</span>
+      <span class="logo-tag">v0.2</span>
     </div>
 
     <div class="status">

@@ -189,6 +189,6 @@ Parágrafo com dado, fonte, ano e nota metodológica. Caso os dados não sejam r
 
 ---
 
-*PesquisAI · v1.0 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*
+*PesquisAI · v0.2 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*
 
 [📘 Diretrizes do Agente](AGENTS.md)

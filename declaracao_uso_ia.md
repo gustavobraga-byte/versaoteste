@@ -54,7 +54,7 @@ Ethics (COPE).
 
 Referência da ferramenta:
 BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para
-pesquisa científica. Versão 1.0. Viçosa: UFV, 2026. Disponível em:
+pesquisa científica. Versão 0.2. Viçosa: UFV, 2026. Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 ```
 
