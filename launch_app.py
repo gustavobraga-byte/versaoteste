@@ -119,7 +119,7 @@ def start_ttyd():
     opencode_bin, env = resolve_opencode()
     
     subprocess.Popen(
-        ["ttyd", "--client-option", "copyOnSelect=true", "--client-option", 'keybindings={"Ctrl+C":"copySelection","Ctrl+Alt+C":"sendInterrupt"}', "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
+        ["ttyd", "--client-option", "copyOnSelect=true", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
@@ -137,6 +137,7 @@ def create_wrapper_html(terminal_url, drive_url):
   <title>PesquisAI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
@@ -966,7 +967,7 @@ def start_wrapper_server():
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
                 subprocess.Popen(
-                    ["ttyd", "--client-option", "copyOnSelect=true", "--client-option", 'keybindings={"Ctrl+C":"copySelection","Ctrl+Alt+C":"sendInterrupt"}', "--writable", "-p", str(TERMINAL_PORT),
+                    ["ttyd", "--client-option", "copyOnSelect=true", "--writable", "-p", str(TERMINAL_PORT),
                      "bash", "-i", "-c", bash_cmd],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
