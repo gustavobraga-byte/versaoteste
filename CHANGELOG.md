@@ -47,8 +47,12 @@
 - `CHANGELOG.md` — Este arquivo
 - `SisPPG - Sistema de Pesquisa e Pós-Graduação.pdf` — Comprovante de registro
 
+### Integridade de Referências
+- AGENTS.md — Nova seção `3.1 Sub-fluxo de Verificação de Referências` com 4 subpassos (rastreamento, confirmação de 3 campos, link/DOI obrigatório, inclusão) e regra de ouro contra fabricação
+- `run_fast.py` — Descrição do agente atualizada para incluir "verificação obrigatória de referências"
+
 ### Alterações em Arquivos Existentes
-- `AGENTS.md` — Versão `v0.01` → `v0.2`
+- `AGENTS.md` — Versão `v0.01` → `v0.2`; seção 3.1 adicionada
 - `.gitignore` — Criado
 - `MANUAL.md` — Numeração corrigida + citações com SisPPG
 - `launch_app.py` — Função `load_keys_from_drive()` extraída; provedores ordenados + Zen/Go
