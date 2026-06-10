@@ -207,7 +207,7 @@ def _setup_theme_and_agent():
     content = open(agents_md, encoding="utf-8").read() if os.path.exists(agents_md) else "# PesquisAI"
     agent_md = f"""---
 name: PesquisAI
-description: Agente de pesquisa científica com foco em dados brasileiros (IBGE, DataSUS e outros), normas ABNT/UFV e integridade científica.
+description: Agente de pesquisa científica com foco em dados brasileiros (IBGE, DataSUS), normas ABNT/UFV, verificação obrigatória de referências (rastreamento, confirmação de 3 campos, DOI/link), integridade científica.
 color: "#4fc3f7"
 ---
 {content}

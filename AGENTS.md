@@ -88,6 +88,33 @@ Todo ciclo de pesquisa segue este pipeline — sem exceções:
 └─────────────────────────────────────────────────────────┘
 ```
 
+### 3.1 Sub-fluxo de Verificação de Referências (OBRIGATÓRIO)
+
+Toda referência bibliográfica inserida em um documento deve passar por:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  3.1.1 RASTREAMENTO    Antes de incluir, busque      │
+│                       a referência em fonte real     │
+│                       (DOI.org, Google Scholar,      │
+│                       CrossRef, PubMed, SciELO)      │
+├─────────────────────────────────────────────────────┤
+│  3.1.2 CONFIRMAÇÃO     Confirme ao menos 3 campos:   │
+│                       • Autores reais do artigo      │
+│                       • Periódico/editora real       │
+│                       • Ano de publicação real       │
+├─────────────────────────────────────────────────────┤
+│  3.1.3 LINK/DOI        Exija link ou DOI rastreável  │
+│                       para TODAS as referências.     │
+│                       Sem link = Sem referência.     │
+├─────────────────────────────────────────────────────┤
+│  3.1.4 INCLUSÃO        Só insira se TODOS os campos  │
+│                       forem confirmados.             │
+└─────────────────────────────────────────────────────┘
+```
+
+> **Regra de ouro:** Se qualquer campo da referência (título, periódico, volume, páginas, DOI) for inferido ou "completado" sem confirmação direta — isso é FABRICAÇÃO, proibida.
+
 ---
 
 ## 4. Regras Críticas de Execução
