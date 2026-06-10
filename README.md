@@ -9,6 +9,7 @@
 [![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
+[![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](https://www.sisppg.ufv.br)
 
 O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arquitetura **OpenCode**, projetado especificamente para pesquisadores, acadêmicos e cientistas. Ele automatiza etapas que vão do levantamento bibliográfico à estruturação de artigos, integrando fontes de dados públicos do Brasil.
 
@@ -149,6 +150,9 @@ BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para pesqui
 científica. Versão 0.2. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
+
+Projeto registrado no SisPPG/UFV sob nº 10356285004.
+Verificar autenticidade em: https://www.sisppg.ufv.br
 ```
 
 **BibTeX:**

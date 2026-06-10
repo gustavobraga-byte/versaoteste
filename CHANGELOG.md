@@ -21,8 +21,7 @@
 - **Item 30** — Barra de progresso com `display_id=True` (sem acumular HTML)
 - `clear_output(wait=True)` ao final para limpar textos de setup, restando apenas o botão de launch
 - `show_ready_message()` e `show_launch_button()` reexibidos após limpeza
-- `copyOnSelect=true` no ttyd — selecionar texto com mouse copia automaticamente
-- `Ctrl+Shift+C` para copiar (atalho padrão do ttyd, funciona no Chrome)
+- `Ctrl+Shift+C` no ttyd para copiar (atalho padrão, funciona no Chrome)
 - `Ctrl+C` mantém SIGINT (interromper comandos)
 
 ### Arquivos Novos

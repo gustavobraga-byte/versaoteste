@@ -119,7 +119,7 @@ def start_ttyd():
     opencode_bin, env = resolve_opencode()
     
     subprocess.Popen(
-        ["ttyd", "--client-option", "copyOnSelect=true", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
+        ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
@@ -593,19 +593,21 @@ def create_wrapper_html(terminal_url, drive_url):
 
     /* ── Provider list (all opencode-compatible) ───────────────── */
     const PROVIDERS = [
-      {{ id:"anthropic",    name:"Anthropic",       env:"ANTHROPIC_API_KEY",      hint:"sk-ant-…"    }},
-      {{ id:"openai",       name:"OpenAI",           env:"OPENAI_API_KEY",         hint:"sk-…"        }},
-      {{ id:"google",       name:"Google Gemini",    env:"GOOGLE_GENERATIVE_AI_API_KEY",         hint:"AIza…"       }},
-      {{ id:"groq",         name:"Groq",             env:"GROQ_API_KEY",           hint:"gsk_…"       }},
-      {{ id:"mistral",      name:"Mistral",          env:"MISTRAL_API_KEY",        hint:"…"           }},
-      {{ id:"xai",          name:"xAI (Grok)",       env:"XAI_API_KEY",            hint:"xai-…"       }},
-      {{ id:"deepseek",     name:"DeepSeek",         env:"DEEPSEEK_API_KEY",       hint:"sk-…"        }},
-      {{ id:"openrouter",   name:"OpenRouter",       env:"OPENROUTER_API_KEY",     hint:"sk-or-…"     }},
-      {{ id:"nvidia",       name:"Nvidia NIM",       env:"NVIDIA_API_KEY",         hint:"nvapi-…"     }},
-      {{ id:"together",     name:"Together AI",      env:"TOGETHER_API_KEY",       hint:"…"           }},
-      {{ id:"bedrock",      name:"AWS Bedrock",      env:"AWS_ACCESS_KEY_ID",      hint:"AKIA…"       }},
-      {{ id:"azure",        name:"Azure OpenAI",     env:"AZURE_OPENAI_API_KEY",   hint:"…"           }},
-      {{ id:"vertex",       name:"Vertex AI",        env:"VERTEX_API_KEY",         hint:"…"           }},
+      {{ id:"anthropic",    name:"Anthropic",             env:"ANTHROPIC_API_KEY",          hint:"sk-ant-…"    }},
+      {{ id:"bedrock",      name:"AWS Bedrock",           env:"AWS_ACCESS_KEY_ID",          hint:"AKIA…"       }},
+      {{ id:"azure",        name:"Azure OpenAI",          env:"AZURE_OPENAI_API_KEY",       hint:"…"           }},
+      {{ id:"deepseek",     name:"DeepSeek",              env:"DEEPSEEK_API_KEY",           hint:"sk-…"        }},
+      {{ id:"google",       name:"Google Gemini",         env:"GOOGLE_GENERATIVE_AI_API_KEY",         hint:"AIza…"       }},
+      {{ id:"groq",         name:"Groq",                  env:"GROQ_API_KEY",               hint:"gsk_…"       }},
+      {{ id:"mistral",      name:"Mistral",               env:"MISTRAL_API_KEY",            hint:"…"           }},
+      {{ id:"nvidia",       name:"Nvidia NIM",            env:"NVIDIA_API_KEY",             hint:"nvapi-…"     }},
+      {{ id:"openai",       name:"OpenAI",                env:"OPENAI_API_KEY",             hint:"sk-…"        }},
+      {{ id:"opencode_go",  name:"OpenCode Go",           env:"OPENCODE_GO_API_KEY",        hint:"sk-…"        }},
+      {{ id:"opencode_zen", name:"OpenCode Zen",          env:"OPENCODE_ZEN_API_KEY",       hint:"sk-…"        }},
+      {{ id:"openrouter",   name:"OpenRouter",            env:"OPENROUTER_API_KEY",         hint:"sk-or-…"     }},
+      {{ id:"together",     name:"Together AI",           env:"TOGETHER_API_KEY",           hint:"…"           }},
+      {{ id:"vertex",       name:"Vertex AI",             env:"VERTEX_API_KEY",             hint:"…"           }},
+      {{ id:"xai",          name:"xAI (Grok)",            env:"XAI_API_KEY",                hint:"xai-…"       }},
     ]
 
     let _selProv = null;
@@ -967,7 +969,7 @@ def start_wrapper_server():
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
                 subprocess.Popen(
-                    ["ttyd", "--client-option", "copyOnSelect=true", "--writable", "-p", str(TERMINAL_PORT),
+                    ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
                      "bash", "-i", "-c", bash_cmd],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
