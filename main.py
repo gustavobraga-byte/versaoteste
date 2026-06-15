@@ -1,11 +1,15 @@
-"""PesquisAI - entry point.
+"""
+main.py — Ponto de entrada principal do PesquisAI.
 
-Run via:
+Delega para run_fast.py (versão otimizada).
 
+Uso:
     python main.py
+    # ou
+    from main import run
 """
 
-from pesquisai.run import run
+from run_fast import run
 
 if __name__ == "__main__":
     run()
