@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pesquisai"
+version = "0.3.0"
+description = "Agente de IA para Pesquisa Cientifica com foco em dados brasileiros"
+authors = [{ name = "Gustavo Bastos Braga", email = "gustavo.braga@ufv.br" }]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.urls]
+Repository = "https://github.com/gustavobraga-byte/PesquisAI"
+
+[tool.setuptools.packages.find]
+include = ["pesquisai*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
