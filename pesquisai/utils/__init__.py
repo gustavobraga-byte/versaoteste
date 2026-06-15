@@ -1,3 +1,0 @@
-"""
-PesquisAI - Utilitários
-"""
