@@ -154,7 +154,8 @@ def _install_python_deps() -> None:
     """Instala dependências Python necessárias."""
     _run(
         "pip install --quiet --no-cache-dir "
-        "google-api-python-client google-auth-httplib2 google-auth-oauthlib",
+        "google-api-python-client google-auth-httplib2 google-auth-oauthlib "
+        "cryptography",
         check=False,
     )
 

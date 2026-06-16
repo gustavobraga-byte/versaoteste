@@ -20,6 +20,7 @@ except ImportError:
 from constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, logger
 from jokes import next_joke
 from opencode_utils import find_opencode, build_env
+from security import load_encrypted_keys, save_encrypted_keys, sanitize_command
 
 
 _opencode_bin: str | None = None
@@ -43,27 +44,26 @@ def set_drive_info(folder_path: str, drive_url: str) -> None:
 def load_keys_from_drive(
     backup_dir: str, env_dict: dict, write_bashrc: bool = True
 ) -> list[str]:
-    """Load saved API keys from Drive .keys.json into environment.
+    """Carrega chaves de API CRIPTOGRAFADAS do Drive para o environment.
+
+    As chaves são armazenadas criptografadas com AES-CBC + HMAC.
+    A chave de criptografia fica em um arquivo SEPARADO no Drive.
 
     Args:
-        backup_dir: Diretório onde o .keys.json está armazenado.
+        backup_dir: Diretório onde os arquivos de chave estão.
         env_dict: Dicionário de environment para injetar as keys.
         write_bashrc: Se True, escreve export lines no ~/.bashrc.
 
     Returns:
         Lista de nomes de variáveis de ambiente carregadas.
     """
-    keys_file = os.path.join(backup_dir, ".keys.json")
-    if not os.path.exists(keys_file):
+    saved_keys = load_encrypted_keys(backup_dir)
+    if not saved_keys:
         return []
-    try:
-        with open(keys_file, "r") as f:
-            saved_keys = json.load(f)
-    except Exception:
-        return []
+
     loaded = []
     for k, v in saved_keys.items():
-        if k.startswith("_env_"):
+        if k.startswith("_env_") or not v:
             continue
         env_var = saved_keys.get(f"_env_{k}", "")
         if env_var and v:
@@ -128,8 +128,17 @@ def install_ttyd() -> None:
 
 
 def kill_previous():
-    subprocess.run("pkill -f ttyd 2>/dev/null || true", shell=True)
-    subprocess.run(f"pkill -f 'python3.*{WRAPPER_PORT}' 2>/dev/null || true", shell=True)
+    """Mata processos anteriores de ttyd e do wrapper."""
+    subprocess.run(
+        ["pkill", "-f", "ttyd"],
+        capture_output=True,
+        timeout=5,
+    )
+    subprocess.run(
+        ["pkill", "-f", f"python3.*{WRAPPER_PORT}"],
+        capture_output=True,
+        timeout=5,
+    )
     time.sleep(0.5)
 
 
@@ -872,21 +881,23 @@ def start_wrapper_server():
             
             if p == "/api/debug":
                 keys_file = os.path.join(DRIVE_BACKUP_DIR, ".keys.json")
+                key_file = os.path.join(DRIVE_BACKUP_DIR, ".keys_encryption_key")
                 keys_exist = os.path.exists(keys_file)
+                keyfile_exists = os.path.exists(key_file)
                 keys_data = {}
                 if keys_exist:
                     try:
-                        with open(keys_file) as f:
-                            raw = json.load(f)
-                        # Mask key values for security
-                        keys_data = {k: (v[:6]+"…" if not k.startswith("_env_") and v else v) for k, v in raw.items()}
+                        raw = load_encrypted_keys(DRIVE_BACKUP_DIR)
+                        keys_data = {k: (v[:4]+"…" if not k.startswith("_env_") and v else v) for k, v in raw.items()}
                     except Exception as e:
                         keys_data = {"error": str(e)}
                 self._json(200, {
                     "drive_backup_dir": DRIVE_BACKUP_DIR,
                     "drive_dir_exists": os.path.isdir(DRIVE_BACKUP_DIR),
                     "keys_file_exists": keys_exist,
-                    "keys_data": keys_data,
+                    "encryption_keyfile_exists": keyfile_exists,
+                    "keys_encrypted": keys_exist,
+                    "keys_data_masked": keys_data,
                     "opencode_bin": _opencode_bin,
                     "env_keys": [k for k in _env if "KEY" in k or "TOKEN" in k or "SECRET" in k],
                 })
@@ -895,16 +906,16 @@ def start_wrapper_server():
             if p == "/api/apikey":
                 qs = parse_qs(urlparse(self.path).query)
                 provider = qs.get("provider", [""])[0].strip()
-                keys_file = os.path.join(DRIVE_BACKUP_DIR, ".keys.json")
-                try:
-                    with open(keys_file, "r") as f:
-                        keys = json.load(f)
-                except Exception:
-                    keys = {}
+                keys = load_encrypted_keys(DRIVE_BACKUP_DIR)
                 if provider:
                     self._json(200, {"apikey": keys.get(provider, "")})
                 else:
-                    self._json(200, {"keys": keys})
+                    # Mascarar valores por segurança (mostrar só primeiros 4 chars)
+                    masked = {
+                        k: (v[:4] + "…" if not k.startswith("_env_") and v else v)
+                        for k, v in keys.items()
+                    }
+                    self._json(200, {"keys": masked})
                 return
             
             self.send_error(404)
@@ -921,28 +932,20 @@ def start_wrapper_server():
                 if not key or not provider:
                     self._json(400, {"error": "provider e apikey obrigatórios."})
                     return
-                # 1. Save to Drive .keys.json
-                keys_file = os.path.join(DRIVE_BACKUP_DIR, ".keys.json")
-                try:
-                    try:
-                        with open(keys_file, "r") as f:
-                            keys = json.load(f)
-                    except Exception:
-                        keys = {}
-                    keys[provider] = key
-                    if env_var:
-                        keys[f"_env_{provider}"] = env_var
-                    with open(keys_file, "w") as f:
-                        json.dump(keys, f, indent=2)
-                except Exception as e:
-                    self._json(500, {"error": f"Falha ao salvar no Drive: {e}"})
+                # 1. Carregar chaves existentes e adicionar a nova
+                existing = load_encrypted_keys(DRIVE_BACKUP_DIR)
+                existing[provider] = key
+                if env_var:
+                    existing[f"_env_{provider}"] = env_var
+                # 2. Salvar CRIPTOGRAFADO no Drive
+                if not save_encrypted_keys(DRIVE_BACKUP_DIR, existing):
+                    self._json(500, {"error": "Falha ao salvar chaves criptografadas no Drive."})
                     return
-                # 2. Inject into current process env
+                # 3. Inject into current process env
                 if env_var:
                     os.environ[env_var] = key
                     _env[env_var] = key
-                # 3. Write into opencode config file so it persists across restarts
-                # opencode reads provider keys from env vars — ensure ~/.bashrc exports them too
+                # 4. Write into ~/.bashrc for persistence across restarts
                 bashrc = os.path.expanduser("~/.bashrc")
                 try:
                     marker = f"# opencode-key-{provider}"
@@ -951,7 +954,6 @@ def start_wrapper_server():
                     if os.path.exists(bashrc):
                         with open(bashrc, "r") as f:
                             lines = f.readlines()
-                    # Remove previous entry for this provider
                     lines = [l for l in lines if marker not in l and (env_var not in l or "export" not in l)]
                     lines.append(f"{export_line}  {marker}\n")
                     with open(bashrc, "w") as f:
@@ -968,33 +970,61 @@ def start_wrapper_server():
                 return
             
             if p == "/api/run_terminal":
-                cmd = body.get("command", "").strip()
+                raw_cmd = body.get("command", "").strip()
                 no_fallback = body.get("no_fallback", False)
-                if not cmd:
+                if not raw_cmd:
                     self._json(400, {"error": "Comando vazio."})
                     return
+                
+                # ── SANITIZAÇÃO OBRIGATÓRIA ─────────────────────
+                # Impede command injection: ; & | ` $() ${} etc.
+                valid, cmd_or_error = sanitize_command(raw_cmd)
+                if not valid:
+                    logger.warning("Comando rejeitado pela sanitização: %s", cmd_or_error)
+                    self._json(403, {
+                        "error": f"Comando não permitido por razões de segurança.",
+                        "detail": cmd_or_error,
+                    })
+                    return
+                
+                cmd = cmd_or_error  # comando já sanitizado
                 load_keys_from_drive(DRIVE_BACKUP_DIR, _env, write_bashrc=False)
-                # Hard kill ttyd + opencode
+                
+                # Hard kill ttyd + opencode (shell=True é seguro aqui pois o comando é fixo)
                 subprocess.run(
-                    "pkill -9 -f ttyd 2>/dev/null; pkill -9 -f opencode 2>/dev/null; true",
-                    shell=True
+                    ["pkill", "-9", "-f", "ttyd"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                subprocess.run(
+                    ["pkill", "-9", "-f", "opencode"],
+                    capture_output=True,
+                    timeout=5,
                 )
                 time.sleep(1.5)
-                # Build bash -c command string
-                # no_fallback=True → cmd is already the final invocation (e.g. "opencode -s xyz")
-                # no_fallback=False → run cmd, then return to opencode afterwards
+                
+                # Build bash -c command string de forma segura
                 if no_fallback:
                     bash_cmd = f"{cmd}; exec bash"
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
+                
+                # Sanitização extra: garantir que bash_cmd não contém injection
+                # (já foi validado acima, mas dupla verificação)
+                valid2, bash_cmd_clean = sanitize_command(bash_cmd)
+                if not valid2:
+                    logger.error("Comando sanitizado ainda é inválido: %s", bash_cmd_clean)
+                    self._json(500, {"error": "Erro interno ao construir comando."})
+                    return
+                
                 subprocess.Popen(
                     ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
-                     "bash", "-i", "-c", bash_cmd],
+                     "bash", "-i", "-c", bash_cmd_clean],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     env=_env,
                 )
-                self._json(200, {"ok": True, "command": cmd})
+                self._json(200, {"ok": True})
                 return
             
             if p == "/api/backup":

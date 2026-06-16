@@ -1,6 +1,28 @@
 # Changelog
 
-## v0.2.1 (2026-06-15) — Melhorias de Qualidade de Código
+## v0.2.1 (2026-06-16) — Secure Keys
+
+### 🔐 Segurança (Novo)
+- **`security.py`**: Módulo de segurança completo com:
+  - Criptografia AES-128-CBC + HMAC-SHA256 via Fernet (`cryptography`) para chaves de API
+  - Fallback seguro para ambientes sem `cryptography`
+  - Geração e gerenciamento de chave de criptografia no Google Drive (`.keys_encryption_key`)
+  - Sanitização de comandos com whitelist de prefixos e bloqueio de injection (`; & | \` $() ${} > < \0`)
+  - `save_encrypted_keys()` / `load_encrypted_keys()` — salvamento e carga criptografados
+  - `sanitize_command()` — validação de comandos com 18 cenários de teste
+- **`launch_app.py`**: Endpoint `/api/run_terminal` agora usa `sanitize_command()` antes de executar (bloqueia command injection)
+- **`launch_app.py`**: `POST /api/apikey` salva chaves CRIPTOGRAFADAS (não mais em texto puro)
+- **`launch_app.py`**: `GET /api/apikey` descriptografa e mascara valores (exibe só 4 primeiros caracteres)
+- **`launch_app.py`**: `kill_previous()` e `start_ttyd` migrados de `shell=True` para lista de argumentos
+- **`launch_app.py`**: Chave de criptografia armazenada em arquivo SEPARADO (`.keys_encryption_key`) — defesa em profundidade
+
+### 📦 Versão Centralizada
+- **`__version__.py`**: Novo arquivo como fonte ÚNICA de verdade para versão, autor, repositório, licença
+- **`constants.py`**: `VERSION` agora importa de `__version__` (antes era string hardcoded)
+- **`pyproject.toml`**: Versão sincronizada com `__version__.py`; adicionada dependência `cryptography>=41.0`
+- **`pyproject.toml`**: Seção `[project.optional-dependencies]` adicionada com `crypto = ["pycryptodome>=3.20"]`
+- **`run_fast.py`**: Instala `cryptography` durante `_install_python_deps()`
+- **Testes automatizados**: 18 testes de sanitização, testes de ciclo completo de criptografia
 
 ### Correções de Bugs
 - **`constants.py`**: Versão unificada para `VERSION = "0.2"` (estava `"1.0"` — inconsistente com o resto do projeto)

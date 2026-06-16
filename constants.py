@@ -2,26 +2,27 @@
 constants.py — Constantes e configurações centralizadas do PesquisAI.
 
 Todas as paths, versões, listas de skills e configurações do sistema
-são definidas aqui como única fonte de verdade.
+são definidas aqui. A VERSÃO é importada de __version__.py (fonte única).
 """
 
 import os
 import logging
 from typing import ClassVar
 
+from __version__ import (
+    __version__ as VERSION,
+    __author__ as AUTHOR_NAME,
+    __author_email__ as AUTHOR_EMAIL,
+    __institution__ as INSTITUTION,
+    __registry__ as SISPPG_REGISTRY,
+    __repo_url__ as REPO_URL,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger("pesquisai")
-
-# ── Identidade ──────────────────────────────────────────────
-REPO_URL: str = "https://github.com/gustavobraga-byte/PesquisAI.git"
-AUTHOR_NAME: str = "Gustavo Bastos Braga"
-AUTHOR_EMAIL: str = "gustavo.braga@ufv.br"
-INSTITUTION: str = "Universidade Federal de Viçosa (UFV)"
-VERSION: str = "0.2"  # Fonte única de verdade — sincronizada com pyproject.toml
-SISPPG_REGISTRY: str = "10356285004"
 
 # ── Google Drive ───────────────────────────────────────────
 DRIVE_FOLDER: str = "PesquisAI"
