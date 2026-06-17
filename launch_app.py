@@ -879,9 +879,44 @@ def start_wrapper_server():
                 self._json(200, {"backups": files})
                 return
             
+            if p == "/api/diagnose":
+                # Endpoint de diagnóstico completo
+                keys_file_new = os.path.join(DRIVE_BACKUP_DIR, "keys_store.json")
+                keys_file_old = os.path.join(DRIVE_BACKUP_DIR, ".keys.json")
+                keyfile_new = os.path.join(DRIVE_BACKUP_DIR, "keys_encryption_key.bin")
+                keyfile_old = os.path.join(DRIVE_BACKUP_DIR, ".keys_encryption_key")
+                
+                diag = {
+                    "drive_backup_dir": DRIVE_BACKUP_DIR,
+                    "drive_mounted": os.path.ismount("/content/drive"),
+                    "backup_dir_exists": os.path.isdir(DRIVE_BACKUP_DIR),
+                    "keys_store_new_exists": os.path.exists(keys_file_new),
+                    "keys_store_old_exists": os.path.exists(keys_file_old),
+                    "encryption_key_new_exists": os.path.exists(keyfile_new),
+                    "encryption_key_old_exists": os.path.exists(keyfile_old),
+                    "keys_loaded_count": len(_loaded_keys),
+                    "keys_loaded": _loaded_keys,
+                    "opencode_bin": _opencode_bin,
+                    "env_keys_found": [
+                        k for k in sorted(os.environ)
+                        if any(x in k for x in ["KEY", "TOKEN", "SECRET", "API"])
+                    ],
+                    "bashrc_has_keys": False,
+                }
+                # Verifica se .bashrc tem exports de keys
+                bashrc = os.path.expanduser("~/.bashrc")
+                if os.path.exists(bashrc):
+                    with open(bashrc) as f:
+                        content = f.read()
+                    diag["bashrc_has_keys"] = "opencode-key-" in content
+                    diag["bashrc_key_count"] = content.count("opencode-key-")
+                
+                self._json(200, diag)
+                return
+            
             if p == "/api/debug":
-                keys_file = os.path.join(DRIVE_BACKUP_DIR, ".keys.json")
-                key_file = os.path.join(DRIVE_BACKUP_DIR, ".keys_encryption_key")
+                keys_file = os.path.join(DRIVE_BACKUP_DIR, "keys_store.json")
+                key_file = os.path.join(DRIVE_BACKUP_DIR, "keys_encryption_key.bin")
                 keys_exist = os.path.exists(keys_file)
                 keyfile_exists = os.path.exists(key_file)
                 keys_data = {}
@@ -1337,6 +1372,43 @@ def launch():
     global _drive_url
     
     resolve_opencode()
+    
+    # ═══ CARREGAR CHAVES ANTES DE INICIAR O TERMINAL ═══
+    # Determina o diretório de backup para carregar as chaves
+    _pesquisai_drive = "/content/drive/My Drive/PesquisAI"
+    if os.path.isdir(_pesquisai_drive):
+        _base = _pesquisai_drive
+    elif os.path.isdir(_folder_path) and "drive" in _folder_path.lower():
+        _base = _folder_path
+    else:
+        _base = _folder_path
+    _pre_backup_dir = os.path.join(_base, "backups")
+    os.makedirs(_pre_backup_dir, exist_ok=True)
+    
+    # Carrega chaves criptografadas do Drive ANTES do terminal
+    _pre_loaded = load_keys_from_drive(_pre_backup_dir, _env, write_bashrc=True)
+    if _pre_loaded:
+        print(f"🔑 Keys carregadas do Drive: {', '.join(_pre_loaded)}")
+    else:
+        # Verifica se os arquivos existem para dar diagnóstico
+        _keys_file = os.path.join(_pre_backup_dir, "keys_store.json")
+        _old_keys_file = os.path.join(_pre_backup_dir, ".keys.json")
+        _keyfile = os.path.join(_pre_backup_dir, "keys_encryption_key.bin")
+        _old_keyfile = os.path.join(_pre_backup_dir, ".keys_encryption_key")
+        
+        if os.path.exists(_keys_file) or os.path.exists(_old_keys_file):
+            print(
+                "⚠️  Arquivo de chaves encontrado, mas não foi possível "
+                "descriptografar. A chave de criptografia pode estar corrompida. "
+                "Use '+ provedor' para reconfigurar."
+            )
+        else:
+            print(
+                "ℹ️  Nenhuma API key configurada. "
+                "Use o botão '+ provedor' na interface para adicionar."
+            )
+    # ═══════════════════════════════════════════════════
+    
     install_ttyd()
     kill_previous()
     start_ttyd()

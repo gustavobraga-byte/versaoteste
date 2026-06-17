@@ -19,8 +19,11 @@ Se você encontrar uma vulnerabilidade de segurança, **por favor, não abra uma
 ### API Keys
 
 - O PesquisAI **não envia** suas API keys para servidores externos.
-- As keys são armazenadas localmente no seu Google Drive em `PesquisAI/backups/.keys.json`.
-- **⚠️ Recomendação:** este arquivo contém suas chaves em texto plano. Proteja sua conta Google.
+- As keys são criptografadas (AES-128-CBC + HMAC-SHA256) e armazenadas no seu Google Drive em:
+  - `PesquisAI/backups/keys_store.json` — chaves criptografadas
+  - `PesquisAI/backups/keys_encryption_key.bin` — chave de criptografia (arquivo SEPARADO)
+- **🔒 Defesa em profundidade:** um invasor precisa de AMBOS os arquivos para obter as keys.
+- **⚠️ Recomendação:** proteja sua conta Google com autenticação de dois fatores.
 
 ### Dados
 
@@ -38,7 +41,7 @@ O PesquisAI segue princípios de *Privacy by Design*:
 ## Boas Práticas para Usuários
 
 1. 🔑 **Não compartilhe** chaves de API ou tokens
-2. 🗑️ **Remova** o arquivo `.keys.json` do Drive quando não for mais necessário
+2. 🗑️ **Remova** os arquivos `keys_store.json` e `keys_encryption_key.bin` do Drive quando não for mais necessário
 3. 🔐 **Use senha forte** na sua conta Google
 4. 👁️ **Revise** os arquivos gerados antes de compartilhá-los
 5. 🔄 **Mantenha** o repositório atualizado

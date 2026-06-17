@@ -23,8 +23,11 @@ from typing import Optional
 logger = logging.getLogger("pesquisai.security")
 
 # ── Arquivos no Drive ────────────────────────────────────────
-KEYS_FILENAME: str = ".keys.json"
-KEYFILE_FILENAME: str = ".keys_encryption_key"
+# ATENÇÃO: NÃO use nomes começando com ponto! O Google Drive FUSE
+# no Colab tem problemas com dotfiles — eles podem não ser visíveis
+# após remontagem. Usamos nomes sem ponto + extensão explícita.
+KEYS_FILENAME: str = "keys_store.json"
+KEYFILE_FILENAME: str = "keys_encryption_key.bin"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -214,13 +217,43 @@ def decrypt_data(key: bytes, token: str) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 def _get_keyfile_path(backup_dir: str) -> str:
-    """Caminho no Drive para o arquivo de chave de criptografia."""
-    return os.path.join(backup_dir, KEYFILE_FILENAME)
+    """Caminho no Drive para o arquivo de chave de criptografia.
+
+    Tenta o nome novo primeiro (sem ponto). Se não existir,
+    tenta o nome antigo (.keys_encryption_key) para compatibilidade.
+    """
+    new_path = os.path.join(backup_dir, KEYFILE_FILENAME)
+    if os.path.exists(new_path):
+        return new_path
+    # Compatibilidade retroativa: nome antigo com ponto
+    old_path = os.path.join(backup_dir, ".keys_encryption_key")
+    if os.path.exists(old_path):
+        logger.warning(
+            "Usando arquivo de chave antigo (.keys_encryption_key). "
+            "Na próxima gravação será migrado para %s.", KEYFILE_FILENAME
+        )
+        return old_path
+    return new_path
 
 
 def _get_keysfile_path(backup_dir: str) -> str:
-    """Caminho no Drive para o arquivo de keys criptografadas."""
-    return os.path.join(backup_dir, KEYS_FILENAME)
+    """Caminho no Drive para o arquivo de keys criptografadas.
+
+    Tenta o nome novo primeiro (sem ponto). Se não existir,
+    tenta o nome antigo (.keys.json) para compatibilidade.
+    """
+    new_path = os.path.join(backup_dir, KEYS_FILENAME)
+    if os.path.exists(new_path):
+        return new_path
+    # Compatibilidade retroativa: nome antigo com ponto
+    old_path = os.path.join(backup_dir, ".keys.json")
+    if os.path.exists(old_path):
+        logger.warning(
+            "Usando arquivo de keys antigo (.keys.json). "
+            "Na próxima gravação será migrado para %s.", KEYS_FILENAME
+        )
+        return old_path
+    return new_path
 
 
 def _load_or_create_encryption_key(backup_dir: str) -> bytes:
@@ -275,7 +308,28 @@ def load_encrypted_keys(backup_dir: str) -> dict:
         Vazio se não existir.
     """
     keys_path = _get_keysfile_path(backup_dir)
-    if not os.path.exists(keys_path):
+    keyfile_path = _get_keyfile_path(backup_dir)
+
+    # Diagnóstico: verificar quais arquivos existem
+    keys_exist = os.path.exists(keys_path)
+    keyfile_exists = os.path.exists(keyfile_path)
+
+    if not keys_exist:
+        logger.info(
+            "Nenhum arquivo de chaves encontrado em %s. "
+            "Use a interface para configurar suas API keys.",
+            backup_dir,
+        )
+        return {}
+
+    if not keyfile_exists:
+        logger.error(
+            "Arquivo de chave de criptografia NÃO encontrado em %s. "
+            "O arquivo de chaves (%s) existe mas não pode ser descriptografado. "
+            "Recrie as chaves via interface (+ provedor).",
+            backup_dir,
+            keys_path,
+        )
         return {}
 
     try:
@@ -285,6 +339,9 @@ def load_encrypted_keys(backup_dir: str) -> dict:
             encrypted_data = json.load(f)
 
         decrypted = {}
+        decrypt_ok = 0
+        decrypt_fail = 0
+
         for k, v in encrypted_data.items():
             if k.startswith("_env_"):
                 # Metadados não criptografados
@@ -292,11 +349,28 @@ def load_encrypted_keys(backup_dir: str) -> dict:
             elif isinstance(v, str) and v and len(v) > 10:
                 try:
                     decrypted[k] = decrypt_data(key, v)
+                    decrypt_ok += 1
                 except Exception as e:
-                    logger.warning("Falha ao descriptografar '%s': %s", k, e)
+                    logger.warning(
+                        "Falha ao descriptografar '%s': %s. "
+                        "A chave de criptografia pode ter mudado entre sessões.",
+                        k, e,
+                    )
                     decrypted[k] = ""
+                    decrypt_fail += 1
             else:
                 decrypted[k] = v
+
+        if decrypt_fail > 0:
+            logger.error(
+                "%d chave(s) descriptografada(s) com sucesso, "
+                "%d falha(s). Pode ser necessário reconfigurar os provedores.",
+                decrypt_ok, decrypt_fail,
+            )
+        elif decrypt_ok > 0:
+            logger.info(
+                "%d chave(s) de API carregada(s) com sucesso do Drive.", decrypt_ok
+            )
 
         return decrypted
     except Exception as e:
@@ -316,7 +390,8 @@ def save_encrypted_keys(backup_dir: str, keys: dict) -> bool:
     """
     try:
         key = _load_or_create_encryption_key(backup_dir)
-        keys_path = _get_keysfile_path(backup_dir)
+        keys_path_new = os.path.join(backup_dir, KEYS_FILENAME)
+        keys_path_old = os.path.join(backup_dir, ".keys.json")
 
         encrypted = {}
         for k, v in keys.items():
@@ -327,15 +402,40 @@ def save_encrypted_keys(backup_dir: str, keys: dict) -> bool:
             else:
                 encrypted[k] = v
 
-        with open(keys_path, "w") as f:
+        # Salva no novo caminho (sem ponto)
+        os.makedirs(backup_dir, exist_ok=True)
+        with open(keys_path_new, "w") as f:
             json.dump(encrypted, f, indent=2)
 
         try:
-            os.chmod(keys_path, 0o600)
+            os.chmod(keys_path_new, 0o600)
         except Exception:
             pass
 
-        logger.info("Chaves salvas criptografadas (%d provedores).", len(keys))
+        # Remove arquivo antigo com ponto se existir (migração)
+        if os.path.exists(keys_path_old):
+            try:
+                os.remove(keys_path_old)
+                logger.info("Arquivo antigo .keys.json removido (migrado para %s).", KEYS_FILENAME)
+            except Exception as e:
+                logger.warning("Não foi possível remover .keys.json antigo: %s", e)
+
+        # Também migra o arquivo de chave de criptografia se estiver no formato antigo
+        old_keyfile = os.path.join(backup_dir, ".keys_encryption_key")
+        new_keyfile = os.path.join(backup_dir, KEYFILE_FILENAME)
+        if os.path.exists(old_keyfile) and not os.path.exists(new_keyfile):
+            try:
+                import shutil
+                shutil.copy2(old_keyfile, new_keyfile)
+                os.remove(old_keyfile)
+                logger.info("Arquivo antigo .keys_encryption_key migrado para %s.", KEYFILE_FILENAME)
+            except Exception as e:
+                logger.warning("Falha ao migrar .keys_encryption_key: %s", e)
+
+        logger.info(
+            "Chaves salvas criptografadas (%d provedores) em %s.",
+            len(keys), keys_path_new,
+        )
         return True
     except Exception as e:
         logger.error("Falha ao salvar chaves: %s", e)
