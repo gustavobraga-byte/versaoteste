@@ -441,7 +441,7 @@ def create_wrapper_html(terminal_url, drive_url):
   <div id="topbar">
     <div class="logo">
       <span class="logo-p">Pesquis</span><span class="logo-ai">AI</span>
-      <span class="logo-tag">  <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/CHANGELOG.md" target="_blank" class="logo-tag"> v{VERSION} </a> </span>
+      <span>  <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/CHANGELOG.md" target="_blank" class="logo-tag"> v{VERSION} </a> </span>
     </div>
 
     <div class="status">
