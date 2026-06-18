@@ -363,7 +363,7 @@ def setup_launch(folder_path: str, drive_url: str) -> str:
         URL do banner de acesso.
     """
     progress(4, 4, "Iniciando servidores e interface web...")
-    from launch_app import launch, set_drive_info, show_ready_message, show_launch_button
+    from pesquisai.launch_app import launch, set_drive_info, show_ready_message, show_launch_button
     set_drive_info(folder_path, drive_url)
     banner_url = launch()
     progress_finish()
