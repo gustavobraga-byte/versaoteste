@@ -2,9 +2,8 @@
 
 ## v0.2.3 (2026-06-18) — Backup Integrity Fix
 
-### 🐞 Bug Crítico: Backups Quebrados (corrupção intermitente)
+### Bug Crítico: Backups Quebrados (corrupção intermitente)
 - **Causa raiz identificada**: Google Drive FUSE trunca a escrita em limites de buffer interno (64KB/256KB/512KB) mas `os.path.getsize()` reporta o tamanho alvo (metadata cache adiantada). Resultado: arquivo corrompido passa pela validação de tamanho mas JSON está truncado no meio de uma string.
-- **Prova empírica**: 5 backups corrompidos encontrados no Drive, todos com tamanhos potência exata de 2 (65536=2^16, 262144=2^18, 524288=2^19), cortando abruptamente sem fechar aspas/chaves. Sessão `127f1a4b` truncou em tamanhos diferentes a cada tentativa (256KB, 64KB, 64KB, 64KB) — limite do FUSE varia com carga.
 - **`launch_app.py /api/backup` (corrigido)**:
   - **Validação JSON do `/tmp/` ANTES de copiar** (rejeita se `opencode export` gerar truncado)
   - **Validação JSON lendo de VOLTA do Drive** após `shutil.copy2()` — detecta truncamento FUSE mesmo quando `getsize` reporta tamanho certo
@@ -16,12 +15,12 @@
 - **`launch_app.py /api/restore` (corrigido)**: valida JSON do backup ANTES de copiar para `/tmp/` e importar (antes só checava `size >= 100`). Detecta backups corrompidos e sugere remover + gerar novo. Mensagem de erro menciona truncamento FUSE se tamanho for potência de 2.
 - **`tests/test_launch_app.py`**: 4 novos testes em `TestBackupIntegrity` (JSON válido detectado, truncamento 64KB detectado, truncamento 256KB detectado, `fcntl.flock` disponível)
 
-### 🧪 Cobertura
+### Cobertura
 - **192 testes** (antes: 188 → agora: 192, +4 novos de integridade)
 
 ## v0.2.2 (2026-06-18) — Stable Base Integration + Novas Funcionalidades
 
-### 🧪 Cobertura de Testes (FASE 2 — refeita)
+###   Cobertura de Testes (FASE 2 — refeita)
 - **188 testes** (antes: 103 → agora: 188, +85 novos)
 - **Cobertura total: 29% → 57%**
 - **`tests/test_security.py`** (79 testes): criptografia round-trip (9), `_FernetFallback` XOR (7: roundtrip raw/base64/string key, chave errada, HMAC corrompido, token curto), geração de chaves (3), save/load (7), migração old→new (6: keyfile/keysfile nomes antigos vs novos), `_load_or_create_encryption_key` (3), sanitização válidos (15), injection bloqueados (20), edge cases (6), `_check_injection` direto (4)
@@ -42,23 +41,23 @@
 | `jokes.py` | 100% | 100% |
 | **TOTAL** | **29%** | **57%** |
 
-### 🐞 Bugs Corrigidos (detectados pela FASE 2)
+###  Bugs Corrigidos (detectados pela FASE 2)
 - **`security.py` _FernetFallback XOR**: `encrypt` modificava o iv (`b"XOR" + iv[3:]`) APÓS computar o xor_key, mas `decrypt` usava o iv modificado para recomputar o xor_key → chaves diferentes → roundtrip impossível. Corrigido: iv não é mais modificado (o version byte 0x81 já indica XOR)
 - **`security.py:556`**: `opencode -s <session_id>` com caracteres inválidos (espaço, etc.) passava pela sanitização porque o prefixo genérico `"opencode"` validava antes do bloco específico. Agora o bloco `opencode -s` valida explicitamente o session_id (apenas alfanuméricos + `_-.`)
 - **`launch_app.py:1441`**: segunda sanitização (`sanitize_command(bash_cmd)`) pegava o `;` que o próprio código adicionava (`f"{cmd}; exec bash"`), bloqueando TODOS os comandos via `/api/run_terminal` com erro 500. Corrigido: segunda sanitização removida (o comando do usuário já foi validado; o sufixo `; exec bash` é controlado pelo código)
 
-### ✨ Novas Funcionalidades (FASE 3)
+###  Novas Funcionalidades (FASE 3)
 - **3.2 Dashboard de Saúde**: endpoint `GET /api/health` consolidando `/api/diagnose` + `/api/debug`; botão 🩺 na topbar abre modal com checklist visual (Drive montado, ttyd ativo, OpenCode encontrado, keys carregadas, skills instaladas, ffmpeg, espaço em disco, versão)
 - **3.3 Busca/Histórico de Sessões**: botão 📜 na topbar abre modal listando sessões (via `/api/sessions` existente); campo de busca filtra por id/conteúdo em tempo real; botão "abrir" por sessão reinicia terminal com `opencode -s <id>`
 - **3.6 Atalhos de Teclado Visíveis**: botão ⌨️ na topbar + tecla `?` abrem modal com 8 atalhos (Ctrl+Shift+C copiar, Ctrl+C interromper, Ctrl+L limpar, Ctrl+Shift+V colar, Tab autocompletar, ↑↓ histórico, ? este painel); `Esc` fecha todos os modais
 - **3.8 Tema Claro (acessibilidade)**: `pesquisai-light.json` gerado em `run_fast.py` (paleta clara #f5f6f7/#0288d1); toggle ◑ na topbar persiste em `tui.json` via `POST /api/theme`; `GET /api/theme` retorna tema atual; CSS vars do wrapper atualizadas dinamicamente; tema carregado no startup
 
-### 🔗 Integração com Base Estável
+###  Integração com Base Estável
 - **Docs sincronizadas do GitHub estável (v0.2)**: AGENTS.md, README.md, MANUAL.md, PesquisAI.ipynb, LICENSE, citacao_pesquisai.md, declaracao_uso_ia.md, disclaimer_pesquisai.md, IntructionsCEO_paperclip.md
 - **Versão atualizada em todas as docs**: v0.2 → v0.2.1 (16 referências em 7 arquivos)
 - **`pyproject.toml`**: `readme = "README.md"` re-adicionado; LICENSE, AGENTS.md, MANUAL.md incluídos no build
 
-### 📦 Package (continuação FASE 1)
+###  Package (continuação FASE 1)
 - **`pesquisai/`**: módulos movidos para package real (git mv preservando histórico)
 - **`__init__.py`**: criado como entry-point do package
 - **Imports relativos**: `.constants`, `.__version__`, `.jokes`, `.progress_bar`, `.opencode_utils`, `.security`
@@ -66,7 +65,7 @@
 - **Testes**: imports atualizados para `pesquisai.X` + strings `@patch` corrigidas
 - **`Dockerfile`**: CMD aponta para `pesquisai.run_fast`
 
-### 🐞 Bugs Corrigidos (FASE 1)
+###  Bugs Corrigidos (FASE 1)
 - **Bug 1.1**: `test_constants.py` assert versão aceita X.Y e X.Y.Z (antes só X.Y)
 - **Bug 1.2**: `launch_app.py` logo `v0.2` hardcodeado → `v{VERSION}` dinâmico
 - **Bug 1.3**: `Dockerfile` version `0.2` → `0.2.1`
@@ -76,7 +75,7 @@
 
 ## v0.2.1 (2026-06-16) — Secure Keys
 
-### 🔐 Segurança (Novo)
+###  Segurança (Novo)
 - **`security.py`**: Módulo de segurança completo com:
   - Criptografia AES-128-CBC + HMAC-SHA256 via Fernet (`cryptography`) para chaves de API
   - Fallback seguro para ambientes sem `cryptography`
@@ -90,8 +89,8 @@
 - **`launch_app.py`**: `kill_previous()` e `start_ttyd` migrados de `shell=True` para lista de argumentos
 - **`launch_app.py`**: Chave de criptografia armazenada em arquivo SEPARADO (`.keys_encryption_key`) — defesa em profundidade
 
-### 📦 Versão Centralizada
-- **`__version__.py`**: Novo arquivo como fonte ÚNICA de verdade para versão, autor, repositório, licença
+###  Versão Centralizada
+- **`__version__.py`**: Novo arquivo como fonte ÚNICA para versão, autor, repositório, licença
 - **`constants.py`**: `VERSION` agora importa de `__version__` (antes era string hardcoded)
 - **`pyproject.toml`**: Versão sincronizada com `__version__.py`; adicionada dependência `cryptography>=41.0`
 - **`pyproject.toml`**: Seção `[project.optional-dependencies]` adicionada com `crypto = ["pycryptodome>=3.20"]`
