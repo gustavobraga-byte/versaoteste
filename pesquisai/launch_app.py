@@ -449,6 +449,20 @@ def create_wrapper_html(terminal_url, drive_url):
       agente ativo
     </div>
 
+    <div class="tb-icons">
+      <button class="tb-icon" onclick="openHealth()" title="Dashboard de Saúde">
+        <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      </button>
+      <button class="tb-icon" onclick="openSessions()" title="Histórico de Sessões">
+        <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+      </button>
+      <button class="tb-icon" onclick="openShortcuts()" title="Atalhos de Teclado">
+        <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
+      </button>
+      <button class="tb-icon" onclick="toggleTheme()" id="theme-toggle" title="Alternar tema claro/escuro">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+    </div>
     <div class="sep"></div>
 
     <button class="tb-btn btn-backup" onclick="doBackup()">
@@ -466,20 +480,6 @@ def create_wrapper_html(terminal_url, drive_url):
       Drive
     </a>
 
-    <div class="tb-icons">
-      <button class="tb-icon" onclick="openHealth()" title="Dashboard de Saúde">
-        <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      </button>
-      <button class="tb-icon" onclick="openSessions()" title="Histórico de Sessões">
-        <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
-      </button>
-      <button class="tb-icon" onclick="openShortcuts()" title="Atalhos de Teclado">
-        <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
-      </button>
-      <button class="tb-icon" onclick="toggleTheme()" id="theme-toggle" title="Alternar tema claro/escuro">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      </button>
-    </div>
   </div>
 
  <iframe
