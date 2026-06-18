@@ -633,14 +633,13 @@ def create_wrapper_html(terminal_url, drive_url):
     <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:420px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title">⌨️ Atalhos de Teclado</div>
       <div style="border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
-        <div class="shortcut-row"><span>Copiar seleção</span><span class="shortcut-key">Ctrl+Shift+C</span></div>
+        <div class="shortcut-row"><span>Copiar seleção</span><span class="shortcut-key">Segure o Shift e selecione</span></div>
         <div class="shortcut-row"><span>Interromper comando</span><span class="shortcut-key">Ctrl+C</span></div>
-        <div class="shortcut-row"><span>Limpar terminal</span><span class="shortcut-key">Ctrl+L</span></div>
         <div class="shortcut-row"><span>Colar (Chrome)</span><span class="shortcut-key">Ctrl+Shift+V</span></div>
-        <div class="shortcut-row"><span>Autocompletar</span><span class="shortcut-key">Tab</span></div>
+        <div class="shortcut-row"><span>Menu e opções</span><span class="shortcut-key">Ctrl+P</span></div>
+        <div class="shortcut-row"><span>Alterar modelo</span><span class="shortcut-key">Ctrl+X m</span></div>
         <div class="shortcut-row"><span>Histórico anterior</span><span class="shortcut-key">↑</span></div>
         <div class="shortcut-row"><span>Histórico seguinte</span><span class="shortcut-key">↓</span></div>
-        <div class="shortcut-row"><span>Abrir este painel</span><span class="shortcut-key">?</span></div>
       </div>
       <button onclick="closeShortcuts()" class="modal-close">Fechar</button>
     </div>
