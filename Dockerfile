@@ -11,7 +11,7 @@ FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="PesquisAI"
 LABEL org.opencontainers.image.description="Agente de IA para Pesquisa Científica com foco em dados brasileiros"
-LABEL org.opencontainers.image.version="0.2"
+LABEL org.opencontainers.image.version="0.2.3"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/gustavobraga-byte/PesquisAI"
 
@@ -40,4 +40,4 @@ EXPOSE 8000 8001
 
 # Por padrão, apenas imprime ajuda.
 # Para uso real, montar opencode e executar via run_fast.py.
-CMD ["python", "-c", "from run_fast import run; run()"]
+CMD ["python", "-c", "from pesquisai.run_fast import run; run()"]

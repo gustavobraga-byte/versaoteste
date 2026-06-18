@@ -10,8 +10,8 @@
 
 ```
 BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.3.0. Viçosa: Universidade Federal de Viçosa, 2026.
-Disponível em: https://github.com/gustavobraga-byte/PesquisAI.
+científica. Versão 0.2.1. Viçosa: Universidade Federal de Viçosa, 2026.
+Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
 Projeto registrado no SisPPG/UFV sob nº 10356285004.
@@ -21,8 +21,8 @@ Verificar autenticidade em: http://sisppg.ufv.br
 ### Formato simplificado (para nota de rodapé):
 
 ```
-PesquisAI, versão 0.3.0, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
-https://github.com/gustavobraga-byte/PesquisAI.
+PesquisAI, versão 1.0, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
+https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 ```
 
 ---
@@ -61,9 +61,9 @@ https://github.com/gustavobraga-byte/PesquisAI.
 
 ```
 BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para
-pesquisa científica. Versão 0.3.0. Viçosa: Universidade Federal de Viçosa,
+pesquisa científica. Versão 0.2.1. Viçosa: Universidade Federal de Viçosa,
 2026. Disponível em:
-https://github.com/gustavobraga-byte/PesquisAI.
+https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 ```
 
@@ -76,10 +76,10 @@ Acesso em: DD mês. AAAA.
 | **Tipo** | Software / Computer Program |
 | **Autor** | Braga, Gustavo Bastos |
 | **Título** | PesquisAI: agente de inteligência artificial para pesquisa científica |
-| **Versão** | 0.3.0 |
+| **Versão** | 1.0 |
 | **Ano** | 2026 |
 | **Instituição** | Universidade Federal de Viçosa (UFV) |
-| **URL** | https://github.com/gustavobraga-byte/PesquisAI |
+| **URL** | https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/ |
 | **Repositório** | https://github.com/gustavobraga-byte/PesquisAI |
 | **Licença** | MIT |
 | **Linguagem** | Python 3.10+ |
@@ -94,9 +94,9 @@ Acesso em: DD mês. AAAA.
   author       = {Gustavo Bastos Braga},
   title        = {{PesquisAI}: Agente de Intelig{\^e}ncia Artificial para Pesquisa Cient{\'\i}fica},
   year         = {2026},
-  version      = {0.3.0},
+  version      = {0.2.1},
   institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
-  url          = {https://github.com/gustavobraga-byte/PesquisAI},
+  url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/},
   note         = {Acessado em: DD m{\^e}s AAAA}
 }
 ```

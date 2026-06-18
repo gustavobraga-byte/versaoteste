@@ -1,17 +1,20 @@
 # 🔬 PesquisAI — Agente de IA para Pesquisadores Científicos
 
-[![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
+ [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
+
+
+> Ecossistema de agentes de IA para acelerar a pesquisa científica.
+
+[![Abrir no Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 [![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
 [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br)
-[![Tests](https://img.shields.io/badge/tests-43%20passing-brightgreen.svg)](tests/)
 
-> Ecossistema de agentes de IA para acelerar a pesquisa científica brasileira.
-
-O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arquitetura **OpenCode**, projetado especificamente para pesquisadores, acadêmicos e cientistas. Ele automatiza etapas que vão do levantamento bibliográfico à estruturação de artigos, integrando fontes de dados públicos do Brasil (IBGE, DataSUS, agro, etc.) com **regras rígidas de integridade científica** (nenhuma referência fabricada, nenhum dado inventado).
+O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arquitetura **OpenCode**, projetado especificamente para pesquisadores, acadêmicos e cientistas. Ele automatiza etapas que vão do levantamento bibliográfico à estruturação de artigos, integrando fontes de dados públicos do Brasil.
 
 ---
+## 🤯 PesquisAI: A ferramenta que seu orientador não te contou! (Só não esqueça de fazer o double-check 😅) 
 
 ## ✨ O que ele faz
 
@@ -32,19 +35,14 @@ O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arq
 
 ### Opção 1 — Google Colab (sem instalação)
 
-1. Clique no badge do **Colab** acima
-2. No menu: **Ambiente de execução → Executar tudo** (ou `Ctrl+F9`)
+A forma mais rápida. Nenhuma configuração necessária:
+
+1. Clique no badge do Colab acima
+2. No menu, vá em **Ambiente de execução → Executar tudo** (ou `Ctrl+F9`)
 3. Aguarde ~2 minutos para o ambiente carregar
-4. Role até a última célula e clique em **🚀 ABRIR O PESQUISAI**
+4. Role até a última célula e clique em **🤖 Abrir o PesquisAI**
 
-### Opção 2 — Local (para desenvolvedores)
 
-```bash
-git clone https://github.com/gustavobraga-byte/PesquisAI.git
-cd PesquisAI
-pip install -e ".[dev]"
-python main.py
-```
 
 ---
 
@@ -52,49 +50,66 @@ python main.py
 
 O PesquisAI opera por módulos especializados (*skills*). Cada skill conecta o agente a uma fonte de dados ou capacidade específica:
 
-| Skill | Mantenedor | Descrição |
-|---|---|---|
-| `ibge-br` | @gustavobraga-byte | API do IBGE (Censo, PNAD, PIB, índices de preços) |
-| `datasus` | @gustavobraga-byte | OpenDataSUS: mortalidade, internações, cobertura vacinal |
-| `UFV-ABNT` | @gustavobraga-byte | Formatação e normalização conforme UFV/ABNT |
-| `analise-qualitativa` | @gustavobraga-byte | Análise qualitativa: Reinert, similitude, codificação |
-| `scientific-agent-skills` | @K-Dense-AI | Mineração, revisão bibliográfica, estrutura IMRaD |
-| `dados-brasil` | @gustavobraga-byte | Indicadores e datasets oficiais brasileiros |
-| `agrobr` | @gustavobraga-byte | Agronegócio: produção, pecuária, CAR |
+### `skill-ibge` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Consulta automatizada à API do IBGE. Suporta dados do Censo, PNAD, PIB municipal, índices de preços e indicadores demográficos.
+
+### `skill-datasus` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Integração com o OpenDataSUS para coleta e análise de dados de saúde pública: mortalidade, internações, cobertura vacinal e outros.
+
+### `skill-UFV-ABNT` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Formatação e normalização de trabalhos acadêmicos conforme as normas da Universidade Federal de Viçosa (UFV) e da ABNT.
+
+### `skill-analise-qualitativa` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Possibilita uma análise qualititativa e de conteúdo completa, substituindo sofwares especializados como NVivo e Iramuteq executando metódos clássicos e avançados (por exemplo, análise fatorial, análise de similitude, codificação qualitativa, método de Reinert, ...).
+
+### `scientific-skills` · [@K-Dense-AI](https://github.com/K-Dense-AI)
+Ferramentas focadas em pesquisa acadêmica: mineração de textos científicos, revisão bibliográfica e suporte metodológico.
+
+### `skill-dados-brasil` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Conjunto amplo de indicadores e datasets oficiais brasileiros, complementando as bases do IBGE e DataSUS com outras fontes nacionais.
+
+### `skill-agrobr` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Dados do agronegócio brasileiro: produção agrícola, pecuária, comércio internacional do setor e cadastro ambiental rural (CAR).
 
 ---
 
-## ⚙️ Arquitetura (v0.3 — refatorada)
+## 🗺️ Roadmap
 
-A partir da versão 0.3, o PesquisAI é distribuído como um **pacote Python modular**:
+| Fase | Período | Foco |
+|---|---|---|
+| **1 — Base sólida** | Meses 1–3 | CLI, testes, CI/CD, instalação local |
+| **2 — Expansão de dados** | Meses 4–7 | Inserir novas habilidades: IPEA, INEP, Sucupira/CAPES, plugins,... |
+| **3 — Interface** | Meses 8–11 | Aprimorar interface web, editor de artigos, possibilidade de copilot |
+| **4 — Ecossistema** | Meses 12–18 | API pública, versão SaaS, integração institucional |
 
-```
-PesquisAI/
-├── main.py                       # Entry point (3 linhas)
-├── pyproject.toml
-├── pesquisai/                    # Pacote principal
-│   ├── config.py                 # Settings pydantic 2
-│   ├── run.py                    # Orquestrador
-│   ├── progress.py               # Barra de progresso
-│   ├── skills.py                 # Skill dataclass + clone paralelo
-│   ├── theme.py                  # Tema/agente/TUI config
-│   ├── dependencies.py           # apt + pip installer
-│   ├── launch/
-│   │   ├── __init__.py           # launch() principal
-│   │   ├── server.py             # HTTP wrapper (seguro)
-│   │   ├── templates/            # HTML estático
-│   │   └── static/               # CSS + JS separados
-│   └── utils/
-│       ├── security.py           # validate_command, safe_backup_path
-│       ├── opencode.py           # find/install centralizado
-│       └── subprocess.py         # CommandRunner protocol + FakeRunner
-└── tests/                        # 43 testes pytest (todos passando)
-    ├── test_security.py          # 32 testes
-    ├── test_subprocess.py        # 6 testes
-    └── test_server.py            # 5 testes
+---
+
+## 🤝 Como contribuir
+
+Contribuições são bem-vindas — especialmente novas skills para fontes de dados públicos brasileiros.
+
+```bash
+# 1. Faça um fork e clone o seu fork
+git clone https://github.com/SEU_USUARIO/PesquisAI.git
+
+# 2. Crie uma branch para sua contribuição
+git checkout -b feature/skill-exemple
+# 3. Desenvolva, teste e abra um Pull Request
 ```
 
-### Diagrama de runtime
+Consulte o arquivo [`AGENTS.md`](AGENTS.md) para entender a arquitetura das skills e os padrões de desenvolvimento esperados.
+
+**Ideias de contribuição:**
+- Skills para novas fontes (IPEA, INEP, ANEEL, ANS, IBICT...)
+- Melhorias na skill científica (suporte a mais bases como Scielo, BDTD)
+- Traduções da documentação
+- Casos de uso e exemplos de pesquisa
+
+---
+
+## ⚙️ Arquitetura
+
+O PesquisAI usa o **ttyd** para renderizar um terminal Linux interativo via navegador dentro do proxy do Google Colab, com o ecossistema OpenCode injetado como ambiente isolado:
 
 ```
 Google Colab
@@ -110,64 +125,7 @@ Google Colab
         └── pesquisai (instruções do agente)
 ```
 
----
-
-## 🔒 Segurança (novo na v0.3)
-
-A v0.3 corrige **5 vulnerabilidades críticas** identificadas em auditoria:
-
-| Vetor | Proteção |
-|---|---|
-| Injeção de comando em `/api/run_terminal` | Whitelist de binários + validação de shell metacharacters |
-| Path traversal em `/api/restore` | Resolução de path segura com `is_relative_to` |
-| Credenciais `.keys.json` expostas | `chmod 0o600` automático |
-| XSS via nome de arquivo de backup | Renderização via `textContent` (DOM API) |
-| DoS em `find` recursivo | `timeout=5s` |
-
----
-
-## 🗺️ Roadmap
-
-| Fase | Período | Foco |
-|---|---|---|
-| **1 — Base sólida** ✅ | Meses 1–3 | CLI, testes, CI/CD, instalação local |
-| **2 — Expansão de dados** | Meses 4–7 | IPEA, INEP, Sucupira/CAPES, plugins... |
-| **3 — Interface** | Meses 8–11 | Aprimorar interface web, editor de artigos, copilot |
-| **4 — Ecossistema** | Meses 12–18 | API pública, versão SaaS, integração institucional |
-
----
-
-## 🤝 Como contribuir
-
-```bash
-git clone https://github.com/SEU_USUARIO/PesquisAI.git
-cd PesquisAI
-pip install -e ".[dev]"
-python -m pytest tests/ -v   # 43 testes
-```
-
-**Idéias:**
-- Skills para IPEA, INEP, ANEEL, ANS, IBICT
-- Mais bases científicas (SciELO, BDTD)
-- Traduções da documentação
-- Casos de uso e exemplos de pesquisa
-
-Consulte [`AGENTS.md`](AGENTS.md) para a arquitetura das skills e o [`relatorios/IMPLEMENTACAO_RELATORIO.md`](relatorios/IMPLEMENTACAO_RELATORIO.md) para o histórico técnico da refatoração.
-
----
-
-## 🧪 Desenvolvimento
-
-```bash
-# Instalar dependências de dev
-pip install -e ".[dev]"
-
-# Rodar testes
-python -m pytest tests/ -v
-
-# Validar template
-python -c "from pesquisai.launch import render_wrapper; print(render_wrapper('http://localhost:8000', 'http://drive.test'))"
-```
+As dependências são gerenciadas pelo [uv (Astral)](https://github.com/astral-sh/uv) para instalação ultrarrápida e ambientes reproduzíveis.
 
 ---
 
@@ -181,15 +139,16 @@ O PesquisAI:
 - 🚨 **ATENÇÃO:** Sempre revise e confirme a precisão de todas as informações geradas por esta IA antes de utilizá-las em decisões ou projetos críticos.
 
 ---
+---
 
-## Citação (v0.3.0)
+## Citação
 
 **ABNT NBR 6023:2018:**
 
 ```
 BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.3.0. Viçosa: Universidade Federal de Viçosa, 2026.
-Disponível em: https://github.com/gustavobraga-byte/PesquisAI.
+científica. Versão 0.2.1. Viçosa: Universidade Federal de Viçosa, 2026.
+Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
 Projeto registrado no SisPPG/UFV sob nº 10356285004.
@@ -204,9 +163,9 @@ Verificar autenticidade em: http://sisppg.ufv.br
   title        = {{PesquisAI}: Agente de Intelig{\^e}ncia Artificial
                   para Pesquisa Cient{\'\i}fica},
   year         = {2026},
-  version      = {0.3.0},
+  version      = {0.2.1},
   institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
-  url          = {https://github.com/gustavobraga-byte/PesquisAI}
+  url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
 }
 ```
 
@@ -214,16 +173,16 @@ Verificar autenticidade em: http://sisppg.ufv.br
 
 ## Declaração de Uso de IA
 
-O uso do PesquisAI em trabalhos acadêmicos **deve ser declarado** conforme diretrizes do COPE, CAPES e principais periódicos. Consulte [`declaracao_uso_ia.md`](declaracao_uso_ia.md) para modelos prontos.
+O uso do PesquisAI em trabalhos acadêmicos **deve ser declarado** conforme diretrizes do COPE, CAPES e principais periódicos. Consulte o arquivo [`declaracao_uso_ia.md`](declaracao_uso_ia.md) para modelos prontos (ABNT, ICMJE, Nature, Science, Elsevier, Springer).
 
 ---
 
 ## Disclaimer
 
-O PesquisAI é um **software experimental fornecido "como está"**, sem garantias. LLMs podem **alucinar** — é responsabilidade exclusiva do usuário validar todos os dados, análises e referências gerados. Consulte [`disclaimer_pesquisai.md`](disclaimer_pesquisai.md) para os termos completos.
+O PesquisAI é um **software experimental fornecido "como está"**, sem garantias. LLMs podem **alucinar** — é responsabilidade exclusiva do usuário validar todos os dados, análises e referências gerados. Consulte o [`disclaimer_pesquisai.md`](disclaimer_pesquisai.md) para os termos completos.
+
 
 ---
-
 ## 📬 Contato
 
 Desenvolvido por **Gustavo Bastos Braga** na Universidade Federal de Viçosa (UFV).
