@@ -9,7 +9,7 @@ Uso:
     from main import run
 """
 
-from pesquisai.run_fast import run
+from run_fast import run
 
 if __name__ == "__main__":
     run()
