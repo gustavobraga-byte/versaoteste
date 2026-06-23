@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "agency": "CAPES",
+    "country": "BR",
+    "fetched_at": "2026-06-23",
+    "source": "https://www.gov.br/capes/pt-br/acesso-a-informacao/acoes-e-programas/programas",
+    "warning": "Cache de exemplo. SEMPRE conferir no portal da CAPES."
+  },
+  "grants": [
+    {
+      "id": "capes-proap-2026",
+      "title": "PROAP — Programa de Apoio à Pós-Graduação 2026",
+      "agency": "CAPES",
+      "country": "BR",
+      "description": "Apoio financeiro a programas de pós-graduação stricto sensu. Custeio: passagens, diárias, material de consumo, serviços.",
+      "url": "https://www.gov.br/capes/pt-br/acesso-a-informacao/acoes-e-programas/programas",
+      "amount_min": 10000,
+      "amount_max": 200000,
+      "currency": "BRL",
+      "open_date": "2026-01-15",
+      "close_date": "2026-12-15",
+      "status": "aberto",
+      "min_degree": "doutorado",
+      "eligible_areas": [],
+      "eligible_states": [],
+      "requires_PI": true,
+      "duration_months": 12,
+      "language": "pt",
+      "fetched_at": "2026-06-23"
+    },
+    {
+      "id": "capes-print-2026",
+      "title": "PRINT — Programa de Internacionalização da Pós-Graduação 2026",
+      "agency": "CAPES",
+      "country": "BR",
+      "description": "Fomento à internacionalização da pós-graduação: missões, co-tutela, cotutela, estágios sanduíche, cursos no exterior.",
+      "url": "https://www.gov.br/capes/pt-br/assuntos/bolsas-e-auxilios/internacional",
+      "amount_min": 50000,
+      "amount_max": 500000,
+      "currency": "BRL",
+      "open_date": "2026-03-01",
+      "close_date": "2026-08-31",
+      "status": "aberto",
+      "min_degree": "doutorado",
+      "eligible_areas": [],
+      "eligible_states": [],
+      "requires_PI": true,
+      "duration_months": 48,
+      "language": "pt",
+      "fetched_at": "2026-06-23"
+    }
+  ]
+}
