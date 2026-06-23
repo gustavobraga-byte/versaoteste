@@ -472,7 +472,80 @@ def start_wrapper_server():
                     }
                     self._json(200, {"keys": masked})
                 return
-            
+
+            if p == "/api/agents":
+                # v0.4.2: serve o AGENTS.md no idioma solicitado
+                # Suporta ?lang=pt_BR | en_US | es_ES | fr_FR (default pt_BR)
+                qs = parse_qs(urlparse(self.path).query)
+                lang = (qs.get("lang", ["pt_BR"])[0] or "pt_BR").strip()
+                lang_code = lang.split("_")[0].lower() if "_" in lang else lang.lower()
+                # Map pt_BR -> pt, en_US -> en, es_ES -> es, fr_FR -> fr
+                _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
+                if lang_code in _valid:
+                    full = _valid[lang_code]
+                elif lang in _valid.values():
+                    full = lang
+                else:
+                    full = "pt_BR"
+                # Localiza o arquivo de diretriz apropriado.
+                # Estrutura esperada:
+                #   <raiz>/agents/AGENTS.<lang>.md   ← fonte primária (irmão de pesquisai/)
+                #   <raiz>/pesquisai/launch_app.py    ← este arquivo
+                _candidates = []
+                # 1. Irmão do módulo pesquisai/ (caso padrão do projeto)
+                here = os.path.dirname(os.path.abspath(__file__))
+                parent = os.path.dirname(here)
+                _candidates.append(os.path.join(parent, "agents"))
+                # 2. Níveis acima (caso esteja rodando de subpastas)
+                for _ in range(5):
+                    here = os.path.dirname(here)
+                    if here and here != os.path.dirname(here):
+                        _candidates.append(os.path.join(here, "agents"))
+                # 3. Folder do Drive configurado
+                if _folder_path:
+                    _candidates.append(os.path.join(_folder_path, "agents"))
+                    _candidates.append(os.path.join(os.path.dirname(_folder_path), "agents"))
+                # 4. CWD e home (último recurso)
+                _candidates.append(os.path.join(os.getcwd(), "agents"))
+                agents_dir = None
+                tried_dirs = []
+                for d in _candidates:
+                    tried_dirs.append(d)
+                    if os.path.isdir(d):
+                        agents_dir = d
+                        break
+                short = full.split("_")[0]
+                content = None
+                tried_files = []
+                if agents_dir:
+                    for fname in (f"AGENTS.{short}.md", f"AGENTS.{full}.md"):
+                        fpath = os.path.join(agents_dir, fname)
+                        tried_files.append(fpath)
+                        if os.path.isfile(fpath):
+                            try:
+                                with open(fpath, "r", encoding="utf-8") as f:
+                                    content = f.read()
+                                break
+                            except Exception as e:
+                                content = f"⚠️ Erro ao ler {fname}: {e}"
+                                break
+                if content is None:
+                    self._json(200, {
+                        "ok": False,
+                        "error": f"AGENTS.md não encontrado para o idioma '{full}'.",
+                        "tried_dirs": tried_dirs[:8],
+                        "tried_files": tried_files,
+                        "lang": full,
+                    })
+                    return
+                self._json(200, {
+                    "ok": True,
+                    "lang": full,
+                    "filename": f"AGENTS.{short}.md",
+                    "content": content,
+                })
+                return
+
             self.send_error(404)
         
         def do_POST(self):

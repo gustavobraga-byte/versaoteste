@@ -1,7 +1,8 @@
-# 📝 Log de Edição — `launch_app.py` (v0.4.1)
+# 📝 Log de Edição — `launch_app.py` (v0.4.2)
 
 > **Data:** 2026-06-23
-> **Operação:** Substituição da função `create_wrapper_html` por import do patch v0.4.1
+> **Operação:** Substituição da função `create_wrapper_html` por import do patch v0.4.2
+> + adição do endpoint `GET /api/agents?lang=xx_XX` no handler
 > **Arquivo original:** https://github.com/gustavobraga-byte/PesquisAI/blob/main/pesquisai/launch_app.py
 > **Arquivo editado:** `/content/drive/My Drive/PesquisAI/pesquisai/launch_app.py`
 
@@ -34,17 +35,20 @@ def create_wrapper_html(terminal_url, drive_url):
 
 ```python
 # ───────────────────────────────────────────────────────────────────
-# 🔧 PATCH v0.4.1 — Substitui a função create_wrapper_html original
-# pela versão responsiva com tema escuro + idioma na UI.
-# 
+# 🔧 PATCH v0.4.2 — Substitui a função create_wrapper_html original
+# pela versão responsiva com tema escuro + idioma na UI + rodapé
+# responsivo + modal de Diretrizes (AGENTS.md multilíngue).
+#
 # Mudanças aplicadas:
 #   1. 📱 Site responsivo (6 media queries + hamburger menu)
 #   2. 🎨 Tema claro/escuro com reload do iframe do ttyd
 #   3. 🌐 Seletor de idioma na topbar (4 idiomas: pt_BR, en_US, es_ES, fr_FR)
 #   4. 🌙 Tema padrão ESCURO com anti-flash CSS
-# 
+#   5. 📋 v0.4.2: Rodapé responsivo (flex-wrap + 2 linhas)
+#   6. 📋 v0.4.2: Modal "Diretrizes do Agente" com AGENTS.md multilíngue
+#
 # Compatibilidade: API inalterada (create_wrapper_html(terminal_url, drive_url))
-# Detalhes: docs/PATCH_v0.4.1.md
+# Detalhes: docs/CHANGELOG.md (v0.4.2)
 # ───────────────────────────────────────────────────────────────────
 try:
     from .launch_app_responsive_v041 import create_wrapper_html
@@ -61,9 +65,18 @@ except ImportError:
         create_wrapper_html = _mod.create_wrapper_html
     else:
         raise ImportError(
-            "Patch v0.4.1 não encontrado. Copie launch_app_responsive_v041.py "
+            "Patch v0.4.2 não encontrado. Copie launch_app_responsive_v041.py "
             "para a mesma pasta de launch_app.py"
         )
+```
+
+## 🆕 Endpoint Adicionado (v0.4.2)
+
+```python
+# Adicionado no Handler.do_GET:
+if p == "/api/agents":
+    # Serve o AGENTS.md no idioma solicitado (?lang=pt_BR|en_US|es_ES|fr_FR)
+    # Detalhes da implementação no CHANGELOG.md (v0.4.2)
 ```
 
 ## 🛡️ O Que Foi Preservado (inalterado)

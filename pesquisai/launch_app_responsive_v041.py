@@ -1,22 +1,13 @@
 """
-launch_app_responsive.py — Wrapper HTML responsivo + tema + idioma (v0.4.1).
+launch_app_responsive.py — Wrapper HTML responsivo + tema + idioma (v0.4.2).
 
 Este módulo SUBSTITUI o `create_wrapper_html` do launch_app.py do PesquisAI
 principal (https://github.com/gustavobraga-byte/PesquisAI/blob/main/pesquisai/launch_app.py)
-corrigindo 3 problemas reportados pelo usuário em 2026-06-23:
+corrigindo os problemas reportados pelo usuário em 2026-06-23.
 
-  1. 🐛 Site NÃO responsivo
-     - Problema: o CSS original não tem media queries. Topbar de 8 botões
-       estoura em mobile, modais de 400-520px não cabem, sem hamburger menu.
-     - Correção: 5 breakpoints (mobile pequeno, mobile, tablet, tablet
-       portrait, desktop, landscape), hamburger drawer, modais fluidos,
-       touch targets ≥ 32-44px (Apple HIG / WCAG 2.5.5).
-
-  2. 🐛 Tema claro/escuro não recarrega o terminal
-
-Este módulo SUBSTITUI o `create_wrapper_html` do launch_app.py do PesquisAI
-principal (https://github.com/gustavobraga-byte/PesquisAI/blob/main/pesquisai/launch_app.py)
-corrigindo 3 problemas reportados pelo usuário em 2026-06-23:
+═══════════════════════════════════════════════════════════════════════════
+v0.4.1 — UI Fixes (3 correções originais)
+═══════════════════════════════════════════════════════════════════════════
 
   1. 🐛 Site NÃO responsivo
      - Problema: o CSS original não tem media queries. Topbar de 8 botões
@@ -30,16 +21,47 @@ corrigindo 3 problemas reportados pelo usuário em 2026-06-23:
        wrapper) mas NÃO recarrega o iframe do ttyd. O terminal continua
        renderizado com o tema antigo.
      - Correção: após aplicar tema na UI, recarregar o iframe do terminal
-       (fr.src = "about:blank" → 3.5s → fr.src = origSrc + "?t=..."),
-       mesmo padrão usado em confirmProvider()/restoreSession().
+       (fr.src = "about:blank" → 3.5s → fr.src = origSrc + "?t=...").
 
   3. 🐛 Alteração de idioma sem opção na interface
      - Problema: o módulo i18n existe (4 idiomas, JSONs completos) mas
        não há seletor na topbar. O usuário não tem como trocar idioma.
      - Correção: dropdown na topbar com 🇧🇷 🇺🇸 🇪🇸 🇫🇷, persistência em
-       cookie `pesquisai_lang`, query param `?lang=xx_XX`, atualização
-       do atributo <html lang="..."> e das strings visíveis (toasts,
-       modais, botões).
+       cookie `pesquisai_lang`, query param `?lang=xx_XX`.
+
+═══════════════════════════════════════════════════════════════════════════
+v0.4.2 — Footer Responsivo + AGENTS.md Multilíngue (2 correções adicionais)
+═══════════════════════════════════════════════════════════════════════════
+
+  4. 🐛 Rodapé NÃO responsivo
+     - Problema: o rodapé original (#footer) tem `display: flex` SEM
+       `flex-wrap`. Em mobile, 8+ itens (PesquisAI, email, GitHub, UFV,
+       Provedor, OpenCode) transbordam horizontalmente. O `#terminal-frame`
+       também tem altura fixa (`calc(100% - 90px)`) que não considera
+       o rodapé que pode crescer em 2 linhas.
+     - Correção:
+       • `flex-wrap: wrap` no #footer (e `overflow: hidden` no root)
+       • 2 linhas lógicas (.footer-row-1 + .footer-row-2) com `display:
+         contents` em desktop (invisível) e linhas reais em mobile
+       • Media queries específicas: separa UFV/OpenCode em landscape,
+         esconde GitHub em <480px, ajusta altura do terminal dinamicamente
+       • `#terminal-frame` agora usa `calc(100vh - 90px)` (corrigido de
+         `calc(100% - 90px)`) + ajuste por breakpoint
+
+  5. 🐛 Troca de idioma NÃO troca o AGENTS.md
+     - Problema: o sistema troca strings da UI (data-i18n) mas o
+       arquivo `agents/AGENTS.xx_XX.md` (regras de integridade científica)
+       continua sendo exibido no idioma original. Pesquisador que troca
+       para inglês continua lendo regras em português.
+     - Correção:
+       • Novo endpoint backend `GET /api/agents?lang=xx_XX` que serve
+         o conteúdo do `agents/AGENTS.<lang>.md` apropriado
+       • Novo modal "📋 Diretrizes do Agente" na UI (botão na topbar)
+       • Cache client-side por idioma (1 chamada até troca de idioma)
+       • Invalidação automática do cache em `setLang()` + recarregamento
+         se o modal estiver aberto
+       • Botões: 📋 Copiar, ↻ Recarregar, 🔗 Ver fonte (link pro GitHub)
+       • Badge do idioma atual no header do modal (PT-BR, EN-US, etc.)
 
 Instalação:
     Editar ``pesquisai/launch_app.py`` e substituir a função
@@ -53,8 +75,9 @@ OU (preferível, evita editar o original):
     def create_wrapper_html(terminal_url, drive_url):
         return _create(terminal_url, drive_url)
 
-Compatibilidade: PesquisAI v0.2.1+ (usa /api/theme, /api/lang, /api/backup,
-/api/restore, /api/apikey, /api/run_terminal, /api/health, /api/sessions).
+Compatibilidade: PesquisAI v0.2.1+ (usa /api/theme, /api/lang, /api/agents,
+/api/backup, /api/restore, /api/apikey, /api/run_terminal, /api/health,
+/api/sessions).
 """
 
 from __future__ import annotations
@@ -70,7 +93,7 @@ try:
     from .jokes import next_joke
 except ImportError:
     WRAPPER_DIR = "/tmp/pesquisai-wrapper"
-    VERSION = "0.4.1"
+    VERSION = "0.4.2"
     def next_joke(category: str = "aleatorio") -> str:
         return "💻 (standalone mode) carregando..."
 
@@ -131,6 +154,9 @@ RESPONSIVE_CSS: str = """
     .footer-link { font-size: 10px; }
     .footer-sep { margin: 0 8px; }
     .modal-600 { width: 90vw; max-width: 600px; }
+    /* Footer: quebra em 2 linhas se necessário */
+    #footer { gap: 4px 8px; height: auto; min-height: 40px; padding: 6px 12px; }
+    #footer .footer-ufv { display: none; }
   }
 
   /* === Mobile (480px – 767px): hamburger + ícones essenciais === */
@@ -144,17 +170,40 @@ RESPONSIVE_CSS: str = """
     .tb-icon { width: 32px; height: 32px; }
     .tb-icon svg { width: 14px; height: 14px; }
     .hamburger { display: inline-flex; }
-    #footer { padding: 0 8px; height: 36px; }
-    .footer-brand { display: none; }
-    .footer-sep { margin: 0 6px; }
-    .footer-link { font-size: 9.5px; }
-    .btn-provider { padding: 0 6px; font-size: 9px; height: 20px; }
-    .footer-oc { display: none; }
+    /* FOOTER: layout em 2 colunas empilhadas, sem overflow */
+    #footer {
+      padding: 6px 10px;
+      height: auto;
+      min-height: 56px;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      font-size: 10.5px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #footer .footer-row-1 {
+      display: flex; align-items: center; gap: 6px;
+      flex: 1 1 100%;
+      flex-wrap: wrap;
+    }
+    #footer .footer-row-2 {
+      display: flex; align-items: center; gap: 6px;
+      flex: 1 1 100%;
+      justify-content: space-between;
+    }
+    .footer-brand { display: inline-flex; }
+    .footer-link { font-size: 10px; }
+    .footer-link svg { width: 10px; height: 10px; }
+    .footer-sep { display: none; }  /* separadores somem em mobile */
+    .footer-ufv { display: none; }  /* UFV some em mobile */
+    .btn-provider { padding: 0 6px; font-size: 9px; height: 22px; }
+    .footer-oc { font-size: 9.5px; }
     /* terminal: ocupa mais espaço em mobile */
-    #terminal-frame { height: calc(100vh - 50px - 36px) !important; }
+    #terminal-frame { height: calc(100vh - 50px - 56px) !important; }
     /* modais: largura quase total */
     #modal, #provider-overlay > div, #health-overlay > div,
-    #sessions-overlay > div, #shortcuts-overlay > div, #lang-overlay > div {
+    #sessions-overlay > div, #shortcuts-overlay > div, #lang-overlay > div,
+    #agents-overlay > div {
       width: 95vw !important; max-width: 95vw !important;
       padding: 16px !important;
     }
@@ -176,23 +225,58 @@ RESPONSIVE_CSS: str = """
     .tb-icon { width: 30px; height: 30px; }
     .tb-icon svg { width: 13px; height: 13px; }
     .mobile-menu { width: 100vw; max-width: 100vw; }
-    #footer { font-size: 9px; }
+    /* FOOTER: compacto, só essenciais */
+    #footer {
+      padding: 5px 8px;
+      min-height: 52px;
+      font-size: 9.5px;
+      gap: 3px 6px;
+    }
+    #footer .footer-row-1 { gap: 4px; }
+    .footer-link { font-size: 9.5px; }
     .footer-link svg { width: 9px; height: 9px; }
+    /* esconde GitHub link, mantém só email */
+    .footer-link-footer-github { display: none; }
+    /* terminal */
+    #terminal-frame { height: calc(100vh - 50px - 52px) !important; }
   }
 
   /* === Landscape em mobile (altura < 500px) === */
   @media (max-height: 500px) and (orientation: landscape) {
     #topbar { height: 40px; }
     .logo { font-size: 12px; }
-    #footer { height: 28px; font-size: 9px; }
-    #terminal-frame { height: calc(100vh - 40px - 28px) !important; }
+    /* FOOTER: 1 linha só, sem UFV/OpenCode */
+    #footer {
+      height: 30px; min-height: 30px;
+      padding: 0 10px; font-size: 9px;
+      flex-wrap: nowrap;
+    }
+    .footer-row-2 { display: none; }
+    .footer-ufv { display: none; }
+    #terminal-frame { height: calc(100vh - 40px - 30px) !important; }
   }
 
   /* === Tablet/iPad portrait: esconde UFV footer === */
   @media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
     .tb-btn { padding: 0 8px; }
-    .footer-sep:nth-of-type(3) { display: none; }
+    .footer-ufv { display: none; }
   }
+
+  /* === FOOTER: regras universais para evitar overflow === */
+  /* (v0.4.2: rodapé responsivo — flex-wrap + classes utilitárias) */
+  #footer {
+    overflow: hidden;
+  }
+  .footer-link, .footer-brand, .footer-oc, .footer-ufv {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .footer-row-1, .footer-row-2 {
+    display: contents;  /* em desktop, ignora os wrappers e usa flex direto */
+  }
+  /* Em mobile (≤767px) os wrappers viram linhas reais (regra acima sobrescreve) */
 
   /* === Acessibilidade: foco visível em todos os botões === */
   .tb-btn:focus-visible, .tb-icon:focus-visible, .hamburger:focus-visible,
@@ -329,14 +413,18 @@ SUPPORTED_LANGUAGES: list[dict[str, str]] = [
 
 
 def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
-    """Cria a versão v0.4.1 do wrapper HTML do PesquisAI.
+    """Cria a versão v0.4.2 do wrapper HTML do PesquisAI.
 
     Versão drop-in que substitui o HTML estático do launch_app.py por
-    um layout adaptativo com 3 correções aplicadas:
+    um layout adaptativo com 5 correções aplicadas:
 
-      1. Responsividade completa (5 breakpoints + hamburger)
-      2. toggleTheme() que recarrega o iframe do ttyd
-      3. Seletor de idioma na topbar (4 idiomas, cookie, query param)
+      v0.4.1:
+        1. Responsividade completa (5 breakpoints + hamburger)
+        2. toggleTheme() que recarrega o iframe do ttyd
+        3. Seletor de idioma na topbar (4 idiomas, cookie, query param)
+      v0.4.2:
+        4. Rodapé responsivo (flex-wrap + 2 linhas + media queries)
+        5. Modal de Diretrizes com AGENTS.md multilíngue (endpoint + cache)
 
     Args:
         terminal_url: URL do terminal ttyd.
@@ -550,37 +638,41 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     #terminal-frame {
       position: absolute;
       inset: 50px 0 40px 0;
-      width: 100%; height: calc(100% - 90px);
+      width: 100%; height: calc(100vh - 90px);
       border: none;
     }
 
     #footer {
       position: fixed; inset: auto 0 0 0;
-      height: 40px;
+      min-height: 40px; height: 40px;
       background: var(--rail);
       border-top: 1px solid var(--line);
-      display: flex; align-items: center;
-      padding: 0 18px; gap: 0;
+      display: flex; align-items: center; flex-wrap: wrap;
+      padding: 6px 18px; gap: 0 12px;
       font-size: 10.5px; color: var(--ink-muted);
       z-index: 9999;
+      overflow: hidden;
     }
     .footer-brand {
       font-family: "Syne", sans-serif; font-weight: 700;
       font-size: 11px; color: var(--ink);
-      margin-right: 14px;
+      margin-right: 6px;
     }
-    .footer-sep { width:1px; height:16px; background:var(--line); margin:0 12px; flex-shrink:0; }
+    .footer-sep { width:1px; height:16px; background:var(--line); margin:0 6px; flex-shrink:0; }
     .footer-link {
       color: var(--ink-muted); text-decoration: none;
       letter-spacing: .03em;
       transition: color .15s;
+      display: inline-flex; align-items: center;
+      max-width: 100%;
     }
     .footer-link:hover { color: var(--accent); }
-    .footer-link svg { width:11px; height:11px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-.15em; margin-right:4px; }
-    .footer-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+    .footer-link svg { width:11px; height:11px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-.15em; margin-right:4px; flex-shrink:0; }
+    .footer-right { margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
     .footer-oc { color:var(--ink-muted); letter-spacing:.03em; }
     .footer-oc a { color:var(--ink-muted); text-decoration:none; }
     .footer-oc a:hover { color:var(--accent); }
+    .footer-ufv { color: var(--ink-muted); }
 
     .btn-provider {
       display: inline-flex; align-items: center; gap: 5px;
@@ -676,6 +768,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     </div>
 
     <div class="tb-icons">
+      <button class="tb-icon" onclick="openAgents()" title="Diretrizes do Agente" data-i18n-title="agents.title">
+        <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/></svg>
+      </button>
       <button class="tb-icon" onclick="openHealth()" title="Dashboard de Saúde" data-i18n-title="dashboard.title">
         <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       </button>
@@ -736,6 +831,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <span data-i18n="providers.title">+ provedor</span>
     </button>
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
+    <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
     <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
@@ -758,28 +854,31 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
 </iframe>
 
   <div id="footer">
-    <span class="footer-brand">PesquisAI</span>
-    <span class="footer-sep"></span>
-    <a href="mailto:gustavo.braga@ufv.br" class="footer-link">
-      <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-      gustavo.braga@ufv.br
-    </a>
-    <span class="footer-sep"></span>
-    <a href="https://github.com/gustavobraga-byte/PesquisAI" target="_blank" class="footer-link">
-      <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-      GitHub
-    </a>
-    <span class="footer-sep"></span>
-    <span style="color:var(--ink-muted)">UFV · Viçosa, MG - Brasil</span>
+    <!-- LINHA 1: marca + contatos (v0.4.2: separado em row-1/row-2 para mobile) -->
+    <div class="footer-row-1">
+      <span class="footer-brand">PesquisAI</span>
+      <span class="footer-sep"></span>
+      <a href="mailto:gustavo.braga@ufv.br" class="footer-link" data-i18n-title="footer.email_title" title="Contato por e-mail">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        <span data-i18n="footer.email">gustavo.braga@ufv.br</span>
+      </a>
+      <span class="footer-sep"></span>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI" target="_blank" class="footer-link footer-link-footer-github" data-i18n-title="footer.github_title" title="Repositório no GitHub">
+        <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+        <span data-i18n="footer.github">GitHub</span>
+      </a>
+      <span class="footer-sep"></span>
+      <span class="footer-ufv" data-i18n="footer.ufv">UFV · Viçosa, MG - Brasil</span>
+    </div>
 
-    <div class="footer-right">
-      <button class="btn-provider" onclick="connectProvider()" title="Conectar novo provedor de IA">
+    <!-- LINHA 2: provedor + OpenCode -->
+    <div class="footer-row-2">
+      <button class="btn-provider" onclick="connectProvider()" data-i18n-title="providers.title" title="Conectar novo provedor de IA">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
         <span data-i18n="providers.title">+ provedor</span>
       </button>
-      <span class="footer-sep"></span>
       <span class="footer-oc">
-        Powered by <a href="https://opencode.ai" target="_blank">OpenCode</a>
+        <span data-i18n="footer.powered_by">Powered by</span> <a href="https://opencode.ai" target="_blank">OpenCode</a>
       </span>
     </div>
   </div>
@@ -852,6 +951,28 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         <div class="shortcut-row"><span data-i18n="shortcuts.history_next">Histórico seguinte</span><span class="shortcut-key">↓</span></div>
       </div>
       <button onclick="closeShortcuts()" class="modal-close" data-i18n="ui.close">Fechar</button>
+    </div>
+  </div>
+
+  <!-- Modal de Diretrizes do Agente (v0.4.2) -->
+  <div id="agents-overlay" onclick="if(event.target===this)closeAgents()" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div id="agents-modal" style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:0;width:680px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">📋</span>
+        <div style="flex:1;min-width:0;">
+          <div class="modal-title" style="margin-bottom:2px;" data-i18n="agents.title">Diretrizes do Agente</div>
+          <div style="font-size:10.5px;color:var(--ink-muted);" data-i18n="agents.subtitle">Regras e princípios do PesquisAI (AGENTS.md)</div>
+        </div>
+        <span id="agents-lang-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:'DM Mono',monospace;">PT-BR</span>
+        <button onclick="closeAgents()" class="modal-close" style="width:auto;padding:4px 10px;font-size:11px;" aria-label="Fechar">✕</button>
+      </div>
+      <div id="agents-content" style="flex:1;overflow-y:auto;padding:18px 22px;font-size:11.5px;line-height:1.6;color:var(--ink);font-family:'DM Mono',monospace;white-space:pre-wrap;word-wrap:break-word;" data-i18n="agents.loading">Carregando diretrizes…</div>
+      <div style="padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02);">
+        <button onclick="copyAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;" data-i18n="agents.copy">Copiar</button>
+        <button onclick="reloadAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="ui.loading">Recarregar</span></button>
+        <div style="flex:1;"></div>
+        <a id="agents-source-link" href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS.pt.md" target="_blank" class="footer-link" style="font-size:10.5px;" data-i18n="agents.open_source">Ver fonte</a>
+      </div>
     </div>
   </div>
 
@@ -960,6 +1081,15 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       } catch (e) {}
       // Aplica imediatamente o que dá (UI strings)
       applyLang(lang);
+      // Invalida o cache do AGENTS.md para que recarregue no novo idioma
+      // (v0.4.2: troca de AGENTS.md por idioma)
+      _agentsCache = null;
+      _agentsCacheLang = null;
+      // Se o modal de Diretrizes estiver aberto, recarrega o conteúdo
+      const agentsOverlay = document.getElementById("agents-overlay");
+      if (agentsOverlay && agentsOverlay.style.opacity === "1") {
+        loadAgents(true);
+      }
       // Toast feedback
       const dict = I18N[lang] || I18N["pt_BR"];
       toast("🌐 " + (dict["languages.switched_to"] || lang), "info");
@@ -1201,6 +1331,96 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       o.style.opacity = "0"; o.style.pointerEvents = "none";
     }
 
+    // ── Modal de Diretrizes do Agente (v0.4.2) ─────────────────
+    // Carrega o AGENTS.md no idioma atual do backend.
+    // Endpoint: GET /api/agents?lang=pt_BR
+    let _agentsCache = null;
+    let _agentsCacheLang = null;
+
+    async function openAgents() {
+      const overlay = document.getElementById("agents-overlay");
+      if (overlay) {
+        overlay.style.opacity = "1";
+        overlay.style.pointerEvents = "all";
+      }
+      await loadAgents();
+    }
+
+    function closeAgents() {
+      const overlay = document.getElementById("agents-overlay");
+      if (overlay) {
+        overlay.style.opacity = "0";
+        overlay.style.pointerEvents = "none";
+      }
+    }
+
+    async function loadAgents(forceReload = false) {
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      const contentEl = document.getElementById("agents-content");
+      const badgeEl = document.getElementById("agents-lang-badge");
+      const sourceEl = document.getElementById("agents-source-link");
+      if (!contentEl) return;
+
+      // Atualiza badge do idioma + link da fonte
+      const langShort = (_currentLang || "pt_BR").replace("_", "-");
+      if (badgeEl) badgeEl.textContent = langShort;
+      if (sourceEl) {
+        const code = (_currentLang || "pt_BR").split("_")[0];
+        sourceEl.href = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS." + code + ".md";
+      }
+
+      // Cache: 1 chamada por idioma até forceReload
+      if (!forceReload && _agentsCacheLang === _currentLang && _agentsCache) {
+        contentEl.textContent = _agentsCache;
+        return;
+      }
+
+      contentEl.textContent = dict["agents.loading"] || "Carregando diretrizes…";
+
+      try {
+        const r = await fetch(BASE + "/api/agents?lang=" + encodeURIComponent(_currentLang));
+        const d = await r.json();
+        if (d.ok && d.content) {
+          _agentsCache = d.content;
+          _agentsCacheLang = _currentLang;
+          contentEl.textContent = d.content;
+        } else {
+          contentEl.textContent = dict["agents.error"] || "Erro ao carregar diretrizes.";
+        }
+      } catch (e) {
+        contentEl.textContent = (dict["agents.error"] || "Erro") + " — " + e.message;
+      }
+    }
+
+    function reloadAgents() {
+      _agentsCache = null;
+      _agentsCacheLang = null;
+      loadAgents(true);
+    }
+
+    async function copyAgents() {
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      const text = _agentsCache || document.getElementById("agents-content").textContent || "";
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Fallback para browsers antigos
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        toast("✅ " + (dict["agents.copy_ok"] || "Diretrizes copiadas!"), "ok");
+      } catch (e) {
+        toast("❌ " + e.message, "err");
+      }
+    }
+
     // ═══════════════════════════════════════════════════════════
     // 🐛 CORREÇÃO 2: toggleTheme() agora RECARREGA o iframe
     // ═══════════════════════════════════════════════════════════
@@ -1341,7 +1561,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         openShortcuts();
       }
       if (e.key === "Escape") {
-        closeHealth(); closeSessions(); closeShortcuts();
+        closeHealth(); closeSessions(); closeShortcuts(); closeAgents();
         closeProvider(); closeModal(); closeLangMenu();
         const mm = document.getElementById("mobile-menu");
         if (mm && mm.classList.contains("open")) toggleMobileMenu();
@@ -1407,6 +1627,19 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal recarregado com novo tema",
             "languages.label": "Idioma", "languages.switched_to": "Idioma alterado para",
             "success_messages.backup_saved": "Backup salvo",
+            "footer.email": "gustavo.braga@ufv.br",
+            "footer.github": "GitHub",
+            "footer.ufv": "UFV · Viçosa, MG - Brasil",
+            "footer.powered_by": "Powered by",
+            "footer.email_title": "Contato por e-mail",
+            "footer.github_title": "Repositório no GitHub",
+            "agents.title": "Diretrizes do Agente",
+            "agents.subtitle": "Regras e princípios do PesquisAI (AGENTS.md)",
+            "agents.loading": "Carregando diretrizes…",
+            "agents.error": "Erro ao carregar diretrizes do agente.",
+            "agents.copy_ok": "Diretrizes copiadas!",
+            "agents.copy": "Copiar",
+            "agents.open_source": "Ver fonte",
         },
         "en_US": {
             "ui.backup": "Save backup", "ui.restore": "Restore",
@@ -1431,6 +1664,19 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal reloaded with new theme",
             "languages.label": "Language", "languages.switched_to": "Language switched to",
             "success_messages.backup_saved": "Backup saved",
+            "footer.email": "gustavo.braga@ufv.br",
+            "footer.github": "GitHub",
+            "footer.ufv": "UFV · Viçosa, MG - Brazil",
+            "footer.powered_by": "Powered by",
+            "footer.email_title": "Contact by email",
+            "footer.github_title": "Repository on GitHub",
+            "agents.title": "Agent Guidelines",
+            "agents.subtitle": "PesquisAI rules and principles (AGENTS.md)",
+            "agents.loading": "Loading guidelines…",
+            "agents.error": "Error loading agent guidelines.",
+            "agents.copy_ok": "Guidelines copied!",
+            "agents.copy": "Copy",
+            "agents.open_source": "View source",
         },
         "es_ES": {
             "ui.backup": "Guardar copia", "ui.restore": "Restaurar",
@@ -1455,6 +1701,19 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal recargado con nuevo tema",
             "languages.label": "Idioma", "languages.switched_to": "Idioma cambiado a",
             "success_messages.backup_saved": "Copia guardada",
+            "footer.email": "gustavo.braga@ufv.br",
+            "footer.github": "GitHub",
+            "footer.ufv": "UFV · Viçosa, MG - Brasil",
+            "footer.powered_by": "Desarrollado con",
+            "footer.email_title": "Contacto por correo",
+            "footer.github_title": "Repositorio en GitHub",
+            "agents.title": "Directrices del Agente",
+            "agents.subtitle": "Reglas y principios del PesquisAI (AGENTS.md)",
+            "agents.loading": "Cargando directrices…",
+            "agents.error": "Error al cargar las directrices del agente.",
+            "agents.copy_ok": "¡Directrices copiadas!",
+            "agents.copy": "Copiar",
+            "agents.open_source": "Ver fuente",
         },
         "fr_FR": {
             "ui.backup": "Sauvegarder", "ui.restore": "Restaurer",
@@ -1479,6 +1738,19 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal rechargé avec le nouveau thème",
             "languages.label": "Langue", "languages.switched_to": "Langue changée en",
             "success_messages.backup_saved": "Sauvegarde enregistrée",
+            "footer.email": "gustavo.braga@ufv.br",
+            "footer.github": "GitHub",
+            "footer.ufv": "UFV · Viçosa, MG - Brésil",
+            "footer.powered_by": "Alimenté par",
+            "footer.email_title": "Contact par e-mail",
+            "footer.github_title": "Dépôt sur GitHub",
+            "agents.title": "Directives de l'Agent",
+            "agents.subtitle": "Règles et principes du PesquisAI (AGENTS.md)",
+            "agents.loading": "Chargement des directives…",
+            "agents.error": "Erreur lors du chargement des directives de l'agent.",
+            "agents.copy_ok": "Directives copiées !",
+            "agents.copy": "Copier",
+            "agents.open_source": "Voir la source",
         },
     }
 

@@ -4,6 +4,101 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.4.2] — 2026-06-23 — Footer Responsive + Multilingual AGENTS.md
+
+### 🐛 Bug Fixes (reportados pelo usuário em 2026-06-23 — sessão `ses_10a4`)
+
+#### 📱 4. Rodapé NÃO responsivo
+- **Problema:** o `#footer` original tinha `display: flex` SEM `flex-wrap`,
+  causando **transbordamento horizontal** em mobile. Os 8+ itens do rodapé
+  (PesquisAI, email, GitHub, UFV, Provedor, OpenCode, separadores) estouravam
+  a tela em larguras < 480px. O `#terminal-frame` também tinha altura fixa
+  `calc(100% - 90px)` que não considerava o rodapé crescendo em 2 linhas.
+- **Correção:**
+  - `flex-wrap: wrap` + `overflow: hidden` no `#footer`
+  - 2 linhas lógicas: `.footer-row-1` (marca + email + GitHub + UFV) e
+    `.footer-row-2` (provedor + OpenCode)
+  - `display: contents` em desktop (wrappers invisíveis → fluxo flex normal)
+  - Em mobile (≤767px), wrappers viram linhas reais com `gap: 4px 8px`
+  - Em mobile muito pequeno (<480px), GitHub some, e altura do terminal
+    recalcula para `calc(100vh - 50px - 52px)`
+  - Em landscape (altura <500px), só a primeira linha aparece, altura 30px
+  - `#terminal-frame` corrigido de `calc(100% - 90px)` para
+    `calc(100vh - 90px)` + ajustes por breakpoint
+
+#### 📋 5. Troca de idioma NÃO trocava o AGENTS.md
+- **Problema:** ao trocar para inglês/espanhol/francês, **apenas as strings
+  da UI** eram traduzidas (data-i18n), mas o arquivo `agents/AGENTS.xx.md`
+  (regras de integridade científica) continuava sendo exibido/servido no
+  idioma original. Pesquisador que trocava para inglês continuava lendo
+  regras de "Não invente dados" em português.
+- **Correção:**
+  - **Novo endpoint backend** `GET /api/agents?lang=pt_BR|en_US|es_ES|fr_FR`
+    que serve o conteúdo de `agents/AGENTS.<lang>.md` apropriado
+  - **Novo modal "📋 Diretrizes do Agente"** com botão na topbar
+  - **Cache client-side** por idioma (1 chamada até próxima troca)
+  - **Invalidação automática do cache** em `setLang()` + recarregamento
+    se o modal estiver aberto
+  - **Botões auxiliares:** 📋 Copiar (com fallback para `execCommand`),
+    ↻ Recarregar, 🔗 Ver fonte (link direto pro GitHub)
+  - **Badge do idioma atual** no header do modal (PT-BR, EN-US, ES-ES, FR-FR)
+  - **Link da fonte dinâmico:** aponta pro arquivo correto no GitHub
+    (AGENTS.pt.md, AGENTS.en.md, etc.) baseado no idioma ativo
+
+### 🆕 Funcionalidades Adicionais (v0.4.2)
+
+- **Detecção de diretório `agents/`** robusta: busca em até 5 níveis acima
+  do `launch_app.py`, em `_folder_path` (Drive) e em `os.getcwd()`
+- **Fallback gracioso** se o AGENTS.md não for encontrado: retorna JSON
+  com `ok: false` e lista de caminhos tentados
+- **Toast de feedback** ao copiar diretrizes (`✅ Diretrizes copiadas!`)
+- **Item "Diretrizes" no mobile menu** (drawer) com toggle automático
+- **Tecla `Escape`** fecha também o modal de Diretrizes
+- **4 novas strings traduzidas** (`footer.email`, `footer.github`,
+  `footer.ufv`, `footer.powered_by`) + chaves `footer.email_title`,
+  `footer.github_title` para tooltips
+- **9 strings do modal de Diretrizes** (`agents.title`, `agents.subtitle`,
+  `agents.loading`, `agents.error`, `agents.copy`, `agents.copy_ok`,
+  `agents.open_source`) em 4 idiomas = **36 novas traduções**
+
+### 📁 Arquivos Modificados (v0.4.2)
+
+- `pesquisai/launch_app_responsive_v041.py` — **+rodapé responsivo, +modal Diretrizes**
+  - Footer CSS: `flex-wrap`, `overflow: hidden`, 2 linhas lógicas
+  - Footer HTML: `<div class="footer-row-1">` + `<div class="footer-row-2">`
+  - Topbar: novo botão `openAgents()` (📋) com tooltip i18n
+  - Mobile menu: novo item "📋 Diretrizes do Agente"
+  - HTML: novo modal `#agents-overlay` com header/content/footer
+  - JS: `openAgents()`, `closeAgents()`, `loadAgents()`, `copyAgents()`,
+    `reloadAgents()` + invalidação de cache em `setLang()`
+  - CSS: ajustes no `@media (max-width: 1023px|767px|479px)` e
+    `@media (max-height: 500px)` para o rodapé
+- `pesquisai/launch_app.py` — **+endpoint `GET /api/agents`**
+  - Suporta `?lang=pt_BR|en_US|es_ES|fr_FR|pt|en|es|fr`
+  - Busca `agents/AGENTS.<lang>.md` em até 5 localizações
+  - Retorna `{ok, lang, filename, content}` ou `{ok:false, error, tried}`
+- `__version__.py` — `0.4.1` → `0.4.2`, codinome
+  "Footer Responsive + Multilingual AGENTS.md"
+
+### 🔒 Compatibilidade
+
+- ✅ **Backward compatible** — sem breaking changes
+- ✅ **Endpoint opcional** — se o `agents/` não existir, UI mostra
+  mensagem amigável "Erro ao carregar diretrizes"
+- ✅ **Fallback HTML** — modal sempre renderiza, mesmo offline
+  (mostra "Erro ao carregar" se a rede cair)
+
+### 🧪 Validação
+
+- **28/28 validações automáticas** aprovadas (rodapé + modal + i18n)
+- **79/79 testes** continuam passando (48 grant_finder + 31 i18n)
+- **Cobertura 71.58%** mantida (mínimo: 70%)
+- HTML gerado: **74.901 caracteres** (vs. 60.582 da v0.4.1)
+- **Endpoint `/api/agents` testado** com 10 variações de idioma
+  (4 completos + 4 short + 2 inválidos — todos retornam corretamente)
+
+---
+
 ## [0.4.1] — 2026-06-23 — UI Fixes (Responsive + Theme + Language)
 
 ### 🏗️ Reorganização da Estrutura (2026-06-23)
@@ -275,6 +370,8 @@ Versão reservada para próximos desenvolvimentos.
 
 ---
 
+[0.4.2]: https://github.com/gustavobraga-byte/PesquisAI/releases/tag/v0.4.2
+[0.4.1]: https://github.com/gustavobraga-byte/PesquisAI/releases/tag/v0.4.1
 [0.4.0]: https://github.com/gustavobraga-byte/PesquisAI/releases/tag/v0.4.0
 [0.3.0]: https://github.com/gustavobraga-byte/PesquisAI/releases/tag/v0.3.0
 [0.2.3]: https://github.com/gustavobraga-byte/PesquisAI/releases/tag/v0.2.3

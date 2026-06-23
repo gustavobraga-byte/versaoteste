@@ -1,6 +1,6 @@
 # 🔬 PesquisAI
 
-> **Versão:** 0.4.1 (UI Fixes — Responsive + Theme + Language)
+> **Versão:** 0.4.2 (Footer Responsive + Multilingual AGENTS.md)
 > **Data:** 2026-06-23
 > **Status:** ✅ Pronto para deploy
 > **Tema padrão:** 🌙 **Escuro** (com anti-flash CSS)
@@ -15,10 +15,10 @@ Agente de IA para pesquisadores, executado em ttyd (terminal) + OpenCode + 8+ sk
 PesquisAI/
 │
 ├── README.md                          ⭐ Este arquivo
-├── __version__.py                     # 0.4.1
+├── __version__.py                     # 0.4.2
 │
 ├── 🔬 pesquisai/                      # Módulo principal do PesquisAI
-│   ├── launch_app_responsive.py       # ✅ v0.4.1 (responsivo + tema + idioma)
+│   ├── launch_app_responsive.py       # ✅ v0.4.2 (responsivo + tema + idioma + rodapé + AGENTS)
 │   └── launch_app_responsive_v041.py  # ✅ Drop-in patch para launch_app.py do GitHub
 │
 ├── 🤖 agents/                         # AGENTS.md multilíngues
@@ -47,8 +47,8 @@ PesquisAI/
 │   └── meta-search-br/                # Busca meta em fontes BR
 │
 ├── 📚 docs/                           # Documentação completa
-│   ├── CHANGELOG.md                   # Histórico de versões (v0.001 → v0.4.1)
-│   ├── PATCH_v0.4.1.md                # 🐛 3 correções críticas
+│   ├── CHANGELOG.md                   # Histórico de versões (v0.001 → v0.4.2)
+│   ├── PATCH_v0.4.1.md                # 🐛 3 correções críticas (v0.4.1)
 │   ├── MOBILE_RESPONSIVE_PATCH.md     # Patch mobile/tablet (v0.4.0)
 │   ├── ENTREGAS_JUNHO_2026.md         # Resumo das entregas
 │   ├── INTEGRITY.md                   # Política de integridade científica
@@ -108,11 +108,11 @@ PesquisAI/
 git clone https://github.com/gustavobraga-byte/PesquisAI.git
 cd PesquisAI
 
-# Use o wrapper responsivo (v0.4.1)
+# Use o wrapper responsivo (v0.4.2)
 python -m pesquisai.main
 ```
 
-### 2. Aplicar o patch v0.4.1 em um PesquisAI existente
+### 2. Aplicar o patch v0.4.2 em um PesquisAI existente
 
 ```bash
 # Copie o patch para o PesquisAI
@@ -133,15 +133,17 @@ zip -r ../pesquisai-v0.4.1.zip .
 
 ---
 
-## 🐛 Correções v0.4.1 (2026-06-23)
+## 🐛 Correções v0.4.1 + v0.4.2 (2026-06-23)
 
-Bugs reportados pelo usuário no chat `session-ses_10b7.md`:
+Bugs reportados pelo usuário nas sessões `session-ses_10b7.md` e `session-ses_10a4.md`:
 
-| # | Bug | Solução | Detalhes |
-|---|-----|---------|----------|
-| 1 | Site não responsivo | 6 media queries + hamburger | `docs/PATCH_v0.4.1.md` §1 |
-| 2 | Tema não recarrega terminal | `toggleTheme()` recarrega iframe do ttyd | `docs/PATCH_v0.4.1.md` §2 |
-| 3 | Idioma sem opção na UI | Dropdown 4 idiomas + cookie | `docs/PATCH_v0.4.1.md` §3 |
+| # | Bug | Solução | Versão | Detalhes |
+|---|-----|---------|--------|----------|
+| 1 | Site não responsivo | 6 media queries + hamburger | v0.4.1 | `docs/PATCH_v0.4.1.md` §1 |
+| 2 | Tema não recarrega terminal | `toggleTheme()` recarrega iframe do ttyd | v0.4.1 | `docs/PATCH_v0.4.1.md` §2 |
+| 3 | Idioma sem opção na UI | Dropdown 4 idiomas + cookie | v0.4.1 | `docs/PATCH_v0.4.1.md` §3 |
+| 4 | Rodapé não responsivo | `flex-wrap` + 2 linhas + media queries | v0.4.2 | `docs/CHANGELOG.md` §0.4.2 |
+| 5 | Idioma não troca AGENTS.md | Modal Diretrizes + endpoint `/api/agents` | v0.4.2 | `docs/CHANGELOG.md` §0.4.2 |
 
 **Tema padrão:** 🌙 **Escuro** (com anti-flash CSS para evitar flash branco no load).
 
@@ -153,7 +155,7 @@ Bugs reportados pelo usuário no chat `session-ses_10b7.md`:
 cd releases/v0.4.0
 python3 -m pytest grant_finder/tests/ i18n/tests/
 
-# Resultado: 79 passed (100% verdes) · 83% cobertura
+# Resultado: 79 passed (100% verdes) · 71.58% cobertura
 ```
 
 ---
@@ -162,11 +164,11 @@ python3 -m pytest grant_finder/tests/ i18n/tests/
 
 | Métrica | Valor |
 |---------|-------|
-| Versão | 0.4.1 |
+| Versão | 0.4.2 |
 | Idiomas | 4 (pt_BR, en_US, es_ES, fr_FR) |
 | Agências de fomento | 13 (BR + internacional) |
 | Testes | 79 (100% verdes) |
-| Cobertura | 83% |
+| Cobertura | 71.58% |
 | Media queries | 6 (5 breakpoints + landscape) |
 | Strings traduzidas inline | 40+ |
 
@@ -190,4 +192,4 @@ python3 -m pytest grant_finder/tests/ i18n/tests/
 
 ---
 
-**Última atualização:** 2026-06-23 (v0.4.1)
+**Última atualização:** 2026-06-23 (v0.4.2)

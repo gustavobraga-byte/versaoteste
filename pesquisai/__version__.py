@@ -1,29 +1,36 @@
 """
-__version__.py — Fonte única de versão do PesquisAI v0.4.1.
+__version__.py — Fonte única de versão do PesquisAI v0.4.2.
 
-Este repositório contém o **PesquisAI release v0.4.1** + sandbox pessoal:
+Este repositório contém o **PesquisAI release v0.4.2** + sandbox pessoal:
 
 Estrutura do repositório:
-  /                       # PesquisAI release v0.4.1 (raiz)
-  ├── agents/             # AGENTS.md multilíngues
+  /                       # PesquisAI release v0.4.2 (raiz)
+  ├── agents/             # AGENTS.md multilíngues (4 idiomas)
   ├── docs/               # Documentação (CHANGELOG, PATCH, etc.)
   ├── grant_finder/       # Skill de busca de fomento
   ├── i18n/               # Módulo multilíngue
-  ├── pesquisai/          # Módulo PesquisAI (v0.4.1 corrigido)
+  ├── pesquisai/          # Módulo PesquisAI (v0.4.2 corrigido)
   ├── releases/v0.4.0/    # Release isolada completa
   ├── sandbox/            # 🏖️ Arquivos não-PesquisAI
   ├── sessions/           # Logs de sessão
   └── skills/             # Skills adicionais
 
 Compatível com o PesquisAI principal (v0.2.1+).
+
+Novidades da v0.4.2 (2026-06-23):
+  🐛 Rodapé responsivo (flex-wrap + 2 linhas + media queries)
+  🐛 Modal de Diretrizes com AGENTS.md multilíngue
+  🆕 Endpoint GET /api/agents?lang=xx_XX
+  🆕 Cache client-side do AGENTS.md por idioma
+  🆕 Botões: 📋 Copiar · ↻ Recarregar · 🔗 Ver fonte
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.4.1"
+__version__: str = "0.4.2"
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-06-23"
-__codename__: str = "UI Fixes (Responsive + Theme + Language)"
+__codename__: str = "Footer Responsive + Multilingual AGENTS.md"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
@@ -46,8 +53,10 @@ __components__: dict[str, str] = {
     "grant_finder": "0.1.0",
     "i18n": "0.2.0",
     "launch_app_responsive": "0.2.0",  # 0.1.0 → 0.2.0 (3 correções aplicadas)
-    "launch_app_responsive_v041": "0.1.0",  # NOVO: drop-in patch para launch_app.py
+    "launch_app_responsive_v041": "0.2.0",  # v0.4.1 → v0.4.2 (rodapé + AGENTS.md)
     "agents_multilingual": "0.1.0",
+    "agents_modal": "0.1.0",  # NOVO em v0.4.2: modal de Diretrizes
+    "footer_responsive": "0.1.0",  # NOVO em v0.4.2: rodapé 100% responsivo
 }
 
 # ── Idiomas suportados ─────────────────────────────────────────
