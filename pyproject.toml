@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pesquisai-additions"
-version = "0.4.0"
-description = "Adições do PesquisAI v0.4.0 — skill grant_finder, módulo i18n (4 idiomas), patch responsivo mobile"
+version = "0.4.1"
+description = "PesquisAI v0.4.1 — UI Fixes (Responsive + Theme + Language) + grant_finder + i18n (4 idiomas)"
 authors = [
     { name = "Gustavo Bastos Braga", email = "gustavo.braga@ufv.br" },
 ]
@@ -18,6 +18,7 @@ keywords = [
     "grant-finder",
     "i18n",
     "mobile-responsive",
+    "theme-toggle",
     "abnt",
     "ibge",
     "datasus",
@@ -39,16 +40,12 @@ classifiers = [
     "Topic :: Software Development :: Internationalization",
 ]
 dependencies = [
-    # Herdadas do PesquisAI principal
     "google-api-python-client",
     "google-auth-httplib2",
     "google-auth-oauthlib",
     "cryptography>=41.0",
-    # Módulo i18n
-    # (nenhuma dependência extra — usa apenas stdlib)
-    # Skill grant_finder
-    "requests>=2.31",     # para conectores HTTP
-    "beautifulsoup4>=4.12",  # para parsing de HTML
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]
@@ -63,63 +60,86 @@ test = [
     "pytest-cov>=5.0",
     "requests-mock>=1.11",
 ]
-i18n = [
-    # Módulo i18n usa apenas stdlib
-]
-full = [
-    "requests>=2.31",
-    "beautifulsoup4>=4.12",
-    "pdfkit>=1.0.0",  # opcional: para gerar PDFs
-]
 
 [project.urls]
+Homepage = "https://github.com/gustavobraga-byte/PesquisAI"
+Documentation = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/"
 Repository = "https://github.com/gustavobraga-byte/PesquisAI"
-Documentation = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md"
-Changelog = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/CHANGELOG.md"
-"Bug Reports" = "https://github.com/gustavobraga-byte/PesquisAI/issues"
-"PesquisAI Main" = "https://github.com/gustavobraga-byte/PesquisAI"
+Issues = "https://github.com/gustavobraga-byte/PesquisAI/issues"
+Changelog = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/CHANGELOG.md"
 
-# ── Hatchling build ────────────────────────────────────────
 [tool.hatch.build.targets.wheel]
-packages = ["grant_finder", "i18n", "pesquisai"]
+packages = [
+    "agents",
+    "docs",
+    "grant_finder",
+    "i18n",
+    "pesquisai",
+    "skills",
+]
 
 [tool.hatch.build.targets.wheel.force-include]
-"agents" = "pesquisai_additions/agents"
-"docs" = "pesquisai_additions/docs"
+"README.md" = "README.md"
+"LICENSE" = "LICENSE"
+"CHANGELOG.md" = "CHANGELOG.md"
 
-# ── Ruff (linter e formatter) ──────────────────────────────
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP", "SIM", "B", "A", "C4", "PT"]
-ignore = []
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "PT004", "PT011"]
-"data/*" = ["ALL"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-line-ending = "lf"
-
-# ── Mypy (type checker) ────────────────────────────────────
-[tool.mypy]
-python_version = "3.10"
-strict = false
-ignore_missing_imports = true
-disallow_untyped_defs = false
-warn_unused_configs = true
-
-# ── Pytest ─────────────────────────────────────────────────
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["grant_finder/tests", "i18n/tests"]
 python_files = ["test_*.py"]
-addopts = "-v --cov=grant_finder --cov=i18n --cov-report=term-missing"
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+    "--cov=grant_finder",
+    "--cov=i18n",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
 ]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["grant_finder", "i18n"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/.pytest_cache/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]
+show_missing = true
+precision = 2
+fail_under = 70
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["**/node_modules/**", "sandbox/**"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true

@@ -1,19 +1,39 @@
 # 📦 Entregas — PesquisAI (Junho 2026)
 
 > **Data:** 2026-06-23
-> **Tarefas:** 3 entregas (mobile responsivo + grant finder + i18n)
-> **Total:** 47 arquivos criados · 74 testes · 0 falhas
+> **Tarefas:** 3 entregas (mobile responsivo + grant finder + i18n) + 3 correções v0.4.1
+> **Total:** 52 arquivos · 79 testes · 0 falhas
+> **Versão atual:** 0.4.1
 
 ---
 
-## 🎯 Resumo das Entregas
+## 🐛 v0.4.1 — Patch Corretivo (2026-06-23)
+
+Bugs reportados pelo usuário no chat `session-ses_10b7.md` corrigidos:
+
+| # | Bug | Status | Solução |
+|---|-----|--------|---------|
+| 1 | Site não responsivo | ✅ Corrigido | 6 media queries + hamburger + modais fluidos |
+| 2 | Tema claro/escuro não recarrega terminal | ✅ Corrigido | `toggleTheme()` agora recarrega iframe do ttyd |
+| 3 | Idioma sem opção na interface | ✅ Corrigido | Dropdown com 4 idiomas (🇧🇷🇺🇸🇪🇸🇫🇷) + cookie + query param |
+
+**Arquivos novos:**
+- `pesquisai/launch_app_responsive_v041.py` — drop-in patch (1.412 linhas)
+- `pesquisai-v0.4.0/docs/PATCH_v0.4.1.md` — documentação completa
+
+**Detalhes em:** `pesquisai-v0.4.0/docs/PATCH_v0.4.1.md`
+
+---
+
+## 🎯 Resumo das Entregas (v0.4.0 + v0.4.1)
 
 | # | Entrega | Status | Localização | Testes |
 |---|---|---|---|---|
-| 1 | **Site responsivo mobile** | ✅ | `pesquisai/launch_app_responsive.py` + `MOBILE_RESPONSIVE_PATCH.md` | Manual (Playwright) |
+| 1 | **Site responsivo mobile** (v0.4.0) | ✅ | `pesquisai/launch_app_responsive.py` + `MOBILE_RESPONSIVE_PATCH.md` | Manual (Playwright) |
+| 1.1 | **Patch v0.4.1** (3 correções UI) | ✅ | `pesquisai/launch_app_responsive_v041.py` + `PATCH_v0.4.1.md` | 26 validações ✅ |
 | 2 | **Skill grant_finder** | ✅ | `grant_finder/` | 48 ✅ |
-| 3 | **i18n multilíngue** | ✅ | `i18n/` | 26 ✅ |
-| 4 | **Agents multilíngues** | ✅ | `agents/AGENTS.{pt,en,es}.md` | Manual |
+| 3 | **i18n multilíngue** (4 idiomas) | ✅ | `i18n/` | 31 ✅ |
+| 4 | **Agents multilíngues** | ✅ | `agents/AGENTS.{pt,en,es,fr}.md` | Manual |
 
 ---
 
