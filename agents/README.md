@@ -1,6 +1,6 @@
 # 🌍 PesquisAI — Agents Multilíngues
 
-> Suporte oficial para **3 idiomas** via variantes do `AGENTS.md`.
+> Suporte oficial para **4 idiomas** via variantes do `AGENTS.md`.
 
 ## 📁 Arquivos
 
@@ -9,6 +9,7 @@
 | `AGENTS.pt.md` | 🇧🇷 Português (Brasil) | Padrão (default) |
 | `AGENTS.en.md` | 🇺🇸 English (United States) | Pesquisadores internacionais |
 | `AGENTS.es.md` | 🇪🇸 Español (España) | Hispanofalantes, América Latina |
+| `AGENTS.fr.md` | 🇫🇷 Français (France) | Francofonia, cooperação internacional |
 
 ## 🔧 Como Funciona
 
@@ -39,6 +40,8 @@ print(get_language())  # "en_US"
 ### Via interface web
 
 Clique no ícone de globo (🌐) no topo da interface para selecionar o idioma.
+As **Diretrizes do Agente** (botão 📋 na topbar) mudam automaticamente
+para o idioma selecionado — endpoint `GET /api/agents?lang=xx_XX`.
 
 ## 🧪 Conteúdo de Cada Variante
 
@@ -52,21 +55,22 @@ Cada `AGENTS.<lang>.md` mantém **100% das regras originais**, com:
 
 ### Traduções dos Marcadores de Evidência
 
-| 🇧🇷 pt_BR | 🇺🇸 en_US | 🇪🇸 es_ES |
-|---|---|---|
-| `[DADO CONFIRMADO]` | `[CONFIRMED DATA]` | `[DATO CONFIRMADO]` |
-| `[ESTIMATIVA FUNDAMENTADA]` | `[FUNDAMENTED ESTIMATE]` | `[ESTIMACIÓN FUNDAMENTADA]` |
-| `[SEM DADOS SUFICIENTES]` | `[INSUFFICIENT DATA]` | `[DATOS INSUFICIENTES]` |
+| 🇧🇷 pt_BR | 🇺🇸 en_US | 🇪🇸 es_ES | 🇫🇷 fr_FR |
+|---|---|---|---|
+| `[DADO CONFIRMADO]` | `[CONFIRMED DATA]` | `[DATO CONFIRMADO]` | `[DONNÉE CONFIRMÉE]` |
+| `[ESTIMATIVA FUNDAMENTADA]` | `[FUNDAMENTED ESTIMATE]` | `[ESTIMACIÓN FUNDAMENTADA]` | `[ESTIMATION FONDÉE]` |
+| `[SEM DADOS SUFICIENTES]` | `[INSUFFICIENT DATA]` | `[DATOS INSUFICIENTES]` | `[DONNÉES INSUFFISANTES]` |
 
 ## ➕ Adicionar Novo Idioma
 
-Para adicionar, por exemplo, Francês (fr_FR):
+Para adicionar, por exemplo, Alemão (de_DE):
 
-1. Crie `agents/AGENTS.fr.md` traduzindo o conteúdo
-2. Adicione `"fr_FR"` em `i18n/translator.py → SUPPORTED_LANGUAGES`
+1. Crie `agents/AGENTS.de.md` traduzindo o conteúdo
+2. Adicione `"de_DE"` em `i18n/translator.py → SUPPORTED_LANGUAGES`
 3. Adicione mapeamento em `i18n/detector.py → _normalize`
-4. Crie `i18n/translations/fr_FR.json`
-5. Atualize a interface para incluir o novo idioma
+4. Crie `i18n/translations/de_DE.json`
+5. Atualize a interface para incluir o novo idioma em
+   `launch_app_responsive_v041.py → SUPPORTED_LANGUAGES`
 
 ## 🧪 Testes de Consistência
 

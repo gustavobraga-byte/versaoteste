@@ -1,13 +1,13 @@
 """
-launch_app_responsive.py — Wrapper HTML responsivo + tema + idioma (v0.4.2).
+launch_app_responsive.py — Wrapper HTML responsivo + tema + idioma (v0.4.2.1).
 
 Este módulo SUBSTITUI o `create_wrapper_html` do launch_app.py do PesquisAI
 principal (https://github.com/gustavobraga-byte/PesquisAI/blob/main/pesquisai/launch_app.py)
 corrigindo os problemas reportados pelo usuário em 2026-06-23.
 
-═══════════════════════════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════════════════════
 v0.4.1 — UI Fixes (3 correções originais)
-═══════════════════════════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════════════════════
 
   1. 🐛 Site NÃO responsivo
      - Problema: o CSS original não tem media queries. Topbar de 8 botões
@@ -29,9 +29,9 @@ v0.4.1 — UI Fixes (3 correções originais)
      - Correção: dropdown na topbar com 🇧🇷 🇺🇸 🇪🇸 🇫🇷, persistência em
        cookie `pesquisai_lang`, query param `?lang=xx_XX`.
 
-═══════════════════════════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════════════════════
 v0.4.2 — Footer Responsivo + AGENTS.md Multilíngue (2 correções adicionais)
-═══════════════════════════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════════════════════
 
   4. 🐛 Rodapé NÃO responsivo
      - Problema: o rodapé original (#footer) tem `display: flex` SEM
@@ -63,6 +63,48 @@ v0.4.2 — Footer Responsivo + AGENTS.md Multilíngue (2 correções adicionais)
        • Botões: 📋 Copiar, ↻ Recarregar, 🔗 Ver fonte (link pro GitHub)
        • Badge do idioma atual no header do modal (PT-BR, EN-US, etc.)
 
+═════════════════════════════════════════════════════════════════════════
+v0.4.2.1 — Sessão ses_10a4 (3 correções adicionais da sessão do usuário)
+═════════════════════════════════════════════════════════════════════════
+
+  6. 🐛 Tema CLARO: textos invisíveis nos modais (Dashboard de Saúde,
+     Atalhos, Sessões, Provedor)
+     - Problema: 6 modais tinham `background:#181b1e` (cor escura FIXA),
+       enquanto a cor do texto (`var(--ink-muted)`) passava a cinza
+       escuro no tema claro → resultado: cinza escuro em fundo escuro
+       = invisível.
+     - Correção:
+       • Nova classe `.modal-shell` que usa variáveis CSS (`--modal-bg`,
+         `--modal-border`) responsivas ao tema
+       • `html.theme-light .modal-shell` define `--modal-bg: #ffffff` e
+         sombra mais suave
+       • Inputs (`session-search`, `prov-key-input`) ganham estilo para
+         tema claro
+       • Botões `.modal-close` e itens de lista (`.backup-item:hover`,
+         `.session-item:hover`) também tem contraste corrigido
+
+  7. 🐛 Dashboard de Saúde não carrega
+     - Problema: `openHealth()` só abria o overlay visual, sem fazer
+       fetch em `/api/health` nem popular a lista. Usuário clicava no
+       ícone e só via "Carregando diagnóstico…".
+     - Correção:
+       • `openHealth()` agora faz `fetch(BASE + "/api/health")`
+       • Nova função `renderHealth(d)` popula `#health-list` com linhas
+         de status (✓/✗) para cada verificação (Drive, ttyd, OpenCode,
+         keys, skills, ffmpeg, disco, versão)
+
+  8. 🐛 Modal de Diretrizes mostra MD cru (sem formatação)
+     - Problema: o conteúdo era injetado com `.textContent`, exibindo
+       os caracteres `#`, `**`, `|`, `---` do markdown como texto puro.
+     - Correção:
+       • Adicionado `marked.js` (CDN) + `github-markdown-css` ao `<head>`
+       • Nova função `renderAgentsContent(el, md)` usa `marked.parse()`
+         para converter markdown → HTML formatado
+       • CSS customizado (#agents-content.markdown-body) preserva as
+         cores de tema (accent, ink, ink-muted) e fontes (Syne para
+         títulos, DM Mono para código/corpo)
+       • Remove frontmatter YAML do conteúdo antes de renderizar
+
 Instalação:
     Editar ``pesquisai/launch_app.py`` e substituir a função
     ``create_wrapper_html(terminal_url, drive_url)`` original por:
@@ -93,7 +135,7 @@ try:
     from .jokes import next_joke
 except ImportError:
     WRAPPER_DIR = "/tmp/pesquisai-wrapper"
-    VERSION = "0.4.2"
+    VERSION = "0.4.2.1"
     def next_joke(category: str = "aleatorio") -> str:
         return "💻 (standalone mode) carregando..."
 
@@ -391,6 +433,119 @@ RESPONSIVE_CSS: str = """
   }
   #theme-toggle[data-theme="pesquisai-light"] svg circle { fill: currentColor; }
 
+  /* === Modal shells (v0.4.2.1: respondem ao tema) === */
+  .modal-shell {
+    background: var(--modal-bg, #181b1e);
+    border: 1px solid var(--modal-border, rgba(255,255,255,.1));
+    color: var(--ink);
+  }
+  html.theme-light .modal-shell {
+    --modal-bg: #ffffff;
+    --modal-border: rgba(0,0,0,.12);
+    box-shadow: 0 28px 72px rgba(0,0,0,.18);
+  }
+  /* Inputs/buttons dentro dos modais no tema claro */
+  html.theme-light input.session-search,
+  html.theme-light #prov-key-input {
+    background: var(--surface, #f5f6f7) !important;
+    border: 1px solid var(--line) !important;
+    color: var(--ink) !important;
+  }
+  html.theme-light .modal-close {
+    background: var(--surface, #f5f6f7) !important;
+    color: var(--ink) !important;
+  }
+  html.theme-light .modal-close:hover {
+    background: var(--accent-dim) !important;
+  }
+  /* Sessões/itens com hover legível em tema claro */
+  html.theme-light .backup-item:hover,
+  html.theme-light .session-item:hover {
+    background: var(--accent-dim) !important;
+    color: var(--ink) !important;
+  }
+
+  /* === Renderização Markdown no modal de Diretrizes (v0.4.2.1) === */
+  #agents-content.markdown-body {
+    /* Resetar estilos default do github-markdown-css */
+    background: transparent !important;
+    color: var(--ink) !important;
+    font-family: "DM Mono", monospace !important;
+  }
+  #agents-content.markdown-body h1,
+  #agents-content.markdown-body h2,
+  #agents-content.markdown-body h3,
+  #agents-content.markdown-body h4 {
+    color: var(--ink);
+    border-bottom-color: var(--line);
+    font-family: "Syne", sans-serif;
+    margin-top: 1.2em;
+    margin-bottom: 0.6em;
+  }
+  #agents-content.markdown-body h1 { font-size: 18px; }
+  #agents-content.markdown-body h2 { font-size: 15px; }
+  #agents-content.markdown-body h3 { font-size: 13.5px; }
+  #agents-content.markdown-body h4 { font-size: 12.5px; }
+  #agents-content.markdown-body a { color: var(--accent); }
+  #agents-content.markdown-body code {
+    background: var(--accent-dim);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11.5px;
+  }
+  #agents-content.markdown-body pre {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+  #agents-content.markdown-body pre code {
+    background: transparent;
+    color: var(--ink);
+    padding: 0;
+    font-size: 11px;
+  }
+  #agents-content.markdown-body table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.8em 0;
+    font-size: 11.5px;
+  }
+  #agents-content.markdown-body th,
+  #agents-content.markdown-body td {
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    text-align: left;
+  }
+  #agents-content.markdown-body th {
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  #agents-content.markdown-body blockquote {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-dim);
+    margin: 0.6em 0;
+    padding: 6px 14px;
+    color: var(--ink-muted);
+    border-radius: 0 4px 4px 0;
+  }
+  #agents-content.markdown-body hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 1.2em 0;
+  }
+  #agents-content.markdown-body ul,
+  #agents-content.markdown-body ol {
+    padding-left: 1.6em;
+    margin: 0.5em 0;
+  }
+  #agents-content.markdown-body li { margin: 0.2em 0; }
+  #agents-content.markdown-body strong { color: var(--ink); font-weight: 700; }
+  #agents-content.markdown-body em { color: var(--ink-muted); }
+
   /* === Toasts em viewport pequeno === */
   @media (max-height: 500px) {
     #toast { bottom: 36px; right: 8px; }
@@ -413,10 +568,10 @@ SUPPORTED_LANGUAGES: list[dict[str, str]] = [
 
 
 def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
-    """Cria a versão v0.4.2 do wrapper HTML do PesquisAI.
+    """Cria a versão v0.4.2.1 do wrapper HTML do PesquisAI.
 
     Versão drop-in que substitui o HTML estático do launch_app.py por
-    um layout adaptativo com 5 correções aplicadas:
+    um layout adaptativo com 8 correções aplicadas:
 
       v0.4.1:
         1. Responsividade completa (5 breakpoints + hamburger)
@@ -425,6 +580,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       v0.4.2:
         4. Rodapé responsivo (flex-wrap + 2 linhas + media queries)
         5. Modal de Diretrizes com AGENTS.md multilíngue (endpoint + cache)
+      v0.4.2.1 (ses_10a4):
+        6. Tema CLARO: contraste corrigido nos modais (.modal-shell)
+        7. openHealth() faz fetch em /api/health e popula dashboard
+        8. Modal de Diretrizes renderiza markdown (marked.js)
 
     Args:
         terminal_url: URL do terminal ttyd.
@@ -447,6 +606,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <!-- Renderizador de Markdown para o modal de Diretrizes (v0.4.2.1) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.1/github-markdown.min.css">
   <script>
     // ═══════════════════════════════════════════════════════════
     // 🛡️ ANTI-FLASH: aplica tema ANTES de qualquer renderização
@@ -599,7 +761,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     }
     #modal-overlay.open { opacity: 1; pointer-events: all; }
     #modal {
-      background: #181b1e; border: 1px solid rgba(255,255,255,.1);
+      background: var(--modal-bg, #181b1e);
+      border: 1px solid var(--line);
+      color: var(--ink);
       border-radius: 8px; padding: 24px; width: 400px; max-width: 90vw;
       box-shadow: 0 24px 64px rgba(0,0,0,.6);
     }
@@ -896,7 +1060,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   </div>
 
   <div id="provider-overlay" onclick="if(event.target===this)closeProvider()" style="position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:480px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+    <div class="modal-shell" style="border-radius:10px;padding:24px;width:480px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div id="prov-step1">
         <div class="modal-title">🔌 <span data-i18n="providers.title">Conectar Provedor de IA</span></div>
         <p style="font-size:11.5px;color:var(--ink-muted);margin-bottom:14px;line-height:1.6;" data-i18n="providers.select">Selecione o provedor para configurar a API key:</p>
@@ -918,7 +1082,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   </div>
 
   <div id="health-overlay" onclick="if(event.target===this)closeHealth()" style="position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:440px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+    <div class="modal-shell" style="border-radius:10px;padding:24px;width:440px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></div>
       <div id="health-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
         <div class="modal-empty" data-i18n="ui.loading">Carregando diagnóstico…</div>
@@ -928,7 +1092,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   </div>
 
   <div id="sessions-overlay" onclick="if(event.target===this)closeSessions()" style="position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:520px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+    <div class="modal-shell" style="border-radius:10px;padding:24px;width:520px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></div>
       <input id="session-search" class="session-search" placeholder="🔍 Buscar por id ou conteúdo…" oninput="filterSessions()" data-i18n-placeholder="sessions.search_placeholder">
       <div id="session-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
@@ -939,7 +1103,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   </div>
 
   <div id="shortcuts-overlay" onclick="if(event.target===this)closeShortcuts()" style="position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:420px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+    <div class="modal-shell" style="border-radius:10px;padding:24px;width:420px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></div>
       <div style="border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
         <div class="shortcut-row"><span data-i18n="shortcuts.copy">Copiar seleção</span><span class="shortcut-key" data-i18n="shortcuts.copy_hint">Segure o Shift e selecione</span></div>
@@ -954,9 +1118,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     </div>
   </div>
 
-  <!-- Modal de Diretrizes do Agente (v0.4.2) -->
+  <!-- Modal de Diretrizes do Agente (v0.4.2 + markdown render v0.4.2.1) -->
   <div id="agents-overlay" onclick="if(event.target===this)closeAgents()" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div id="agents-modal" style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:0;width:680px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
+    <div id="agents-modal" class="modal-shell" style="border-radius:10px;padding:0;width:680px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
       <div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
         <span style="font-size:18px;">📋</span>
         <div style="flex:1;min-width:0;">
@@ -966,7 +1130,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         <span id="agents-lang-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:'DM Mono',monospace;">PT-BR</span>
         <button onclick="closeAgents()" class="modal-close" style="width:auto;padding:4px 10px;font-size:11px;" aria-label="Fechar">✕</button>
       </div>
-      <div id="agents-content" style="flex:1;overflow-y:auto;padding:18px 22px;font-size:11.5px;line-height:1.6;color:var(--ink);font-family:'DM Mono',monospace;white-space:pre-wrap;word-wrap:break-word;" data-i18n="agents.loading">Carregando diretrizes…</div>
+      <div id="agents-content" class="markdown-body" style="flex:1;overflow-y:auto;padding:22px 26px;font-size:12.5px;line-height:1.65;color:var(--ink);background:transparent;" data-i18n="agents.loading">Carregando diretrizes…</div>
       <div style="padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02);">
         <button onclick="copyAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;" data-i18n="agents.copy">Copiar</button>
         <button onclick="reloadAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="ui.loading">Recarregar</span></button>
@@ -1305,11 +1469,77 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
 
     async function openHealth() {
       const overlay = document.getElementById("health-overlay");
+      const list = document.getElementById("health-list");
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
       overlay.style.opacity = "1"; overlay.style.pointerEvents = "all";
+      // P3 fix: buscar diagnóstico do backend e popular a lista
+      if (list) {
+        list.innerHTML = '<div class="modal-empty">' + (dict["ui.loading"] || "Carregando…") + '</div>';
+      }
+      try {
+        const r = await fetch(BASE + "/api/health");
+        const d = await r.json();
+        renderHealth(d);
+      } catch (e) {
+        if (list) {
+          list.innerHTML = '<div class="modal-empty">❌ ' +
+            (dict["agents.error"] || "Erro") + ': ' + e.message + '</div>';
+        }
+      }
     }
     function closeHealth() {
       const o = document.getElementById("health-overlay");
       o.style.opacity = "0"; o.style.pointerEvents = "none";
+    }
+
+    // P3: renderiza o JSON do /api/health em linhas com badges de status
+    function renderHealth(d) {
+      const list = document.getElementById("health-list");
+      if (!list) return;
+      if (!d || !d.ok || !d.checks) {
+        list.innerHTML = '<div class="modal-empty">⚠️ ' +
+          (d && d.error ? d.error : "Sem dados do diagnóstico") + '</div>';
+        return;
+      }
+      const c = d.checks;
+      const ROWS = [
+        ["drive_mounted",       "Drive montado",     c.drive_mounted],
+        ["backup_dir_exists",   "Backup dir",        c.backup_dir_exists],
+        ["ttyd_alive",          "Terminal (ttyd)",   c.ttyd_alive],
+        ["opencode_found",      "OpenCode binário",  c.opencode_found],
+        ["keys_store_exists",   "Keys store",        c.keys_store_exists],
+        ["encryption_key_exists","Chave cifra",      c.encryption_key_exists],
+        ["ffmpeg_ok",           "ffmpeg",            c.ffmpeg_ok],
+      ];
+      // Conta skills carregadas
+      const skillCount = c.skills_count || (c.skills_loaded ? c.skills_loaded.length : 0);
+      ROWS.push(["skills_count", "Skills carregadas", skillCount, skillCount + " disponíveis"]);
+      // Keys carregadas
+      ROWS.push(["keys_loaded", "API keys em env",
+        (c.keys_loaded_count || 0) > 0,
+        (c.keys_loaded_count || 0) + " ativas: " + (c.keys_loaded || []).join(", ")]);
+      // Disco
+      if (c.disk_free_mb >= 0) {
+        const freeGb = (c.disk_free_mb / 1024).toFixed(1);
+        const totalGb = (c.disk_total_mb / 1024).toFixed(1);
+        ROWS.push(["disk", "Espaço em disco",
+          c.disk_free_mb > 500, freeGb + " GB livres de " + totalGb + " GB"]);
+      }
+      // Versão
+      if (d.version) {
+        ROWS.push(["version", "PesquisAI", true, "v" + d.version]);
+      }
+
+      list.innerHTML = ROWS.map(r => {
+        const key = r[0], label = r[1], ok = r[2], meta = r[3];
+        const badge = ok === true ? "health-ok" : (ok === false ? "health-fail" : "health-warn");
+        const symbol = ok === true ? "✓" : (ok === false ? "✗" : "·");
+        const value = meta !== undefined ? meta : (ok ? "ok" : "falha");
+        return '<div class="health-row">' +
+               '<span>' + label + '</span>' +
+               '<span class="health-status ' + badge + '">' + symbol + ' ' + value + '</span>' +
+               '</div>';
+      }).join("");
     }
 
     let _allSessions = [];
@@ -1371,7 +1601,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
 
       // Cache: 1 chamada por idioma até forceReload
       if (!forceReload && _agentsCacheLang === _currentLang && _agentsCache) {
-        contentEl.textContent = _agentsCache;
+        renderAgentsContent(contentEl, _agentsCache);
         return;
       }
 
@@ -1383,12 +1613,39 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         if (d.ok && d.content) {
           _agentsCache = d.content;
           _agentsCacheLang = _currentLang;
-          contentEl.textContent = d.content;
+          renderAgentsContent(contentEl, d.content);
         } else {
           contentEl.textContent = dict["agents.error"] || "Erro ao carregar diretrizes.";
         }
       } catch (e) {
         contentEl.textContent = (dict["agents.error"] || "Erro") + " — " + e.message;
+      }
+    }
+
+    // P4 fix: renderiza o markdown do AGENTS.md usando marked.js + github-markdown-css
+    // (substitui textContent cru por HTML formatado)
+    function renderAgentsContent(el, mdText) {
+      try {
+        if (typeof marked !== "undefined") {
+          // Configurações do marked
+          marked.setOptions({ breaks: true, gfm: true, headerIds: true });
+          // Remove o frontmatter YAML (entre --- e ---) para não poluir a renderização.
+          // Constrói a regex via String.fromCharCode para evitar SyntaxWarning
+          // quando py_compile lê este arquivo como string Python.
+          const _b = String.fromCharCode(92);  // caractere barra invertida
+          const _re = new RegExp(
+            "^---" + _b + "s*" + _b + "n[" + _b + "s" + _b + "S]*?" +
+            _b + "n---" + _b + "s*" + _b + "n"
+          );
+          const cleaned = mdText.replace(_re, "");
+          el.innerHTML = marked.parse(cleaned);
+        } else {
+          // Fallback se CDN do marked falhar: mostra como texto pré-formatado
+          el.textContent = mdText;
+        }
+      } catch (e) {
+        el.textContent = mdText;
+        console.error("Erro ao renderizar markdown:", e);
       }
     }
 

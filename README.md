@@ -1,6 +1,6 @@
 # 🔬 PesquisAI
 
-> **Versão:** 0.4.2 (Footer Responsive + Multilingual AGENTS.md)
+> **Versão:** 0.4.2.1 (ses_10a4 fixes: theme contrast + dashboard + markdown)
 > **Data:** 2026-06-23
 > **Status:** ✅ Pronto para deploy
 > **Tema padrão:** 🌙 **Escuro** (com anti-flash CSS)
@@ -15,10 +15,10 @@ Agente de IA para pesquisadores, executado em ttyd (terminal) + OpenCode + 8+ sk
 PesquisAI/
 │
 ├── README.md                          ⭐ Este arquivo
-├── __version__.py                     # 0.4.2
+├── __version__.py                     # 0.4.2.1
 │
 ├── 🔬 pesquisai/                      # Módulo principal do PesquisAI
-│   ├── launch_app_responsive.py       # ✅ v0.4.2 (responsivo + tema + idioma + rodapé + AGENTS)
+│   ├── launch_app_responsive.py       # ✅ v0.4.2.1 (responsivo + tema + idioma + rodapé + AGENTS + markdown)
 │   └── launch_app_responsive_v041.py  # ✅ Drop-in patch para launch_app.py do GitHub
 │
 ├── 🤖 agents/                         # AGENTS.md multilíngues
@@ -112,7 +112,7 @@ cd PesquisAI
 python -m pesquisai.main
 ```
 
-### 2. Aplicar o patch v0.4.2 em um PesquisAI existente
+### 2. Aplicar o patch v0.4.2.1 em um PesquisAI existente
 
 ```bash
 # Copie o patch para o PesquisAI
@@ -133,7 +133,7 @@ zip -r ../pesquisai-v0.4.1.zip .
 
 ---
 
-## 🐛 Correções v0.4.1 + v0.4.2 (2026-06-23)
+## 🐛 Correções v0.4.1 + v0.4.2 + v0.4.2.1 (2026-06-23)
 
 Bugs reportados pelo usuário nas sessões `session-ses_10b7.md` e `session-ses_10a4.md`:
 
@@ -144,6 +144,9 @@ Bugs reportados pelo usuário nas sessões `session-ses_10b7.md` e `session-ses_
 | 3 | Idioma sem opção na UI | Dropdown 4 idiomas + cookie | v0.4.1 | `docs/PATCH_v0.4.1.md` §3 |
 | 4 | Rodapé não responsivo | `flex-wrap` + 2 linhas + media queries | v0.4.2 | `docs/CHANGELOG.md` §0.4.2 |
 | 5 | Idioma não troca AGENTS.md | Modal Diretrizes + endpoint `/api/agents` | v0.4.2 | `docs/CHANGELOG.md` §0.4.2 |
+| 6 | Tema CLARO: textos invisíveis nos modais | Nova classe `.modal-shell` com variáveis CSS responsivas | **v0.4.2.1** | `docs/CHANGELOG.md` §0.4.2.1 |
+| 7 | Dashboard de Saúde não carrega | `openHealth()` faz fetch em `/api/health` e popula lista | **v0.4.2.1** | `docs/CHANGELOG.md` §0.4.2.1 |
+| 8 | Modal Diretrizes mostra MD cru | `marked.js` + `github-markdown-css` renderizam markdown formatado | **v0.4.2.1** | `docs/CHANGELOG.md` §0.4.2.1 |
 
 **Tema padrão:** 🌙 **Escuro** (com anti-flash CSS para evitar flash branco no load).
 
@@ -164,13 +167,15 @@ python3 -m pytest grant_finder/tests/ i18n/tests/
 
 | Métrica | Valor |
 |---------|-------|
-| Versão | 0.4.2 |
+| Versão | 0.4.2.1 |
 | Idiomas | 4 (pt_BR, en_US, es_ES, fr_FR) |
 | Agências de fomento | 13 (BR + internacional) |
 | Testes | 79 (100% verdes) |
 | Cobertura | 71.58% |
 | Media queries | 6 (5 breakpoints + landscape) |
 | Strings traduzidas inline | 40+ |
+| Endpoints REST | 15 |
+| Componentes | 8 |
 
 ---
 
@@ -192,4 +197,4 @@ python3 -m pytest grant_finder/tests/ i18n/tests/
 
 ---
 
-**Última atualização:** 2026-06-23 (v0.4.2)
+**Última atualização:** 2026-06-23 (v0.4.2.1 — ses_10a4 fixes)

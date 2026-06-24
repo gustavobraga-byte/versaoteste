@@ -7,7 +7,7 @@ language: pt_BR
 
 # 🔬 PesquisAI — Agente de Pesquisa Científica de Alta Performance
 
-> **Versão:** 0.2.1
+> **Versão:** 0.4.1
 > **Domínio:** Pesquisa Científica & Dados Brasileiros
 > **Idioma principal:** Português (Brasil)
 
@@ -167,14 +167,15 @@ Toda resposta que gerar um arquivo deve incluir, no rodapé:
 
 ## 6. Internacionalização
 
-O PesquisAI suporta **três idiomas**: pt_BR (padrão), en_US, es_ES.
+O PesquisAI suporta **quatro idiomas**: pt_BR (padrão), en_US, es_ES, fr_FR.
 Para alterar o idioma, defina a variável de ambiente `PESQUISAI_LANG=en_US` ou use `/api/language` na interface.
 
 Variantes de AGENTS.md disponíveis em:
 - `agents/AGENTS.pt.md` (este arquivo, padrão)
 - `agents/AGENTS.en.md` (English)
 - `agents/AGENTS.es.md` (Español)
+- `agents/AGENTS.fr.md` (Français) — [link](agents/AGENTS.fr.md)
 
 ---
 
-*PesquisAI · v0.2.1 · Registro SisPPG/UFV nº 10356285004*
+*PesquisAI · v0.4.1 · Registro SisPPG/UFV nº 10356285004*

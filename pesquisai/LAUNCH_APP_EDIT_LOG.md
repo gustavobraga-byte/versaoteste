@@ -1,19 +1,21 @@
-# 📝 Log de Edição — `launch_app.py` (v0.4.2)
+# 📝 Log de Edição — `launch_app.py` (v0.4.2.1)
 
 > **Data:** 2026-06-23
-> **Operação:** Substituição da função `create_wrapper_html` por import do patch v0.4.2
-> + adição do endpoint `GET /api/agents?lang=xx_XX` no handler
+> **Operação:** Patch v0.4.2.1 aplicado sobre o `launch_app.py` do PesquisAI principal
+> (já com v0.4.2: endpoint `/api/agents` + modal Diretrizes)
 > **Arquivo original:** https://github.com/gustavobraga-byte/PesquisAI/blob/main/pesquisai/launch_app.py
 > **Arquivo editado:** `/content/drive/My Drive/PesquisAI/pesquisai/launch_app.py`
 
 ## 📊 Estatísticas da Edição
 
-| Métrica | Antes | Depois | Δ |
-|---------|-------|--------|---|
-| **Linhas** | 1.945 | 1.074 | **−871 (−44%)** |
-| **Tamanho** | 86 KB | 44 KB | **−49%** |
-| **Função `create_wrapper_html`** | Local (904 linhas) | Import (1 linha) | **−903 linhas** |
-| **Funções preservadas** | 19 (todas) | 19 (todas) | 0 |
+| Métrica | v0.4.1 | v0.4.2 | v0.4.2.1 | Δ total |
+|---------|--------|--------|----------|---------|
+| **Linhas** | 1.945 | 1.074 | 1.147 | **−798 (−41%)** |
+| **Tamanho `launch_app.py`** | 86 KB | 44 KB | 47 KB | **−45%** |
+| **Linhas `launch_app_responsive_v041.py`** | 1.520 | 1.792 | 1.820 | +300 |
+| **Tamanho `launch_app_responsive_v041.py`** | 73 KB | 88 KB | 89 KB | +22% |
+| **Funções preservadas** | 19 | 19 | 19 | 0 |
+| **Endpoints REST** | 13 | 14 | 14 | +1 |
 
 ## ✂️ O Que Foi Removido
 
@@ -33,22 +35,28 @@ def create_wrapper_html(terminal_url, drive_url):
 
 ## ✅ O Que Foi Adicionado
 
+### Patch v0.4.1 → v0.4.2 → v0.4.2.1 (em `launch_app.py`)
+
 ```python
 # ───────────────────────────────────────────────────────────────────
-# 🔧 PATCH v0.4.2 — Substitui a função create_wrapper_html original
+# 🔧 PATCH v0.4.2.1 — Substitui a função create_wrapper_html original
 # pela versão responsiva com tema escuro + idioma na UI + rodapé
-# responsivo + modal de Diretrizes (AGENTS.md multilíngue).
+# responsivo + modal de Diretrizes (AGENTS.md multilíngue) +
+# correções de tema claro + dashboard + renderização de markdown.
 #
 # Mudanças aplicadas:
-#   1. 📱 Site responsivo (6 media queries + hamburger menu)
-#   2. 🎨 Tema claro/escuro com reload do iframe do ttyd
-#   3. 🌐 Seletor de idioma na topbar (4 idiomas: pt_BR, en_US, es_ES, fr_FR)
-#   4. 🌙 Tema padrão ESCURO com anti-flash CSS
+#   1. 📱 Site responsivo (6 media queries + hamburger menu) [v0.4.1]
+#   2. 🎨 Tema claro/escuro com reload do iframe do ttyd [v0.4.1]
+#   3. 🌐 Seletor de idioma na topbar (4 idiomas) [v0.4.1]
+#   4. 🌙 Tema padrão ESCURO com anti-flash CSS [v0.4.1]
 #   5. 📋 v0.4.2: Rodapé responsivo (flex-wrap + 2 linhas)
 #   6. 📋 v0.4.2: Modal "Diretrizes do Agente" com AGENTS.md multilíngue
+#   7. 🌓 v0.4.2.1: Tema CLARO — classe .modal-shell corrige contraste
+#   8. 🩺 v0.4.2.1: Dashboard de Saúde agora faz fetch em /api/health
+#   9. 📝 v0.4.2.1: Modal Diretrizes renderiza markdown (marked.js)
 #
 # Compatibilidade: API inalterada (create_wrapper_html(terminal_url, drive_url))
-# Detalhes: docs/CHANGELOG.md (v0.4.2)
+# Detalhes: docs/CHANGELOG.md (v0.4.2.1)
 # ───────────────────────────────────────────────────────────────────
 try:
     from .launch_app_responsive_v041 import create_wrapper_html
@@ -65,7 +73,7 @@ except ImportError:
         create_wrapper_html = _mod.create_wrapper_html
     else:
         raise ImportError(
-            "Patch v0.4.2 não encontrado. Copie launch_app_responsive_v041.py "
+            "Patch v0.4.2.1 não encontrado. Copie launch_app_responsive_v041.py "
             "para a mesma pasta de launch_app.py"
         )
 ```
@@ -76,8 +84,19 @@ except ImportError:
 # Adicionado no Handler.do_GET:
 if p == "/api/agents":
     # Serve o AGENTS.md no idioma solicitado (?lang=pt_BR|en_US|es_ES|fr_FR)
+    # - Localiza o arquivo em 5+ candidatos (irmão de pesquisai/, drive, CWD)
+    # - Cache client-side por idioma (variável `_agentsCache`)
+    # - Invalida automaticamente quando o usuário troca de idioma
     # Detalhes da implementação no CHANGELOG.md (v0.4.2)
 ```
+
+## 🆕 Correções v0.4.2.1 (no `launch_app_responsive_v041.py`)
+
+| # | Bug | Solução |
+|---|-----|---------|
+| 6 | Tema CLARO: textos invisíveis nos 6 modais (Dashboard, Atalhos, Sessões, Provedor, Diretrizes) | Nova classe `.modal-shell` usa variáveis CSS (`--modal-bg`, `--modal-border`) responsivas ao tema. `html.theme-light .modal-shell` define fundo branco + sombra suave. |
+| 7 | Dashboard de Saúde não carregava (só abria overlay sem fetch) | `openHealth()` agora faz `fetch(BASE + "/api/health")` + nova função `renderHealth(d)` popula a lista com badges ✓/✗/·. |
+| 8 | Modal de Diretrizes mostrava o MD como texto cru (`textContent`) | Adicionado `marked.js` + `github-markdown-css` via CDN. Nova função `renderAgentsContent(el, md)` usa `marked.parse()` e remove frontmatter YAML. CSS customizado preserva cores do tema. |
 
 ## 🛡️ O Que Foi Preservado (inalterado)
 
@@ -94,7 +113,7 @@ Todas as outras funções e blocos do `launch_app.py` foram **preservados integr
 - ✅ `show_launch_button()` — botão de launch
 - ✅ `launch()` — função principal de inicialização
 - ✅ `BaseHTTPRequestHandler` (classe) — servidor HTTP
-- ✅ Todas as rotas `/api/*` (theme, backup, restore, apikey, run_terminal, health, sessions, lang, etc.)
+- ✅ Todas as rotas `/api/*` (theme, backup, restore, apikey, run_terminal, health, sessions, lang, agents, etc.)
 - ✅ Todos os imports no topo do arquivo
 - ✅ Toda a lógica de segurança (sanitize_command, etc.)
 - ✅ Todas as constantes (TERMINAL_PORT, WRAPPER_PORT, etc.)
@@ -107,12 +126,13 @@ Todas as outras funções e blocos do `launch_app.py` foram **preservados integr
 | Retorno da função | ✅ String HTML |
 | Efeito colateral (escreve `index.html` em `WRAPPER_DIR`) | ✅ Mantido |
 | Comportamento do servidor HTTP | ✅ Inalterado |
-| Rotas `/api/*` | ✅ Todas funcionando |
+| Rotas `/api/*` | ✅ 14/14 funcionando (incluindo `/api/agents`) |
 | Compatibilidade com testes existentes | ✅ `test_launch_app.py` continua passando |
 | Tema padrão | 🌙 **Escuro** (com anti-flash) |
 
-## 🧪 Validação (14/14)
+## 🧪 Validação (28 checks)
 
+### v0.4.1 (14/14)
 ```
 ✅ data-theme="pesquisai" (escuro)
 ✅ ANTI-FLASH script
@@ -130,13 +150,33 @@ Todas as outras funções e blocos do `launch_app.py` foram **preservados integr
 ✅ fr_FR (Sauvegarder)
 ```
 
+### v0.4.2 (10/10)
+```
+✅ Footer responsivo (footer-row-1, footer-row-2)
+✅ flex-wrap + overflow:hidden
+✅ Endpoint /api/agents
+✅ Modal Diretrizes (openAgents, closeAgents, loadAgents)
+✅ Cache de AGENTS por idioma
+✅ Invalidação em setLang()
+✅ i18n strings footer.email/github/ufv/powered_by
+✅ 4 idiomas completos em JSON inline
+```
+
+### v0.4.2.1 (4/4)
+```
+✅ modal-shell (tema claro) — 6 modais atualizados
+✅ openHealth faz fetch /api/health
+✅ renderHealth popula lista com badges
+✅ renderAgentsContent usa marked.parse() + github-markdown-css
+```
+
 ## 📁 Estrutura Final
 
 ```
 pesquisai/
 ├── __init__.py                    # ✅ Criado (necessário para import relativo)
-├── launch_app.py                  # ✅ Editado (44KB, 1074 linhas)
-└── launch_app_responsive_v041.py  # ✅ Patch v0.4.1 (72KB, 1520 linhas)
+├── launch_app.py                  # ✅ Patch v0.4.2.1 (47KB, 1147 linhas)
+└── launch_app_responsive_v041.py  # ✅ Patch v0.4.2.1 (89KB, 1820 linhas)
 ```
 
 ## 🚀 Como Usar
@@ -154,15 +194,15 @@ python -m pesquisai.launch_app
 
 O servidor vai:
 1. Carregar `launch_app.py` normalmente
-2. Quando chamar `create_wrapper_html(terminal_url, drive_url)` (linha ~1064):
+2. Quando chamar `create_wrapper_html(terminal_url, drive_url)` (linha ~1137):
    - Vai importar de `launch_app_responsive_v041.py`
-   - Vai gerar o HTML com **tema padrão escuro + responsivo + seletor de idioma**
+   - Vai gerar o HTML com **tema padrão escuro + responsivo + seletor de idioma + modal de Diretrizes + markdown renderizado**
    - Vai escrever em `WRAPPER_DIR/index.html`
 3. O resto do servidor (rotas, ttyd, opencode) funciona normalmente
 
 ## 🔙 Como Reverter (se necessário)
 
-Se precisar reverter para o `launch_app.py` original (sem o patch v0.4.1):
+Se precisar reverter para o `launch_app.py` original (sem o patch v0.4.2.1):
 
 ```bash
 # Baixar novamente do GitHub
@@ -170,7 +210,7 @@ curl -sL https://raw.githubusercontent.com/gustavobraga-byte/PesquisAI/main/pesq
   -o /content/drive/My\ Drive/PesquisAI/pesquisai/launch_app.py
 ```
 
-E o PesquisAI volta ao comportamento original (sem responsividade, sem seletor de idioma, tema padrão sem anti-flash).
+E o PesquisAI volta ao comportamento original (sem responsividade, sem seletor de idioma, sem modal de Diretrizes, sem markdown renderizado).
 
 ## 📋 Checklist Pós-Edição
 
@@ -179,12 +219,16 @@ E o PesquisAI volta ao comportamento original (sem responsividade, sem seletor d
 - [x] Fallback de import (caminho absoluto) implementado
 - [x] `__init__.py` criado em `pesquisai/`
 - [x] Patch `_v041.py` no lugar certo
-- [x] Sintaxe Python validada
-- [x] HTML gerado tem tema escuro (14/14 validações)
+- [x] Endpoint `/api/agents` adicionado
+- [x] Sintaxe Python validada (3/3 arquivos sem warnings)
+- [x] HTML gerado tem tema escuro + responsivo + idioma + modal Diretrizes
 - [x] Função `create_wrapper_html` acessível
 - [x] 19 funções preservadas (servidor intacto)
-- [x] Redução de 44% no tamanho do arquivo
+- [x] `openHealth()` faz fetch em `/api/health`
+- [x] Modal Diretrizes renderiza markdown (marked.js)
+- [x] 4 `AGENTS.md` (pt, en, es, fr) com versão 0.4.1 e links cruzados
+- [x] `__version__.py` atualizado para 0.4.2.1
 
 ---
 
-**PesquisAI v0.4.1 · UI Fixes · 2026-06-23**
+**PesquisAI v0.4.2.1 · ses_10a4 fixes · 2026-06-23**

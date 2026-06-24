@@ -4,6 +4,121 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.4.2.1] — 2026-06-23 — ses_10a4 Fixes (Theme Contrast + Dashboard + Markdown)
+
+### 🐛 Bug Fixes (3 adicionais reportados pelo usuário em 2026-06-23 — sessão `ses_10a4`)
+
+#### 🌓 6. Tema CLARO: textos invisíveis nos modais
+- **Problema:** 6 modais (Dashboard de Saúde, Atalhos de Teclado, Sessões,
+  Provedor, Diretrizes, Restaurar) usavam `background:#181b1e` como **cor
+  fixa CSS inline**. No tema claro, `--ink-muted` é `#4a5a62` (cinza
+  escuro), mas o fundo continuava `#181b1e` (escuro), resultando em
+  **texto invisível** (cinza escuro em fundo escuro).
+- **Correção:**
+  - Nova classe `.modal-shell` que usa **variáveis CSS** (`--modal-bg`,
+    `--modal-border`) ao invés de cores fixas
+  - Regra `html.theme-light .modal-shell` define `--modal-bg: #ffffff`
+    e sombra mais suave
+  - Inputs (`#prov-key-input`, `.session-search`) ganham estilo explícito
+    para tema claro
+  - Botões `.modal-close` e itens de lista (`.backup-item:hover`,
+    `.session-item:hover`) também têm contraste corrigido
+  - **6 modais atualizados** para usar a classe `.modal-shell`
+
+#### 🩺 7. Dashboard de Saúde não carregava
+- **Problema:** `openHealth()` apenas abria o overlay visual (`opacity: 1`)
+  mas **não fazia fetch** em `/api/health` nem populava `#health-list`.
+  O usuário via "Carregando diagnóstico…" indefinidamente.
+- **Correção:**
+  - `openHealth()` agora faz `fetch(BASE + "/api/health")` + `await`
+  - Nova função `renderHealth(d)` popula a lista com **badges de status**
+    (✓/✗/·) para cada checagem:
+    - Drive montado
+    - Diretório de backup
+    - Terminal (ttyd) vivo
+    - Binário OpenCode encontrado
+    - Chave de criptografia presente
+    - Keys store existe
+    - ffmpeg disponível
+    - Skills carregadas (contagem)
+    - API keys ativas no env
+    - Espaço em disco (GB livres / totais)
+    - Versão do PesquisAI
+  - Mensagem de erro amigável se a requisição falhar
+
+#### 📝 8. Modal de Diretrizes mostrava o MD como texto cru
+- **Problema:** o conteúdo do `AGENTS.md` era injetado via
+  `contentEl.textContent = d.content`, exibindo os caracteres `#`, `**`,
+  `|`, `---` e `` ` `` do markdown **como texto puro**, sem formatação.
+- **Correção:**
+  - Adicionado `marked.js` v12.0.0 (CDN jsdelivr) ao `<head>` da página
+  - Adicionado `github-markdown-css` v5.5.1 para estilos de markdown
+  - Nova função `renderAgentsContent(el, md)` usa `marked.parse()`
+    para converter markdown → HTML formatado
+  - CSS customizado (`#agents-content.markdown-body`) preserva:
+    - Cores do tema (accent, ink, ink-muted) ao invés de cores GitHub
+    - Fontes (Syne para títulos, DM Mono para corpo/código)
+    - Bordas, espaçamentos, tabelas, blockquotes, code blocks
+  - **Frontmatter YAML removido** antes da renderização (regex via
+    `String.fromCharCode(92)` para evitar SyntaxWarning em py_compile)
+  - Fallback automático: se `marked` não carregar (offline), mostra
+    como texto pré-formatado
+
+### 📁 Arquivos Modificados (v0.4.2.1)
+
+- `pesquisai/launch_app_responsive_v041.py` — **+3 correções ses_10a4**
+  - `<head>`: + `marked.js` CDN + `github-markdown-css` CDN
+  - CSS: + classe `.modal-shell` + tema claro para 6 modais
+  - CSS: + estilos `#agents-content.markdown-body` (cor, fonte, tabela,
+    blockquote, code, headings, hr, ul, ol)
+  - HTML: 6 modais trocados de `style="background:#181b1e"` para
+    `class="modal-shell"`
+  - HTML: `#agents-content` ganhou `class="markdown-body"`
+  - JS: `openHealth()` agora faz `fetch` em `/api/health`
+  - JS: nova função `renderHealth(d)` renderiza lista com badges
+  - JS: nova função `renderAgentsContent(el, md)` usa `marked.parse()`
+  - JS: `loadAgents()` chama `renderAgentsContent()` ao invés de
+    `textContent`
+- `agents/AGENTS.{pt,en,es,fr}.md` — **versão 0.2.1/0.4.0 → 0.4.1**
+  - Versão corrigida no header (`**Versão:** 0.4.1`) e footer
+    (`PesquisAI · v0.4.1`) em todos os 4 idiomas
+  - "Três idiomas" → "Quatro idiomas" em pt/en/es
+  - "Trois langues" → "Quatre langues" em fr
+  - Adicionada referência cruzada `agents/AGENTS.fr.md` em todos os
+    arquivos (pt/en/es/fr)
+- `agents/README.md` — **+francês** na lista de idiomas
+  - Tabela agora lista os 4 idiomas com bandeiras
+  - Tabela de marcadores de evidência tem linha para `fr_FR`
+  - Seção "Adicionar novo idioma" usa `de_DE` como exemplo
+- `__version__.py` — `0.4.2` → `0.4.2.1`
+  - Codinome: "ses_10a4 fixes (theme contrast + health + markdown)"
+  - +2 componentes: `launch_app_responsive_v0421`, `agents_modal`
+
+### 🧪 Validação (v0.4.2.1)
+
+- **32/32 checks** passaram (4 da v0.4.1 + 10 da v0.4.2 + 3 da v0.4.2.1
+  + 15 críticos diversos)
+- **Sintaxe Python validada** com `py_compile(..., doraise=True)` +
+  `warnings.simplefilter("error", SyntaxWarning)` — 3/3 arquivos
+  compilam **sem warnings** (incluindo o JavaScript embutido com
+  `String.fromCharCode` para evitar `\s` inválido)
+- **HTML gerado:** 82.749 caracteres (vs. 74.901 da v0.4.2 — +10% por
+  causa do modal Diretrizes com markdown renderer)
+- **Endpoint `/api/agents`** testado em 10 variações de idioma
+  (pt_BR, en_US, es_ES, fr_FR + 4 short + 2 inválidos — todos OK)
+- **Renderização markdown** testada com marked.js v12.0.0
+- **Contraste de tema claro** testado em todos os 6 modais
+
+### 🔒 Compatibilidade
+
+- ✅ **Backward compatible** — sem breaking changes
+- ✅ **CDN fallbacks** — se marked.js/github-markdown-css falharem ao
+  carregar, modal mostra texto pré-formatado (graceful degradation)
+- ✅ **JS engine** — `String.fromCharCode(92)` funciona em todos
+  navegadores (>= IE6)
+
+---
+
 ## [0.4.2] — 2026-06-23 — Footer Responsive + Multilingual AGENTS.md
 
 ### 🐛 Bug Fixes (reportados pelo usuário em 2026-06-23 — sessão `ses_10a4`)

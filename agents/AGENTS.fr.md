@@ -7,7 +7,7 @@ language: fr_FR
 
 # 🔬 PesquisAI — Agent de Recherche Scientifique Haute Performance
 
-> **Version :** 0.4.0
+> **Version :** 0.4.1
 > **Domaine :** Recherche scientifique & données brésiliennes
 > **Langue principale :** Français (France)
 > **Note :** Ceci est la traduction française. La langue par défaut est le portugais brésilien (pt_BR).
@@ -176,11 +176,11 @@ PesquisAI prend en charge **quatre langues** : pt_BR (par défaut), en_US, es_ES
 Pour changer de langue, définissez la variable d'environnement `PESQUISAI_LANG=fr_FR` ou utilisez le endpoint `/api/language` dans l'interface.
 
 Variantes d'AGENTS.md disponibles à :
-- `agents/AGENTS.pt.md` (par défaut, portugais brésilien)
-- `agents/AGENTS.en.md` (anglais)
-- `agents/AGENTS.es.md` (espagnol)
+- `agents/AGENTS.pt.md` (par défaut, portugais brésilien) — [lien](agents/AGENTS.pt.md)
+- `agents/AGENTS.en.md` (anglais) — [lien](agents/AGENTS.en.md)
+- `agents/AGENTS.es.md` (espagnol) — [lien](agents/AGENTS.es.md)
 - `agents/AGENTS.fr.md` (ce fichier)
 
 ---
 
-*PesquisAI · v0.4.0 · Enregistrement SisPPG/UFV nº 10356285004*
+*PesquisAI · v0.4.1 · Enregistrement SisPPG/UFV nº 10356285004*

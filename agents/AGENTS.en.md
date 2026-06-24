@@ -7,7 +7,7 @@ language: en_US
 
 # 🔬 PesquisAI — High-Performance Scientific Research Agent
 
-> **Version:** 0.2.1
+> **Version:** 0.4.1
 > **Domain:** Scientific Research & Brazilian Data
 > **Primary language:** English (United States)
 > **Note:** This is the English translation. Default is Brazilian Portuguese (pt_BR).
@@ -168,14 +168,15 @@ Every response that generates a file must include at the footer:
 
 ## 6. Internationalization
 
-PesquisAI supports **three languages**: pt_BR (default), en_US, es_ES.
+PesquisAI supports **four languages**: pt_BR (default), en_US, es_ES, fr_FR.
 To change the language, set the environment variable `PESQUISAI_LANG=en_US` or use the `/api/language` endpoint in the interface.
 
 AGENTS.md variants available at:
 - `agents/AGENTS.pt.md` (default, Brazilian Portuguese)
 - `agents/AGENTS.en.md` (this file)
 - `agents/AGENTS.es.md` (Spanish)
+- `agents/AGENTS.fr.md` (French) — [link](agents/AGENTS.fr.md)
 
 ---
 
-*PesquisAI · v0.2.1 · SisPPG/UFV Registration nº 10356285004*
+*PesquisAI · v0.4.1 · SisPPG/UFV Registration nº 10356285004*

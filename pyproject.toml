@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pesquisai-additions"
-version = "0.4.1"
-description = "PesquisAI v0.4.1 — UI Fixes (Responsive + Theme + Language) + grant_finder + i18n (4 idiomas)"
+version = "0.4.2.1"
+description = "PesquisAI v0.4.2.1 — ses_10a4 fixes (theme contrast + dashboard + markdown) + grant_finder + i18n (4 idiomas)"
 authors = [
     { name = "Gustavo Bastos Braga", email = "gustavo.braga@ufv.br" },
 ]
