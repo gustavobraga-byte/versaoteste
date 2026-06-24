@@ -30,6 +30,29 @@ except ImportError:
         # Fallback v0.4.2.2: saudação curta + dica entre parênteses
         return "Olá! (Dica: A partir de agora responda em português brasileiro.)"
 
+# v0.4.2.4: detector de idioma a partir de texto
+try:
+    from i18n import detect_from_user_message
+except ImportError:
+    try:
+        from pesquisai.i18n import detect_from_user_message
+    except ImportError:
+        try:
+            from ..i18n import detect_from_user_message
+        except ImportError:
+            # Fallback: detecção minimalista
+            def detect_from_user_message(text: str) -> str:
+                t = (text or "").lower()
+                if any(w in t for w in (" o ", " a ", " não ", " que ", " você ", "olá", "ola")):
+                    return "pt_BR"
+                if any(w in t for w in (" the ", " is ", " you ", "hello", "hi ", "thanks")):
+                    return "en_US"
+                if any(w in t for w in ("hola", "gracias", "cómo", "usted", "español")):
+                    return "es_ES"
+                if any(w in t for w in ("bonjour", "merci", "vous", "français", "francais")):
+                    return "fr_FR"
+                return "pt_BR"
+
 
 _opencode_bin: str | None = None
 _env: dict | None = None
@@ -161,26 +184,45 @@ def kill_previous():
     time.sleep(0.5)
 
 
-def start_ttyd(lang: str | None = None):
+def start_ttyd(lang: str | None = None, initial_text: str | None = None):
     """Inicia o ttyd com saudação no idioma solicitado.
 
     Args:
         lang: Código do idioma (pt_BR, en_US, es_ES, fr_FR). Se None, usa
               o _current_lang global ou o env PESQUISAI_LANG.
+        initial_text: Texto da primeira mensagem do usuário. Se fornecido
+              e lang=None, detecta o idioma a partir do texto (v0.4.2.4).
 
     v0.4.2.2: ao invés de `--prompt 'oi'` genérico, usa saudação no idioma
               + instrução "(a partir de agora responda em X)".
+    v0.4.2.4: detecta automaticamente o idioma da mensagem inicial do
+              usuário quando lang não é fornecido explicitamente.
     """
     print(f"\n{next_joke('economia')}")
     opencode_bin, env = resolve_opencode()
 
-    # Resolve idioma (param > env > _current_lang > pt_BR)
+    # Resolve idioma (param > initial_text > env > _current_lang > pt_BR)
     if lang is None:
-        lang = os.environ.get("PESQUISAI_LANG") or _current_lang or "pt_BR"
+        if initial_text and initial_text.strip():
+            # v0.4.2.4: detecta do texto do usuário
+            lang = detect_from_user_message(initial_text)
+            print(f"🔍 Idioma detectado da mensagem: {lang}")
+        else:
+            lang = os.environ.get("PESQUISAI_LANG") or _current_lang or "pt_BR"
     # Normaliza para o conjunto canônico
     _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
     short = (lang or "pt_BR").split("_")[0].lower()
     full_lang = _valid.get(short, lang if lang in _valid.values() else "pt_BR")
+
+    # Persiste o idioma detectado para a próxima execução
+    global _current_lang
+    _current_lang = full_lang
+    try:
+        os.makedirs(os.path.dirname(_LANG_COOKIE_FILE), exist_ok=True)
+        with open(_LANG_COOKIE_FILE, "w", encoding="utf-8") as f:
+            f.write(full_lang)
+    except Exception:
+        pass
 
     greeting = get_greeting(full_lang)
     # Escapar aspas para o bash -c "..."
@@ -188,7 +230,9 @@ def start_ttyd(lang: str | None = None):
     bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" ; exec bash'
 
     subprocess.Popen(
-        ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
+        # v0.4.2.4: --writable permite que o usuário digite comandos no terminal
+        # (sem isso, o ttyd abre em modo read-only no mobile)
+        ["ttyd", "--writable", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
@@ -1022,6 +1066,40 @@ def start_wrapper_server():
                     self._json(500, {
                         "ok": False,
                         "error": "Falha ao reiniciar ttyd com o novo idioma.",
+                    })
+                return
+
+            if p == "/api/detect_lang":
+                # v0.4.2.4: detecta o idioma da mensagem do usuário e,
+                # opcionalmente, reinicia o ttyd com a saudação apropriada.
+                # Body: { "text": "...", "apply": false }
+                # Se apply=true, persiste o idioma e reinicia o ttyd.
+                text = (body.get("text", "") or "").strip()
+                apply = bool(body.get("apply", False))
+                if not text:
+                    self._json(400, {"error": "text obrigatório"})
+                    return
+                detected = detect_from_user_message(text)
+                if apply:
+                    ok = restart_ttyd_with_lang(detected)
+                    self._json(200, {
+                        "ok": ok,
+                        "lang": detected,
+                        "greeting": get_greeting(detected),
+                        "applied": ok,
+                        "message": (
+                            f"Idioma detectado: {detected}. "
+                            f"ttyd reiniciado com saudação em {detected}."
+                            if ok else
+                            f"Idioma detectado: {detected}, mas falhou ao reiniciar ttyd."
+                        ),
+                    })
+                else:
+                    self._json(200, {
+                        "ok": True,
+                        "lang": detected,
+                        "greeting": get_greeting(detected),
+                        "applied": False,
                     })
                 return
 

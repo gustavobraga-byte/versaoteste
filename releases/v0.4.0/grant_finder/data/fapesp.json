@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "agency": "FAPESP",
+    "country": "BR",
+    "fetched_at": "2026-06-23",
+    "source": "https://fapesp.br/oportunidades/",
+    "warning": "FAPESP opera com chamadas contínuas (fluxo contínuo). Valores e modalidades são indicativos."
+  },
+  "grants": [
+    {
+      "id": "fapesp-pesquisa-regular",
+      "title": "FAPESP — Auxílio à Pesquisa Regular (fluxo contínuo)",
+      "agency": "FAPESP",
+      "country": "BR",
+      "description": "Modalidade principal da FAPESP. Submissão contínua (sem prazo fixo). Custeio, capital e bolsas para o projeto.",
+      "url": "https://fapesp.br/auxilios/pesquisa-regular/",
+      "amount_min": 30000,
+      "amount_max": 300000,
+      "currency": "BRL",
+      "open_date": "2026-01-01",
+      "close_date": "2026-12-31",
+      "status": "aberto",
+      "min_degree": "doutorado",
+      "eligible_areas": [],
+      "eligible_states": ["SP"],
+      "requires_PI": true,
+      "duration_months": 24,
+      "language": "pt",
+      "fetched_at": "2026-06-23"
+    },
+    {
+      "id": "fapesp-jovem-pesquisador",
+      "title": "FAPESP — Programa Jovem Pesquisador",
+      "agency": "FAPESP",
+      "country": "BR",
+      "description": "Para pesquisadores em início de carreira (até 5 anos pós-doutorado). Auxílio + bolsa. Foco em inserção institucional.",
+      "url": "https://fapesp.br/auxilios/jovem-pesquisador/",
+      "amount_min": 100000,
+      "amount_max": 400000,
+      "currency": "BRL",
+      "open_date": "2026-01-01",
+      "close_date": "2026-12-31",
+      "status": "aberto",
+      "min_degree": "doutorado",
+      "eligible_areas": [],
+      "eligible_states": ["SP"],
+      "requires_PI": true,
+      "duration_months": 48,
+      "language": "pt",
+      "fetched_at": "2026-06-23"
+    }
+  ]
+}

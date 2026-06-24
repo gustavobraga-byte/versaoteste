@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "agency": "NIH",
+    "country": "US",
+    "fetched_at": "2026-06-23",
+    "source": "https://grants.nih.gov/funding/searchguide/index.html",
+    "warning": "NIH tem centenas de FOAs ativas simultaneamente. Este cache é apenas referencial."
+  },
+  "grants": [
+    {
+      "id": "nih-r01-standard",
+      "title": "NIH R01 — Research Project Grant Program",
+      "agency": "NIH",
+      "country": "US",
+      "description": "Principal modalidade de fomento do NIH. Até US$ 500k/ano em direct costs, até 5 anos. Aberto a pesquisadores de qualquer nacionalidade (com instituição US para receber funds).",
+      "url": "https://grants.nih.gov/grants/funding/r01.htm",
+      "amount_min": 250000,
+      "amount_max": 2500000,
+      "currency": "USD",
+      "open_date": "2026-01-01",
+      "close_date": "2026-12-31",
+      "status": "aberto",
+      "min_degree": "doutorado",
+      "eligible_areas": ["Biomedicina", "Saúde", "Comportamento", "Ciências Biomédicas"],
+      "eligible_states": [],
+      "requires_PI": true,
+      "duration_months": 60,
+      "language": "en",
+      "fetched_at": "2026-06-23"
+    },
+    {
+      "id": "nih-fogarty",
+      "title": "NIH Fogarty — International Research Training Grants (D43)",
+      "agency": "NIH",
+      "country": "US",
+      "description": "Apoia colaboração entre instituições de pesquisa dos EUA e países de baixa/média renda (inclui Brasil, em programas selecionados).",
+      "url": "https://www.fic.nih.gov/Programs/Pages/default.aspx",
+      "amount_min": 100000,
+      "amount_max": 1000000,
+      "currency": "USD",
+      "open_date": "2026-01-01",
+      "close_date": "2026-12-31",
+      "status": "aberto",
+      "min_degree": "doutorado",
+      "eligible_areas": ["Saúde Pública", "Medicina Tropical", "Epidemiologia"],
+      "eligible_states": [],
+      "requires_PI": true,
+      "duration_months": 60,
+      "language": "en",
+      "fetched_at": "2026-06-23"
+    }
+  ]
+}

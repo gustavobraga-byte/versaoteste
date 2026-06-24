@@ -1,16 +1,16 @@
 """
-__version__.py — Fonte única de versão do PesquisAI v0.4.2.2.
+__version__.py — Fonte única de versão do PesquisAI v0.4.2.4.
 
-Este repositório contém o **PesquisAI release v0.4.2.2** + sandbox pessoal:
+Este repositório contém o **PesquisAI release v0.4.2.4** + sandbox pessoal:
 
 Estrutura do repositório:
-  /                       # PesquisAI release v0.4.2.2 (raiz)
+  /                       # PesquisAI release v0.4.2.4 (raiz)
   ├── agents/             # AGENTS.md multilíngues (4 idiomas)
   ├── docs/               # Documentação (CHANGELOG, PATCH, etc.)
   ├── grant_finder/       # Skill de busca de fomento
   ├── i18n/               # Módulo multilíngue
-  ├── pesquisai/          # Módulo PesquisAI (v0.4.2.2)
-  │   ├── __version__.py  # ⭐ Fonte única da versão (v0.4.2.2)
+  ├── pesquisai/          # Módulo PesquisAI (v0.4.2.4)
+  │   ├── __version__.py  # ⭐ Fonte única da versão (v0.4.2.4)
   │   ├── launch_app.py
   │   ├── launch_app_responsive.py
   │   └── launch_app_responsive_v041.py
@@ -65,14 +65,26 @@ Histórico de versões:
               ao invés de "--prompt 'oi'" genérico
             • 📦 __version__.py movido para pesquisai/__version__.py
             • 🧹 AGENTS.md: removido "- [link/lien/enlace]" das 4 variantes
+  v0.4.2.4 — Ses_1067: 3 correções (auto-lang + ttyd mobile scroll + restore)
+            • 🌍 AUTO-LANG: detect_from_text() em i18n/detector.py analisa
+              stopwords em 4 idiomas. Saudação inicial inclui instrução para
+              o opencode detectar o idioma da PRIMEIRA mensagem do usuário
+              e responder nesse idioma. Endpoint POST /api/detect_lang criado.
+            • 📱 SCROLL MOBILE: #terminal-frame agora tem overflow:auto,
+              -webkit-overflow-scrolling:touch, touch-action:pan-y. ttyd
+              inicia com --writable por padrão. body com touch-action:manipulation
+              para não roubar gestos verticais.
+            • ✅ RESTORE VALIDADO: bug do v0.4.2.3 (JS broken escapes) já
+              estava corrigido. Validação: Node.js --check OK, event delegation
+              ativo, data-session-id presente, restoreSession usa chr(34).
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.4.2.3"
+__version__: str = "0.4.2.4"
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-06-24"
-__codename__: str = "ses_106b hotfix (JS broken escapes — buttons restored)"
+__codename__: str = "ses_1067 (auto-lang + ttyd mobile scroll + restore validation)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
@@ -95,17 +107,21 @@ __components__: dict[str, str] = {
     "grant_finder": "0.1.0",
     "grant_finder_skill": "0.1.0",       # NOVO v0.4.2.2: link clonar
     "i18n": "0.2.0",
+    "i18n_detect_from_text": "0.1.0",    # NOVO v0.4.2.4: auto-detect de idioma
     "launch_app_responsive": "0.2.0",     # base responsiva
     "launch_app_responsive_v041": "0.1.0",  # drop-in patch v0.4.1
     "launch_app_responsive_v0421": "0.1.0",  # v0.4.2.1: 3 correções ses_10a4
     "launch_app_responsive_v0422": "0.1.0",  # NOVO v0.4.2.2: 6 correções ses_10a4+
     "launch_app_responsive_v0423": "0.1.0",  # NOVO v0.4.2.3: hotfix escapes JS
+    "launch_app_responsive_v0424": "0.1.0",  # NOVO v0.4.2.4: 3 correções ses_1067
     "agents_multilingual": "0.1.0",
     "agents_modal": "0.1.0",              # modal de Diretrizes com markdown
     "footer_responsive": "0.1.0",         # footer com flex-wrap + 2 linhas
     "footer_pc_align": "0.1.0",           # NOVO v0.4.2.2: provedor + OpenCode à direita
     "sessions_loader": "0.1.0",           # NOVO v0.4.2.2: openSessions faz fetch
     "lang_aware_greeting": "0.1.0",       # NOVO v0.4.2.2: saudação no idioma
+    "auto_lang_detection": "0.1.0",       # NOVO v0.4.2.4: detecta idioma da mensagem
+    "ttyd_mobile_scroll": "0.1.0",        # NOVO v0.4.2.4: scroll mobile do ttyd
 }
 
 # ── Idiomas suportados ─────────────────────────────────────────
@@ -184,6 +200,7 @@ __api_endpoints__: list[str] = [
     "GET  /api/agents?lang=xx_XX",  # v0.4.2: serve AGENTS.md no idioma
     "POST /api/lang",               # NOVO v0.4.2.2: persiste idioma
     "GET  /api/lang",               # NOVO v0.4.2.2: lê idioma atual
+    "POST /api/detect_lang",        # NOVO v0.4.2.4: detecta idioma da mensagem
 ]
 
 
