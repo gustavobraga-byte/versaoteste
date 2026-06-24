@@ -231,10 +231,28 @@ def start_ttyd(lang: str | None = None, initial_text: str | None = None):
     safe_prompt = greeting.replace('"', '\\"').replace("'", "\\'")
     bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" ; exec bash'
 
-    subprocess.Popen(
+    # v0.4.2.5: HTML customizado com patch de scroll mobile
+    # O ttyd padrão tem `body, html { overflow: hidden }` e canvas sem
+    # `touch-action: pan-y`, o que BLOQUEIA o scroll vertical em mobile.
+    # O patch (em pesquisai/ttyd_index.html) injeta CSS que sobrescreve
+    # isso. Apontamos o ttyd para esse HTML com a flag `-I`.
+    ttyd_index_html = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ttyd_index.html")
+    ttyd_cmd = ["ttyd"]
+    if os.path.isfile(ttyd_index_html):
+        ttyd_cmd += ["-I", ttyd_index_html]
+        logger.info("Usando ttyd_index.html customizado: %s", ttyd_index_html)
+    else:
+        logger.warning("ttyd_index.html não encontrado em %s — usando HTML padrão", ttyd_index_html)
+    ttyd_cmd += [
         # v0.4.2.4: --writable permite que o usuário digite comandos no terminal
         # (sem isso, o ttyd abre em modo read-only no mobile)
-        ["ttyd", "--writable", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
+        "--writable",
+        "-p", str(TERMINAL_PORT),
+        "bash", "-i", "-c", bash_cmd,
+    ]
+
+    subprocess.Popen(
+        ttyd_cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,

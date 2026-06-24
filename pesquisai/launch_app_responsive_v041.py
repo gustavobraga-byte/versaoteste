@@ -894,6 +894,28 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     @supports (-webkit-touch-callout: none) {
       #terminal-frame { -webkit-overflow-scrolling: touch; }
     }
+    /* v0.4.2.5 (PesquisAI): permite que o browser "veja" o iframe como
+       uma camada GPU própria. Em iOS Safari + iframes, sem isso o
+       -webkit-overflow-scrolling:touch falha silenciosamente. */
+    #terminal-frame {
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      will-change: transform;
+      /* iOS: previne seleção acidental de texto no iframe durante scroll */
+      -webkit-user-select: none;
+      user-select: none;
+      /* iOS: previne callout de imagens/links */
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* v0.4.2.5: detecta se é mobile e adiciona fallbacks extras */
+    @media (hover: none) and (pointer: coarse) {
+      #terminal-frame {
+        /* Em telas touch, usa 100dvh se disponível (evita problemas com
+           barra de endereço que esconde/mostra no mobile) */
+        height: calc(100dvh - 90px) !important;
+      }
+    }
 
     #footer {
       position: fixed; inset: auto 0 0 0;
