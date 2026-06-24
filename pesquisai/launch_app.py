@@ -198,6 +198,9 @@ def start_ttyd(lang: str | None = None, initial_text: str | None = None):
     v0.4.2.4: detecta automaticamente o idioma da mensagem inicial do
               usuário quando lang não é fornecido explicitamente.
     """
+    # v0.4.2.4 fix: declaração global deve vir ANTES de qualquer uso
+    # da variável (leitura ou escrita) dentro da função.
+    global _current_lang
     print(f"\n{next_joke('economia')}")
     opencode_bin, env = resolve_opencode()
 
@@ -215,7 +218,6 @@ def start_ttyd(lang: str | None = None, initial_text: str | None = None):
     full_lang = _valid.get(short, lang if lang in _valid.values() else "pt_BR")
 
     # Persiste o idioma detectado para a próxima execução
-    global _current_lang
     _current_lang = full_lang
     try:
         os.makedirs(os.path.dirname(_LANG_COOKIE_FILE), exist_ok=True)
