@@ -40,6 +40,19 @@ Histórico de versões:
               e popula a lista com badges de status
             • Modal de Diretrizes renderiza markdown (marked.js +
               github-markdown-css) ao invés de mostrar o .md como texto cru
+  v0.4.2.3 — Ses_106b: 🔥 BUGFIX CRÍTICO — botões do wrapper não funcionavam
+            • 🐛 JS BROKEN: a string tripla do launch_app_responsive_v041.py
+              continha escapes de aspas que Python removia durante a compilação,
+              gerando JavaScript com sintaxe inválida → TODOS os botões do HTML
+              paravam de funcionar (erro SyntaxError no <script>)
+            • ✅ renderSessions: trocado onclick inline (com escapes frágeis)
+              por atributo data-session-id + event delegation (sem aspas dinâmicas)
+            • ✅ restoreSession: trocado confirm com aspas escapadas por
+              confirm(...chr(34)...) (concat JS, sem aspas escapadas)
+            • ✅ escapeHtml: trocado object literal com aspas por if/else chain
+              (evita conflito de aspas dentro do mapeamento)
+            • ✅ Validado: Node.js --check passa, 79/79 testes pytest OK,
+              10/10 funções JS verificadas
   v0.4.2.2 — Ses_10a4+: 6 correções adicionais (sessão do usuário)
             • 🖥️ FOOTER PC: botão provedor + "Powered by OpenCode"
               alinhados à direita no desktop (margin-left:auto)
@@ -55,11 +68,11 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.4.2.2"
+__version__: str = "0.4.2.3"
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-06-24"
-__codename__: str = "ses_10a4+ polish (footer PC + skills + sessions + lang + version)"
+__codename__: str = "ses_106b hotfix (JS broken escapes — buttons restored)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
@@ -86,6 +99,7 @@ __components__: dict[str, str] = {
     "launch_app_responsive_v041": "0.1.0",  # drop-in patch v0.4.1
     "launch_app_responsive_v0421": "0.1.0",  # v0.4.2.1: 3 correções ses_10a4
     "launch_app_responsive_v0422": "0.1.0",  # NOVO v0.4.2.2: 6 correções ses_10a4+
+    "launch_app_responsive_v0423": "0.1.0",  # NOVO v0.4.2.3: hotfix escapes JS
     "agents_multilingual": "0.1.0",
     "agents_modal": "0.1.0",              # modal de Diretrizes com markdown
     "footer_responsive": "0.1.0",         # footer com flex-wrap + 2 linhas

@@ -1681,8 +1681,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         const created = s.created_at || s.created || s.updated_at || "";
         const messages = s.message_count || s.messages || s.messages_count || "";
         const meta = [created, messages ? (messages + " msgs") : ""].filter(Boolean).join(" · ");
-        return '<div class="session-item" onclick="restoreSession(\'' +
-          String(id).replace(/'/g, "\\'") + '\')" title="' +
+        return '<div class="session-item" data-session-id="' + escapeHtml(String(id)) + '" title="' +
           (dict["sessions.click_to_restore"] || "Clique para restaurar") + '">' +
           '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;">' +
             '<span style="font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
@@ -1701,9 +1700,18 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       renderSessions(_allSessions, q);
     }
 
+    // Event delegation: cliques em .session-item chamam restoreSession(id)
+    document.addEventListener("click", (ev) => {
+      const item = ev.target.closest(".session-item");
+      if (item && item.dataset.sessionId) {
+        ev.preventDefault();
+        restoreSession(item.dataset.sessionId);
+      }
+    });
+
     async function restoreSession(sessionId) {
       if (!sessionId) return;
-      if (!confirm("Restaurar sessão \"" + sessionId + "\" ?")) return;
+      if (!confirm("Restaurar sessão " + chr(34) + sessionId + chr(34) + " ?")) return;
       const dict = I18N[_currentLang] || I18N["pt_BR"];
       toast(dict["ui.exporting"] || "Restaurando sessão…", "info");
       try {
@@ -1724,9 +1732,22 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     }
 
     function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, c => (
-        {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]
-      ));
+      const map = {
+        amp: "&amp;",
+        lt:  "&lt;",
+        gt:  "&gt;",
+        quot: "&quot;",
+        apos: "&#39;",
+        "0":  "&#39;"
+      };
+      return String(s).replace(/[&<>"']/g, c => {
+        if (c === "&") return "&amp;";
+        if (c === "<") return "&lt;";
+        if (c === ">") return "&gt;";
+        if (c === '"') return "&quot;";
+        if (c === "'") return "&#39;";
+        return c;
+      });
     }
 
     function closeSessions() {
