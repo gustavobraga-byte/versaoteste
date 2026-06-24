@@ -21,12 +21,23 @@ from .constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
 from .jokes import next_joke
 from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
+# v0.4.2.2: __version__ foi MOVIDO para pesquisai/__version__.py
+# (estava em /__version__.py). Mantemos fallback para robustez.
+try:
+    from .__version__ import get_greeting
+except ImportError:
+    def get_greeting(lang: str = "pt_BR") -> str:
+        # Fallback v0.4.2.2: saudação curta + dica entre parênteses
+        return "Olá! (Dica: A partir de agora responda em português brasileiro.)"
 
 
 _opencode_bin: str | None = None
 _env: dict | None = None
 _drive_url: str = "https://drive.google.com/drive/my-drive"
 _folder_path: str = "/content"
+# v0.4.2.2: idioma atual persistido pelo backend (cookie + endpoint)
+_current_lang: str = "pt_BR"
+_LANG_COOKIE_FILE: str = os.path.expanduser("~/.config/pesquisai_lang")
 
 
 def set_drive_info(folder_path: str, drive_url: str) -> None:
@@ -150,18 +161,68 @@ def kill_previous():
     time.sleep(0.5)
 
 
-def start_ttyd():
+def start_ttyd(lang: str | None = None):
+    """Inicia o ttyd com saudação no idioma solicitado.
+
+    Args:
+        lang: Código do idioma (pt_BR, en_US, es_ES, fr_FR). Se None, usa
+              o _current_lang global ou o env PESQUISAI_LANG.
+
+    v0.4.2.2: ao invés de `--prompt 'oi'` genérico, usa saudação no idioma
+              + instrução "(a partir de agora responda em X)".
+    """
     print(f"\n{next_joke('economia')}")
     opencode_bin, env = resolve_opencode()
-    
+
+    # Resolve idioma (param > env > _current_lang > pt_BR)
+    if lang is None:
+        lang = os.environ.get("PESQUISAI_LANG") or _current_lang or "pt_BR"
+    # Normaliza para o conjunto canônico
+    _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
+    short = (lang or "pt_BR").split("_")[0].lower()
+    full_lang = _valid.get(short, lang if lang in _valid.values() else "pt_BR")
+
+    greeting = get_greeting(full_lang)
+    # Escapar aspas para o bash -c "..."
+    safe_prompt = greeting.replace('"', '\\"').replace("'", "\\'")
+    bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" ; exec bash'
+
     subprocess.Popen(
-        ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", f"{opencode_bin} --prompt 'oi' ; exec bash"],
+        ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
     )
-    print("🚀 Terminal iniciado.")
+    print(f"🚀 Terminal iniciado (idioma: {full_lang}).")
     time.sleep(2)
+
+
+def restart_ttyd_with_lang(lang: str) -> bool:
+    """Reinicia o ttyd com saudação no novo idioma.
+
+    Usado pelo endpoint /api/lang quando o usuário troca o idioma.
+    Retorna True se reiniciou, False se falhou.
+    """
+    global _current_lang
+    try:
+        # Mata ttyd + opencode existentes
+        subprocess.run(["pkill", "-9", "-f", "ttyd"], capture_output=True, timeout=5)
+        subprocess.run(["pkill", "-9", "-f", "opencode"], capture_output=True, timeout=5)
+        time.sleep(1.0)
+        # Persiste o idioma
+        _current_lang = lang
+        try:
+            os.makedirs(os.path.dirname(_LANG_COOKIE_FILE), exist_ok=True)
+            with open(_LANG_COOKIE_FILE, "w", encoding="utf-8") as f:
+                f.write(lang)
+        except Exception:
+            pass
+        # Reinicia ttyd com a saudação no novo idioma
+        start_ttyd(lang=lang)
+        return True
+    except Exception as e:
+        logger.error("Falha ao reiniciar ttyd com lang=%s: %s", lang, e)
+        return False
 
 
 
@@ -270,6 +331,18 @@ def start_wrapper_server():
     if restore_opencode_config_from_drive():
         print(f"🔑 Config do OpenCode restaurada do Drive.")
     
+    # v0.4.2.2: restaura idioma persistido (cookie/arquivo)
+    global _current_lang
+    try:
+        if os.path.exists(_LANG_COOKIE_FILE):
+            with open(_LANG_COOKIE_FILE, "r", encoding="utf-8") as f:
+                _current_lang = (f.read() or "pt_BR").strip()
+        elif os.environ.get("PESQUISAI_LANG"):
+            _current_lang = os.environ["PESQUISAI_LANG"]
+    except Exception:
+        _current_lang = "pt_BR"
+    print(f"🌐 Idioma inicial: {_current_lang}")
+    
     _loaded_keys = load_keys_from_drive(DRIVE_BACKUP_DIR, _env)
     if _loaded_keys:
         print(f"🔑 Keys carregadas do Drive: {', '.join(_loaded_keys)}")
@@ -315,6 +388,11 @@ def start_wrapper_server():
                 except Exception:
                     sessions = [{"id": l.strip()} for l in r.stdout.splitlines() if l.strip()]
                 self._json(200, {"sessions": sessions})
+                return
+
+            if p == "/api/lang":
+                # v0.4.2.2: retorna o idioma atual persistido
+                self._json(200, {"lang": _current_lang, "greeting": get_greeting(_current_lang)})
                 return
             
             if p == "/api/backups":
@@ -921,7 +999,32 @@ def start_wrapper_server():
                 except Exception as e:
                     self._json(500, {"error": str(e)})
                 return
-            
+
+            if p == "/api/lang":
+                # v0.4.2.2: persiste idioma e reinicia ttyd com saudação
+                # no novo idioma ao invés de --prompt "oi" genérico.
+                lang_in = (body.get("lang", "") or "").strip()
+                if not lang_in:
+                    self._json(400, {"error": "lang obrigatório (pt_BR/en_US/es_ES/fr_FR)"})
+                    return
+                _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
+                short = lang_in.split("_")[0].lower() if "_" in lang_in else lang_in.lower()
+                full_lang = _valid.get(short, lang_in if lang_in in _valid.values() else "pt_BR")
+                ok = restart_ttyd_with_lang(full_lang)
+                if ok:
+                    self._json(200, {
+                        "ok": True,
+                        "lang": full_lang,
+                        "greeting": get_greeting(full_lang),
+                        "message": f"ttyd reiniciado com saudação em {full_lang}",
+                    })
+                else:
+                    self._json(500, {
+                        "ok": False,
+                        "error": "Falha ao reiniciar ttyd com o novo idioma.",
+                    })
+                return
+
             self.send_error(404)
     
     threading.Thread(

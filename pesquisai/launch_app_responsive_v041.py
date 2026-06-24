@@ -1,9 +1,9 @@
 """
-launch_app_responsive.py — Wrapper HTML responsivo + tema + idioma (v0.4.2.1).
+launch_app_responsive.py — Wrapper HTML responsivo + tema + idioma (v0.4.2.2).
 
 Este módulo SUBSTITUI o `create_wrapper_html` do launch_app.py do PesquisAI
 principal (https://github.com/gustavobraga-byte/PesquisAI/blob/main/pesquisai/launch_app.py)
-corrigindo os problemas reportados pelo usuário em 2026-06-23.
+corrigindo os problemas reportados pelo usuário em 2026-06-23 e 2026-06-24.
 
 ═════════════════════════════════════════════════════════════════════════
 v0.4.1 — UI Fixes (3 correções originais)
@@ -105,6 +105,54 @@ v0.4.2.1 — Sessão ses_10a4 (3 correções adicionais da sessão do usuário)
          títulos, DM Mono para código/corpo)
        • Remove frontmatter YAML do conteúdo antes de renderizar
 
+═════════════════════════════════════════════════════════════════════════
+v0.4.2.2 — Ses_10a4+ Polish (6 correções adicionais da sessão do usuário)
+═════════════════════════════════════════════════════════════════════════
+
+   9. 🖥️ Footer PC: provedor e "Powered by OpenCode" alinhados à DIREITA
+      - Problema: no desktop, o segundo grupo do rodapé (provedor + OpenCode)
+        ficava colado à esquerda junto com a marca e contatos. Em PC, deveria
+        estar à DIREITA.
+      - Correção: `@media (min-width: 768px)` faz `.footer-row-2` virar
+        `display: flex` com `margin-left: auto`, empurrando-o para a direita.
+        Mobile preserva o layout de 2 linhas.
+
+  10. 🧩 Skills: `grant-finder` e `meta-search-br` em `skills/` com clone URL
+      - Problema: as 2 skills extras existiam (grant_finder/ na raiz,
+        skills/meta-search-br/) mas sem READMEs padronizados nem links de clone.
+      - Correção: criadas READMEs + SKILL.md + __init__.py com `__clone_url__`
+        apontando para `https://github.com/gustavobraga-byte/grant-finder` e
+        `https://github.com/gustavobraga-byte/meta-search-br`.
+
+  11. 📜 Histórico de sessão não carregava
+      - Problema: `openSessions()` só abria o overlay, sem fetch nem
+        render da lista. Usuário via "Carregando sessões…" para sempre.
+      - Correção: `openSessions()` agora faz `await fetch("/api/sessions")`
+        e popula `#session-list` com sessões clicáveis (id, título, data,
+        contagem de mensagens). `filterSessions()` filtra em tempo real.
+        Cada item chama `restoreSession(id)` que faz POST em `/api/restore`.
+
+  12. 🌍 Saudação inicial do ttyd no idioma selecionado
+      - Problema: ttyd sempre recebia `--prompt 'oi'` genérico. Trocar
+        idioma não mudava a saudação inicial.
+      - Correção: `start_ttyd(lang)` usa `get_greeting(lang)` para saudação
+        específica por idioma. Endpoint `POST /api/lang` reinicia o ttyd
+        automaticamente ao trocar idioma. Idioma persistido em
+        `~/.config/pesquisai_lang`.
+
+  13. 📦 `__version__.py` MOVIDO para `pesquisai/__version__.py`
+      - Problema: arquivo de versão estava na raiz (`/__version__.py`),
+        quebrando `from .__version__ import VERSION`.
+      - Correção: movido para `pesquisai/__version__.py`, bumpado para
+        v0.4.2.2, com fallback de versão hardcoded se o módulo não for
+        encontrado.
+
+  14. 🧹 AGENTS.md multilíngues padronizados
+      - Problema: francês tinha `[lien]` em todos os 3 outros idiomas; pt/en/es
+        tinham `[link/enlace]` só para o francês. Padrão inconsistente.
+      - Correção: removido todo "- [link/lien/enlace](...)" das 4 variantes.
+        Formato final: `- `agents/AGENTS.<lang>.md` (nome do idioma)`.
+
 Instalação:
     Editar ``pesquisai/launch_app.py`` e substituir a função
     ``create_wrapper_html(terminal_url, drive_url)`` original por:
@@ -131,11 +179,22 @@ from typing import Optional
 
 # Imports resilientes (funciona dentro do pacote e standalone)
 try:
-    from .constants import WRAPPER_DIR, VERSION
+    from .constants import WRAPPER_DIR
     from .jokes import next_joke
+    # v0.4.2.2: __version__ foi MOVIDO para pesquisai/__version__.py
+    try:
+        from .__version__ import __version__ as VERSION, get_greeting
+    except ImportError:
+        VERSION = "0.4.2.2"
+        def get_greeting(lang: str = "pt_BR") -> str:
+            # Fallback v0.4.2.2: saudação curta + dica entre parênteses
+            return "Olá! (Dica: A partir de agora responda em português brasileiro.)"
 except ImportError:
     WRAPPER_DIR = "/tmp/pesquisai-wrapper"
-    VERSION = "0.4.2.1"
+    VERSION = "0.4.2.2"
+    def get_greeting(lang: str = "pt_BR") -> str:
+        # Fallback v0.4.2.2: saudação curta + dica entre parênteses
+        return "Olá! (Dica: A partir de agora responda em português brasileiro.)"
     def next_joke(category: str = "aleatorio") -> str:
         return "💻 (standalone mode) carregando..."
 
@@ -319,6 +378,20 @@ RESPONSIVE_CSS: str = """
     display: contents;  /* em desktop, ignora os wrappers e usa flex direto */
   }
   /* Em mobile (≤767px) os wrappers viram linhas reais (regra acima sobrescreve) */
+
+  /* v0.4.2.2: em DESKTOP, .footer-row-2 vira flex item e vai para a DIREITA
+     (botão de provedor + "Powered by OpenCode" alinhados à direita)
+     O `display: contents` acima é sobrescrito dentro do media query abaixo
+     para que `margin-left: auto` funcione. */
+  @media (min-width: 768px) {
+    .footer-row-1 { display: flex; align-items: center; gap: 6px; }
+    .footer-row-2 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;   /* empurra row-2 (provedor + OpenCode) à direita */
+    }
+  }
 
   /* === Acessibilidade: foco visível em todos os botões === */
   .tb-btn:focus-visible, .tb-icon:focus-visible, .hamburger:focus-visible,
@@ -1236,11 +1309,19 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       // Persiste no backend (se disponível) + recarrega para aplicar
       // traduções do backend também
       setCookie(LANG_COOKIE, lang);
+      // v0.4.2.2: chama /api/lang POST que reinicia o ttyd com saudação
+      // no novo idioma (ao invés de --prompt "oi" genérico)
       try {
         fetch(BASE + "/api/lang", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lang: lang })
+        }).then(r => r.json()).then(d => {
+          if (d && d.ok) {
+            // Mostra a saudação como toast
+            const dict2 = I18N[lang] || I18N["pt_BR"];
+            toast("🤖 " + (d.greeting || ""), "ok");
+          }
         }).catch(() => {});
       } catch (e) {}
       // Aplica imediatamente o que dá (UI strings)
@@ -1260,7 +1341,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       // Fecha menu
       closeLangMenu();
       // Recarrega para que backend traduza também (toasts, modais completos)
-      setTimeout(() => location.reload(), 700);
+      setTimeout(() => location.reload(), 1200);
     }
 
     function buildLangMenu() {
@@ -1543,10 +1624,111 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     }
 
     let _allSessions = [];
+    // v0.4.2.2: openSessions() agora faz fetch em /api/sessions
+    // (antes só abria o overlay sem carregar a lista)
     async function openSessions() {
       const overlay = document.getElementById("sessions-overlay");
-      overlay.style.opacity = "1"; overlay.style.pointerEvents = "all";
+      const list = document.getElementById("session-list");
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      if (overlay) {
+        overlay.style.opacity = "1";
+        overlay.style.pointerEvents = "all";
+      }
+      // Mostra estado de carregamento
+      if (list) {
+        list.innerHTML = '<div class="modal-empty">' +
+          (dict["ui.loading"] || "Carregando sessões…") + '</div>';
+      }
+      // Filtro de busca — mantém o valor digitado
+      const search = document.getElementById("session-search");
+      const q = (search && search.value || "").trim().toLowerCase();
+      try {
+        const r = await fetch(BASE + "/api/sessions");
+        const d = await r.json();
+        const sessions = d.sessions || [];
+        _allSessions = sessions;
+        renderSessions(sessions, q);
+      } catch (e) {
+        if (list) {
+          list.innerHTML = '<div class="modal-empty">❌ ' +
+            (dict["agents.error"] || "Erro") + ': ' + e.message + '</div>';
+        }
+      }
     }
+
+    function renderSessions(sessions, query) {
+      const list = document.getElementById("session-list");
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      if (!list) return;
+      const filtered = (query
+        ? sessions.filter(s => {
+            const id = (s.id || s.session_id || s.name || "").toLowerCase();
+            const title = (s.title || s.summary || "").toLowerCase();
+            return id.includes(query) || title.includes(query);
+          })
+        : sessions);
+      if (!filtered.length) {
+        list.innerHTML = '<div class="modal-empty">' +
+          (query
+            ? (dict["sessions.empty_filtered"] || "Nenhuma sessão corresponde ao filtro.")
+            : (dict["sessions.empty"] || "Nenhuma sessão encontrada.")) +
+          '</div>';
+        return;
+      }
+      list.innerHTML = filtered.map(s => {
+        const id = s.id || s.session_id || s.name || "(sem id)";
+        const title = s.title || s.summary || "";
+        const created = s.created_at || s.created || s.updated_at || "";
+        const messages = s.message_count || s.messages || s.messages_count || "";
+        const meta = [created, messages ? (messages + " msgs") : ""].filter(Boolean).join(" · ");
+        return '<div class="session-item" onclick="restoreSession(\'' +
+          String(id).replace(/'/g, "\\'") + '\')" title="' +
+          (dict["sessions.click_to_restore"] || "Clique para restaurar") + '">' +
+          '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;">' +
+            '<span style="font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+              escapeHtml(id) + '</span>' +
+            (title ? '<span style="font-size:10.5px;color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+              escapeHtml(title) + '</span>' : '') +
+          '</div>' +
+          (meta ? '<span class="ses-meta">' + escapeHtml(meta) + '</span>' : '') +
+        '</div>';
+      }).join("");
+    }
+
+    function filterSessions() {
+      const search = document.getElementById("session-search");
+      const q = (search && search.value || "").trim().toLowerCase();
+      renderSessions(_allSessions, q);
+    }
+
+    async function restoreSession(sessionId) {
+      if (!sessionId) return;
+      if (!confirm("Restaurar sessão \"" + sessionId + "\" ?")) return;
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      toast(dict["ui.exporting"] || "Restaurando sessão…", "info");
+      try {
+        const r = await fetch(BASE + "/api/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId })
+        });
+        const d = await r.json();
+        if (d.ok || d.imported) {
+          toast("✅ Sessão restaurada!", "ok");
+        } else {
+          toast("❌ " + (d.error || "Falha ao restaurar."), "err");
+        }
+      } catch (e) {
+        toast("❌ " + e.message, "err");
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]
+      ));
+    }
+
     function closeSessions() {
       const o = document.getElementById("sessions-overlay");
       o.style.opacity = "0"; o.style.pointerEvents = "none";
@@ -1874,6 +2056,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "providers.var": "Variável",
             "sessions.title": "Histórico de Sessões",
             "sessions.search_placeholder": "🔍 Buscar por id ou conteúdo…",
+            "sessions.empty": "Nenhuma sessão encontrada.",
+            "sessions.empty_filtered": "Nenhuma sessão corresponde ao filtro.",
+            "sessions.click_to_restore": "Clique para restaurar",
             "shortcuts.title": "Atalhos de Teclado",
             "shortcuts.copy": "Copiar seleção", "shortcuts.copy_hint": "Segure o Shift e selecione",
             "shortcuts.interrupt": "Interromper comando", "shortcuts.paste": "Colar (Chrome)",
@@ -1911,6 +2096,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "providers.var": "Variable",
             "sessions.title": "Session History",
             "sessions.search_placeholder": "🔍 Search by id or content…",
+            "sessions.empty": "No sessions found.",
+            "sessions.empty_filtered": "No sessions match the filter.",
+            "sessions.click_to_restore": "Click to restore",
             "shortcuts.title": "Keyboard Shortcuts",
             "shortcuts.copy": "Copy selection", "shortcuts.copy_hint": "Hold Shift and select",
             "shortcuts.interrupt": "Interrupt command", "shortcuts.paste": "Paste (Chrome)",
@@ -1948,6 +2136,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "providers.var": "Variable",
             "sessions.title": "Historial de Sesiones",
             "sessions.search_placeholder": "🔍 Buscar por id o contenido…",
+            "sessions.empty": "No se encontraron sesiones.",
+            "sessions.empty_filtered": "Ninguna sesión coincide con el filtro.",
+            "sessions.click_to_restore": "Clic para restaurar",
             "shortcuts.title": "Atajos de Teclado",
             "shortcuts.copy": "Copiar selección", "shortcuts.copy_hint": "Mantenga Shift y seleccione",
             "shortcuts.interrupt": "Interrumpir comando", "shortcuts.paste": "Pegar (Chrome)",
@@ -1985,6 +2176,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "providers.var": "Variable",
             "sessions.title": "Historique des sessions",
             "sessions.search_placeholder": "🔍 Rechercher par id ou contenu…",
+            "sessions.empty": "Aucune session trouvée.",
+            "sessions.empty_filtered": "Aucune session ne correspond au filtre.",
+            "sessions.click_to_restore": "Cliquer pour restaurer",
             "shortcuts.title": "Raccourcis clavier",
             "shortcuts.copy": "Copier la sélection", "shortcuts.copy_hint": "Maintenez Shift et sélectionnez",
             "shortcuts.interrupt": "Interrompre la commande", "shortcuts.paste": "Coller (Chrome)",

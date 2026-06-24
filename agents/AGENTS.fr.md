@@ -176,9 +176,9 @@ PesquisAI prend en charge **quatre langues** : pt_BR (par défaut), en_US, es_ES
 Pour changer de langue, définissez la variable d'environnement `PESQUISAI_LANG=fr_FR` ou utilisez le endpoint `/api/language` dans l'interface.
 
 Variantes d'AGENTS.md disponibles à :
-- `agents/AGENTS.pt.md` (par défaut, portugais brésilien) — [lien](agents/AGENTS.pt.md)
-- `agents/AGENTS.en.md` (anglais) — [lien](agents/AGENTS.en.md)
-- `agents/AGENTS.es.md` (espagnol) — [lien](agents/AGENTS.es.md)
+- `agents/AGENTS.pt.md` (par défaut, portugais brésilien)
+- `agents/AGENTS.en.md` (anglais)
+- `agents/AGENTS.es.md` (espagnol)
 - `agents/AGENTS.fr.md` (ce fichier)
 
 ---

@@ -1,19 +1,23 @@
 """
-__version__.py — Fonte única de versão do PesquisAI v0.4.2.1.
+__version__.py — Fonte única de versão do PesquisAI v0.4.2.2.
 
-Este repositório contém o **PesquisAI release v0.4.2.1** + sandbox pessoal:
+Este repositório contém o **PesquisAI release v0.4.2.2** + sandbox pessoal:
 
 Estrutura do repositório:
-  /                       # PesquisAI release v0.4.2.1 (raiz)
-  ├── agents/             # AGENTS.md multilíngues (4 idiomas, v0.4.1)
+  /                       # PesquisAI release v0.4.2.2 (raiz)
+  ├── agents/             # AGENTS.md multilíngues (4 idiomas)
   ├── docs/               # Documentação (CHANGELOG, PATCH, etc.)
   ├── grant_finder/       # Skill de busca de fomento
   ├── i18n/               # Módulo multilíngue
-  ├── pesquisai/          # Módulo PesquisAI (v0.4.2.1 corrigido)
+  ├── pesquisai/          # Módulo PesquisAI (v0.4.2.2)
+  │   ├── __version__.py  # ⭐ Fonte única da versão (v0.4.2.2)
+  │   ├── launch_app.py
+  │   ├── launch_app_responsive.py
+  │   └── launch_app_responsive_v041.py
   ├── releases/v0.4.0/    # Release isolada completa
   ├── sandbox/            # 🏖️ Arquivos não-PesquisAI
   ├── sessions/           # Logs de sessão
-  └── skills/             # Skills adicionais
+  └── skills/             # Skills adicionais (grant-finder, meta-search-br)
 
 Compatível com o PesquisAI principal (v0.2.1+).
 
@@ -36,14 +40,26 @@ Histórico de versões:
               e popula a lista com badges de status
             • Modal de Diretrizes renderiza markdown (marked.js +
               github-markdown-css) ao invés de mostrar o .md como texto cru
+  v0.4.2.2 — Ses_10a4+: 6 correções adicionais (sessão do usuário)
+            • 🖥️ FOOTER PC: botão provedor + "Powered by OpenCode"
+              alinhados à direita no desktop (margin-left:auto)
+            • 🧩 SKILLS: grant-finder e meta-search-br adicionados em
+              skills/ com links para clonar do GitHub
+            • 📜 SESSÕES: openSessions() agora faz fetch em /api/sessions
+              e popula a lista (estava apenas abrindo o modal)
+            • 🌍 LANG: ao trocar idioma, o ttyd é reiniciado com
+              saudação no idioma + "(a partir de agora responda em X)"
+              ao invés de "--prompt 'oi'" genérico
+            • 📦 __version__.py movido para pesquisai/__version__.py
+            • 🧹 AGENTS.md: removido "- [link/lien/enlace]" das 4 variantes
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.4.2.1"
+__version__: str = "0.4.2.2"
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-06-23"
-__codename__: str = "ses_10a4 fixes (theme contrast + health + markdown)"
+__release_date__: str = "2026-06-24"
+__codename__: str = "ses_10a4+ polish (footer PC + skills + sessions + lang + version)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
@@ -57,24 +73,57 @@ __license__: str = "MIT"
 __pesquisai_min_version__: str = "0.2.1"
 __pesquisai_max_version__: str = "0.3.x"  # até próximo major
 
-# ── Tema padrão (v0.4.2.1) ─────────────────────────────────────
+# ── Tema padrão ────────────────────────────────────────────────
 __default_theme__: str = "pesquisai"  # 🌙 ESCURO (anti-flash CSS ativo)
 __supported_themes__: list[str] = ["pesquisai", "pesquisai-light"]
 
 # ── Componentes incluídos neste release ─────────────────────────
 __components__: dict[str, str] = {
     "grant_finder": "0.1.0",
+    "grant_finder_skill": "0.1.0",       # NOVO v0.4.2.2: link clonar
     "i18n": "0.2.0",
     "launch_app_responsive": "0.2.0",     # base responsiva
     "launch_app_responsive_v041": "0.1.0",  # drop-in patch v0.4.1
-    "launch_app_responsive_v0421": "0.1.0",  # NOVO v0.4.2.1: 3 correções ses_10a4
+    "launch_app_responsive_v0421": "0.1.0",  # v0.4.2.1: 3 correções ses_10a4
+    "launch_app_responsive_v0422": "0.1.0",  # NOVO v0.4.2.2: 6 correções ses_10a4+
     "agents_multilingual": "0.1.0",
     "agents_modal": "0.1.0",              # modal de Diretrizes com markdown
     "footer_responsive": "0.1.0",         # footer com flex-wrap + 2 linhas
+    "footer_pc_align": "0.1.0",           # NOVO v0.4.2.2: provedor + OpenCode à direita
+    "sessions_loader": "0.1.0",           # NOVO v0.4.2.2: openSessions faz fetch
+    "lang_aware_greeting": "0.1.0",       # NOVO v0.4.2.2: saudação no idioma
 }
 
 # ── Idiomas suportados ─────────────────────────────────────────
 __supported_languages__: list[str] = ["pt_BR", "en_US", "es_ES", "fr_FR"]
+
+# ── Saudações iniciais por idioma (v0.4.2.2) ───────────────────
+# Usadas pelo ttyd ao iniciar o terminal e ao trocar de idioma.
+# Cada tupla = (saudação_curta, instrução_persistente, palavra "dica" no idioma)
+# v0.4.2.2 (ajuste pós-ses_10a4+): removida a frase "Eu sou o PesquisAI" —
+# a saudação agora é apenas a saudação curta + dica entre parênteses.
+__language_greetings__: dict[str, tuple[str, str, str]] = {
+    "pt_BR": (
+        "Olá!",
+        "A partir de agora responda em português brasileiro.",
+        "Dica",
+    ),
+    "en_US": (
+        "Hello!",
+        "From now on, please respond in English.",
+        "Tip",
+    ),
+    "es_ES": (
+        "¡Hola!",
+        "A partir de ahora responda en español.",
+        "Consejo",
+    ),
+    "fr_FR": (
+        "Bonjour !",
+        "À partir de maintenant, répondez en français.",
+        "Astuce",
+    ),
+}
 
 # ── Agências de fomento integradas ─────────────────────────────
 __supported_grant_agencies__: list[str] = [
@@ -82,6 +131,24 @@ __supported_grant_agencies__: list[str] = [
     "CNPq", "CAPES", "FAPEMIG", "FAPESP", "FINEP",
     # Internacional
     "NIH", "NSF", "ERC", "Wellcome", "Horizon_Europe",
+]
+
+# ── Skills extras (v0.4.2.2) ────────────────────────────────────
+__extra_skills__: list[dict[str, str]] = [
+    {
+        "id": "grant-finder",
+        "name": "Grant Finder",
+        "description": "Busca de editais de fomento em agências BR e internacionais.",
+        "repo": "https://github.com/gustavobraga-byte/grant-finder",
+        "local_path": "skills/grant-finder/",
+    },
+    {
+        "id": "meta-search-br",
+        "name": "Meta-Search BR",
+        "description": "Busca unificada em 7 bases acadêmicas (PubMed, SciELO, LILACS, BDTD, OpenAlex, arXiv, bioRxiv).",
+        "repo": "https://github.com/gustavobraga-byte/meta-search-br",
+        "local_path": "skills/meta-search-br/",
+    },
 ]
 
 # ── Endpoints REST disponíveis ─────────────────────────────────
@@ -101,6 +168,8 @@ __api_endpoints__: list[str] = [
     "POST /api/backup",             # Exporta sessão para Drive
     "POST /api/restore",            # Importa sessão do Drive
     "GET  /api/agents?lang=xx_XX",  # v0.4.2: serve AGENTS.md no idioma
+    "POST /api/lang",               # NOVO v0.4.2.2: persiste idioma
+    "GET  /api/lang",               # NOVO v0.4.2.2: lê idioma atual
 ]
 
 
@@ -112,6 +181,23 @@ def get_version() -> str:
 def get_version_short() -> str:
     """Retorna apenas o número da versão."""
     return __version__
+
+
+def get_greeting(lang: str = "pt_BR") -> str:
+    """Retorna a saudação inicial do ttyd para o idioma solicitado.
+
+    Formato: "{saudação_curta} ({dica}: {instrução_persistente})"
+    Exemplo pt_BR: "Olá! (Dica: A partir de agora responda em português brasileiro.)"
+
+    v0.4.2.2 (pós-ses_10a4+): a frase "Eu sou o PesquisAI" foi removida;
+    agora a saudação é apenas a saudação curta + dica entre parênteses.
+    """
+    lang = (lang or "pt_BR").split("_")[0]
+    full_lang = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}.get(lang, "pt_BR")
+    greeting, persist, tip = __language_greetings__.get(
+        full_lang, __language_greetings__["pt_BR"]
+    )
+    return f"{greeting} ({tip}: {persist})"
 
 
 def get_full_metadata() -> dict[str, str]:
@@ -127,5 +213,6 @@ def get_full_metadata() -> dict[str, str]:
         "license": __license__,
         "languages": ", ".join(__supported_languages__),
         "agencies": ", ".join(__supported_grant_agencies__),
+        "extra_skills": ", ".join(s["id"] for s in __extra_skills__),
         "endpoints_count": len(__api_endpoints__),
     }

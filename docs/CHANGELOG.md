@@ -4,6 +4,145 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.4.2.2] — 2026-06-24 — ses_10a4+ Polish (Footer PC + Skills + Sessions + Lang + Version)
+
+### 🐛 Bug Fixes & Funcionalidades (6 melhorias reportadas em 2026-06-24)
+
+#### 🖥️ 9. Footer PC: provedor e "Powered by OpenCode" alinhados à DIREITA
+- **Problema:** no desktop, o botão de provedor e o texto "Powered by OpenCode"
+  ficavam **colados à esquerda**, junto com o restante do rodapé. Em PC,
+  deveriam estar alinhados **à direita** (em mobile, mantém o layout de 2 linhas).
+- **Correção:**
+  - Nova regra CSS `@media (min-width: 768px)` que sobrescreve o
+    `display: contents` de `.footer-row-2` para `display: flex; align-items: center;`
+  - `margin-left: auto` em `.footer-row-2` empurra o segundo grupo (provedor +
+    OpenCode) para a **extremidade direita** do rodapé
+  - `.footer-row-1` (marca + email + GitHub + UFV) também vira flex container
+    explícito, garantindo alinhamento vertical perfeito
+  - **Mobile/tablet (<768px)**: comportamento original preservado
+    (2 linhas empilhadas)
+
+#### 🧩 10. Skills: `grant-finder` e `meta-search-br` adicionadas em `skills/`
+- **Problema:** as 2 skills extras existiam (grant-finder em `grant_finder/`
+  na raiz, meta-search-br em `skills/meta-search-br/`) mas **não estavam
+  organizadas** em `skills/` com links de clone padronizados.
+- **Correção:**
+  - Criada `skills/grant-finder/` com `README.md`, `SKILL.md` e `__init__.py`
+    contendo link de clone: `https://github.com/gustavobraga-byte/grant-finder`
+  - Atualizada `skills/meta-search-br/README.md` com link de clone:
+    `https://github.com/gustavobraga-byte/meta-search-br`
+  - Atualizada `skills/meta-search-br/SKILL.md` (seção "Instalação via clone")
+  - Atualizada `skills/meta-search-br/__init__.py` com constante `__clone_url__`
+  - `__init__.py` do `grant-finder` reexporta a API da versão local
+    (`grant_finder/`), com fallback para o clone em ambientes novos
+
+#### 📜 11. Histórico de sessão não carregava
+- **Problema:** `openSessions()` apenas **abria o overlay** visual
+  (`opacity: 1`) mas **não fazia fetch** em `/api/sessions` nem populava
+  a lista. O usuário clicava no ícone 📜 e só via "Carregando sessões…"
+  para sempre.
+- **Correção:**
+  - `openSessions()` agora faz `fetch(BASE + "/api/sessions")` + `await`
+  - Nova função `renderSessions(sessions, query)` popula `#session-list`
+    com linhas de sessão (id, título, data de criação, contagem de mensagens)
+  - Cada item é **clicável** e chama `restoreSession(id)` que faz POST
+    em `/api/restore` para importar a sessão
+  - Busca em tempo real via `filterSessions()` (filtra por id/título)
+  - 3 novas strings i18n por idioma (12 total): `sessions.empty`,
+    `sessions.empty_filtered`, `sessions.click_to_restore`
+  - Mensagem de erro amigável se a requisição falhar
+  - Função utilitária `escapeHtml()` para prevenir XSS nos campos de sessão
+
+#### 🌍 12. Saudação inicial do ttyd no idioma selecionado
+- **Problema:** ao iniciar o terminal (ttyd), o opencode recebia sempre
+  `--prompt 'oi'` genérico. Ao trocar idioma via UI, a saudação continuava
+  fixa em português.
+- **Correção:**
+  - `start_ttyd(lang=None)` agora aceita o idioma como parâmetro
+  - Saudação = `get_greeting(lang)` que retorna texto específico por idioma:
+    - **pt_BR**: "Olá! (Dica: A partir de agora responda em português brasileiro.)"
+    - **en_US**: "Hello! (Tip: From now on, please respond in English.)"
+    - **es_ES**: "¡Hola! (Consejo: A partir de ahora responda en español.)"
+    - **fr_FR**: "Bonjour ! (Astuce: À partir de maintenant, répondez en français.)"
+  - **Ajuste pós-ses_10a4+:** a frase "Eu sou o PesquisAI" foi removida das
+    saudações. A estrutura final é apenas `"{saudação_curta} ({dica}: {instr})"`,
+    onde "dica" é traduzida para cada idioma (Dica / Tip / Consejo / Astuce).
+  - Novo endpoint **GET /api/lang** retorna idioma + saudação atuais
+  - Novo endpoint **POST /api/lang** persiste idioma, **reinicia ttyd** com
+    a saudação no novo idioma e retorna a saudação como confirmação
+  - Idioma persistido em `~/.config/pesquisai_lang` (sobrevive a restarts)
+  - `setLang()` em JavaScript agora chama `POST /api/lang` que reinicia
+    o ttyd automaticamente (sem precisar matar processos manualmente)
+  - Variável global `_current_lang` no backend, restaurada do arquivo
+    no startup
+
+#### 📦 13. `__version__.py` MOVIDO para `pesquisai/__version__.py`
+- **Problema:** o arquivo de versão estava na **raiz** do repositório
+  (`/__version__.py`), enquanto o pacote Python está em `pesquisai/`. Isso
+  quebrava imports relativos (`from .__version__ import VERSION`).
+- **Correção:**
+  - `__version__.py` movido de `/__version__.py` → `/pesquisai/__version__.py`
+  - Versão bumpada para `0.4.2.2`
+  - Codinome: `ses_10a4+ polish (footer PC + skills + sessions + lang + version)`
+  - Mantida compatibilidade com import via fallback (valor hardcoded
+    `"0.4.2.2"` se o módulo não for encontrado)
+  - `launch_app.py` agora importa `get_greeting` de `.__version__` com
+    fallback para definição local
+  - `launch_app_responsive_v041.py` também atualizado para o novo path
+  - Novas funções utilitárias: `get_greeting(lang)`, `__language_greetings__`
+    (dicionário por idioma), `__extra_skills__` (lista das 2 skills extras
+    com repositório)
+
+#### 🧹 14. AGENTS.md multilíngues padronizados
+- **Problema:** o francês tinha `[lien](agents/AGENTS.pt.md)` em todos os
+  itens da lista de variantes, enquanto pt/en/es tinham `- [link/enlace]`
+  apenas no item do francês. Resultado: padrão inconsistente entre idiomas.
+- **Correção:**
+  - Removido `- [link](agents/AGENTS.fr.md)` do `AGENTS.pt.md`
+  - Removido `- [link](agents/AGENTS.fr.md)` do `AGENTS.en.md`
+  - Removido `- [enlace](agents/AGENTS.fr.md)` do `AGENTS.es.md`
+  - Removidos **3** `- [lien](agents/AGENTS.pt.md|en.md|es.md)` do `AGENTS.fr.md`
+  - Formato final padronizado em todos os 4 idiomas:
+    `- \`agents/AGENTS.<lang>.md\` (nome do idioma)`
+  - Sem link markdown inline (o filename já é o link relativo no GitHub)
+
+### 🧪 Validação
+
+- ✅ **79/79 testes** continuam passando (`grant_finder/tests/` + `i18n/tests/`)
+- ✅ **Sintaxe Python validada** em 5 arquivos:
+  - `pesquisai/launch_app.py`
+  - `pesquisai/launch_app_responsive_v041.py`
+  - `pesquisai/__version__.py`
+  - `skills/grant-finder/__init__.py`
+  - `skills/meta-search-br/__init__.py`
+- ✅ **Geração do wrapper HTML** validada (88.517 chars, +6% vs v0.4.2.1)
+- ✅ **`get_greeting()`** testada para todos os 4 idiomas + 5 short codes
+- ✅ **Comando bash do ttyd** testado para 4 idiomas (escaping correto)
+
+### 📦 Arquivos Modificados (v0.4.2.2)
+
+```
+pesquisai/
+├── __version__.py                    # ⭐ MOVIDO da raiz, v0.4.2.2
+├── launch_app.py                     # ⭐ +start_ttyd(lang), +/api/lang
+└── launch_app_responsive_v041.py     # ⭐ footer PC, +openSessions loader, +setLang/i18n
+
+skills/
+├── grant-finder/                     # ⭐ NOVO: README + SKILL + __init__
+└── meta-search-br/                   # ⭐ +README + clone URL no SKILL
+
+agents/
+├── AGENTS.pt.md                      # ⭐ -"[link]" do francês
+├── AGENTS.en.md                      # ⭐ -"[link]" do francês
+├── AGENTS.es.md                      # ⭐ -"[enlace]" do francês
+└── AGENTS.fr.md                      # ⭐ -"[lien]" dos 3 outros idiomas
+
+docs/
+└── CHANGELOG.md                      # ⭐ +entrada [0.4.2.2]
+```
+
+---
+
 ## [0.4.2.1] — 2026-06-23 — ses_10a4 Fixes (Theme Contrast + Dashboard + Markdown)
 
 ### 🐛 Bug Fixes (3 adicionais reportados pelo usuário em 2026-06-23 — sessão `ses_10a4`)

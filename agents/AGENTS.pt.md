@@ -174,7 +174,7 @@ Variantes de AGENTS.md disponíveis em:
 - `agents/AGENTS.pt.md` (este arquivo, padrão)
 - `agents/AGENTS.en.md` (English)
 - `agents/AGENTS.es.md` (Español)
-- `agents/AGENTS.fr.md` (Français) — [link](agents/AGENTS.fr.md)
+- `agents/AGENTS.fr.md` (Français)
 
 ---
 

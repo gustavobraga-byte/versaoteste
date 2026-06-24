@@ -175,7 +175,7 @@ AGENTS.md variants available at:
 - `agents/AGENTS.pt.md` (default, Brazilian Portuguese)
 - `agents/AGENTS.en.md` (this file)
 - `agents/AGENTS.es.md` (Spanish)
-- `agents/AGENTS.fr.md` (French) — [link](agents/AGENTS.fr.md)
+- `agents/AGENTS.fr.md` (French)
 
 ---
 

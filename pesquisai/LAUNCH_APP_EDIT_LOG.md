@@ -1,21 +1,21 @@
-# 📝 Log de Edição — `launch_app.py` (v0.4.2.1)
+# 📝 Log de Edição — `launch_app.py` (v0.4.2.2)
 
-> **Data:** 2026-06-23
-> **Operação:** Patch v0.4.2.1 aplicado sobre o `launch_app.py` do PesquisAI principal
-> (já com v0.4.2: endpoint `/api/agents` + modal Diretrizes)
+> **Data:** 2026-06-24
+> **Operação:** Patch v0.4.2.2 (ses_10a4+ polish) aplicado sobre o `launch_app.py` do PesquisAI principal
+> (já com v0.4.2.1: theme contrast + dashboard + markdown)
 > **Arquivo original:** https://github.com/gustavobraga-byte/PesquisAI/blob/main/pesquisai/launch_app.py
 > **Arquivo editado:** `/content/drive/My Drive/PesquisAI/pesquisai/launch_app.py`
 
 ## 📊 Estatísticas da Edição
 
-| Métrica | v0.4.1 | v0.4.2 | v0.4.2.1 | Δ total |
-|---------|--------|--------|----------|---------|
-| **Linhas** | 1.945 | 1.074 | 1.147 | **−798 (−41%)** |
-| **Tamanho `launch_app.py`** | 86 KB | 44 KB | 47 KB | **−45%** |
-| **Linhas `launch_app_responsive_v041.py`** | 1.520 | 1.792 | 1.820 | +300 |
-| **Tamanho `launch_app_responsive_v041.py`** | 73 KB | 88 KB | 89 KB | +22% |
-| **Funções preservadas** | 19 | 19 | 19 | 0 |
-| **Endpoints REST** | 13 | 14 | 14 | +1 |
+| Métrica | v0.4.1 | v0.4.2 | v0.4.2.1 | v0.4.2.2 | Δ total |
+|---------|--------|--------|----------|----------|---------|
+| **Linhas** | 1.945 | 1.074 | 1.147 | 1.219 | **−726 (−37%)** |
+| **Tamanho `launch_app.py`** | 86 KB | 44 KB | 47 KB | 52 KB | **−40%** |
+| **Linhas `launch_app_responsive_v041.py`** | 1.520 | 1.792 | 1.820 | 2.193 | +673 |
+| **Tamanho `launch_app_responsive_v041.py`** | 73 KB | 88 KB | 89 KB | 108 KB | +48% |
+| **Funções preservadas** | 19 | 19 | 19 | 21 | +2 |
+| **Endpoints REST** | 13 | 14 | 14 | 17 | +4 |
 
 ## ✂️ O Que Foi Removido
 
@@ -220,15 +220,59 @@ E o PesquisAI volta ao comportamento original (sem responsividade, sem seletor d
 - [x] `__init__.py` criado em `pesquisai/`
 - [x] Patch `_v041.py` no lugar certo
 - [x] Endpoint `/api/agents` adicionado
-- [x] Sintaxe Python validada (3/3 arquivos sem warnings)
+- [x] Sintaxe Python validada (5/5 arquivos sem warnings)
 - [x] HTML gerado tem tema escuro + responsivo + idioma + modal Diretrizes
 - [x] Função `create_wrapper_html` acessível
-- [x] 19 funções preservadas (servidor intacto)
+- [x] 21 funções preservadas (servidor intacto + 2 novas: `start_ttyd(lang)`, `restart_ttyd_with_lang(lang)`)
 - [x] `openHealth()` faz fetch em `/api/health`
 - [x] Modal Diretrizes renderiza markdown (marked.js)
-- [x] 4 `AGENTS.md` (pt, en, es, fr) com versão 0.4.1 e links cruzados
-- [x] `__version__.py` atualizado para 0.4.2.1
+- [x] `openSessions()` faz fetch em `/api/sessions` (v0.4.2.2)
+- [x] `setLang()` chama `POST /api/lang` que reinicia ttyd (v0.4.2.2)
+- [x] Footer PC: provedor + OpenCode alinhados à direita (v0.4.2.2)
+- [x] 4 `AGENTS.md` (pt, en, es, fr) padronizados sem "- [link/lien/enlace]"
+- [x] `__version__.py` MOVIDO para `pesquisai/__version__.py` (v0.4.2.2)
+- [x] 119/119 testes passando (grant_finder 48 + i18n 31 + meta-search-br 40)
 
 ---
 
-**PesquisAI v0.4.2.1 · ses_10a4 fixes · 2026-06-23**
+## [v0.4.2.2] — 2026-06-24 — ses_10a4+ polish
+
+### 🆕 Novidades (6 melhorias)
+
+1. **🖥️ Footer PC alinhado à direita** — `margin-left: auto` em `.footer-row-2` dentro de `@media (min-width: 768px)`.
+2. **🧩 Skills em `skills/`** — `grant-finder/` e `meta-search-br/` com READMEs + SKILL.md + clone URLs.
+3. **📜 Histórico de sessão carregando** — `openSessions()` agora faz fetch em `/api/sessions`.
+4. **🌍 Saudação no idioma** — `start_ttyd(lang)` usa `get_greeting(lang)` ao invés de `--prompt 'oi'`.
+5. **📦 `__version__.py` movido** — de `/` para `pesquisai/` (v0.4.2.2).
+6. **🧹 AGENTS.md padronizados** — removido "- [link/lien/enlace]" das 4 variantes.
+
+### 🔄 Mudanças nos endpoints
+
+| Endpoint | Mudança | Versão |
+|---|---|---|
+| `GET /api/lang` | **NOVO** — retorna idioma + saudação atuais | v0.4.2.2 |
+| `POST /api/lang` | **NOVO** — persiste idioma + reinicia ttyd | v0.4.2.2 |
+| `GET /api/sessions` | já existia (v0.4.2) mas sem render na UI | agora renderizado |
+| `POST /api/restore` | usado por `restoreSession(id)` | v0.4.2.2 |
+| `GET /api/agents?lang=xx_XX` | já existia (v0.4.2) | mantido |
+
+### 📝 Variáveis globais adicionadas em `launch_app.py`
+
+```python
+_current_lang: str = "pt_BR"           # idioma persistido
+_LANG_COOKIE_FILE: str = "~/.config/pesquisai_lang"  # path de persistência
+```
+
+### 🆕 Funções adicionadas em `launch_app.py`
+
+- `start_ttyd(lang: str | None = None)` — inicia ttyd com saudação no idioma
+- `restart_ttyd_with_lang(lang: str) -> bool` — reinicia ttyd com novo idioma
+
+### 🆕 Funções adicionadas em `__version__.py`
+
+- `get_greeting(lang: str = "pt_BR") -> str` — retorna saudação multilíngue
+- `get_greeting` é usada por `start_ttyd()` para gerar o `--prompt`
+
+---
+
+**PesquisAI v0.4.2.2 · ses_10a4+ polish · 2026-06-24**

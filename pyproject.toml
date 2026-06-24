@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pesquisai-additions"
-version = "0.4.2.1"
-description = "PesquisAI v0.4.2.1 — ses_10a4 fixes (theme contrast + dashboard + markdown) + grant_finder + i18n (4 idiomas)"
+version = "0.4.2.2"
+description = "PesquisAI v0.4.2.2 — ses_10a4+ polish (footer PC + skills + sessions + lang + version) + grant_finder + i18n (4 idiomas) + skills (grant-finder, meta-search-br)"
 authors = [
     { name = "Gustavo Bastos Braga", email = "gustavo.braga@ufv.br" },
 ]
@@ -85,7 +85,7 @@ packages = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["grant_finder/tests", "i18n/tests"]
+testpaths = ["grant_finder/tests", "i18n/tests", "skills/meta-search-br/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
