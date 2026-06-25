@@ -173,279 +173,290 @@ _TTYD_TOUCH_INDEX_PATH: str | None = None  # cache do caminho do HTML custom
 def _get_touch_handler_script() -> str:
     """Retorna o script JS de touch scroll + pinch-zoom para injetar no ttyd.
 
+    DESCOBERTAS do código-fonte do ttyd (tsl0922/ttyd):
+      1. WebSocket é BINÁRIO (arraybuffer) — string NÃO funciona
+      2. Protocolo: primeiro byte = opcode (INPUT='0'=48) + dados UTF-8
+      3. ttyd expõe window.term (instância do xterm.js Terminal)
+      4. Bubble Tea (opencode) usa MOUSE WHEEL para scroll, não Arrow keys
+
     O script:
-      1. Injeta CSS para desbloquear touch-action nos elementos do xterm
-      2. Captura o WebSocket do ttyd (para enviar escape sequences diretamente)
-      3. Single-finger drag → envia Arrow Up/Down + Page Up/Down ao terminal
-         (TUIs como opencode/Bubble Tea usam alternate screen — NÃO há
-         scrollback para scrollTop; é preciso enviar TECLAS à TUI)
-      4. Two-finger pinch → ajusta CSS zoom (zoom in/out)
-      5. Double-tap → reset zoom
-      6. Fallback: synthetic KeyboardEvent no .xterm-helper-textarea
+      1. Patch WebSocket.prototype.send para capturar socket ativo
+      2. Acessa window.term (exposta pelo ttyd)
+      3. 1 dedo → envia mouse wheel events (SGR + X10) via protocolo binário
+      4. 2 dedos → CSS zoom (pinch-to-zoom)
+      5. Debug overlay para confirmar que está funcionando
     """
     return """<script>
 (function(){'use strict';
-// ====== PesquisAI v0.4.2.5b — Touch Scroll + Pinch Zoom para TUI no ttyd ======
-// PROBLEMA: opencode é uma TUI (Bubble Tea) em ALTERNATE SCREEN MODE.
-// Não há scrollback para .xterm-viewport.scrollTop rolar. A TUI controla
-// a tela inteira via códigos ANSI. Para rolar, é preciso enviar TECLAS
-// (Arrow Up/Down, Page Up/Down) ao terminal.
-//
-// SOLUÇÃO: 1 dedo arrasta → envia escape sequences ao WebSocket do ttyd
-// (ou synthetic keydown no .xterm-helper-textarea como fallback).
+// ====== PesquisAI v0.4.2.5c — Touch Scroll (mouse wheel) + Zoom para TUI no ttyd ======
+// PROTOCOLO ttyd: WebSocket binário, primeiro byte = opcode INPUT (48='0'), restante = payload UTF-8
+// TUI Bubble Tea: responde a MOUSE WHEEL, não a Arrow keys
 
-var xtermElem=null, termContainer=null, helperTextarea=null;
-var zoomLevel=1, ready=false;
-var capturedSocket=null;
+var PESQ_DEBUG=true; // mostrar overlay de debug
+var xtermElem=null, termContainer=null, zoomLevel=1, ready=false;
+var capturedSocket=null, term=null;
 
-// --- CSS: desbloquear touch-action nos elementos do xterm ---
+// --- CSS ---
 var css=document.createElement('style');
 css.textContent=[
-  '.xterm,.xterm-viewport,.xterm-screen,.xterm-rows,.xterm-helper-textarea{touch-action:auto!important}',
+  '.xterm,.xterm-viewport,.xterm-screen,.xterm-rows{touch-action:none!important}',
   '.xterm-viewport{overscroll-behavior:contain!important}',
-  '#terminal{touch-action:auto!important}',
-  'body{overscroll-behavior:none!important;-webkit-touch-callout:none}',
+  '#terminal{touch-action:none!important}',
+  'body{overscroll-behavior:none!important;-webkit-touch-callout:none;margin:0;padding:0;overflow:hidden}',
   '.xterm{transform-origin:top left}',
-  '.xterm-helper-textarea{position:absolute!important;opacity:0!important;left:-9999px}'
+  // debug overlay
+  '#pesq-debug{position:fixed;top:4px;right:4px;z-index:99999;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;pointer-events:none;max-width:200px;white-space:pre;line-height:1.4}'
 ].join('\\n');
 (document.head||document.documentElement).appendChild(css);
 
-// --- Capturar WebSocket do ttyd para enviar escape sequences ---
-// Monkey-patch ANTES do ttyd criar o socket. Se já foi criado, tentamos
-// encontrar via polling.
-var OrigWS=window.WebSocket;
-window.WebSocket=function(url,protocols){
-  var ws=protocols?new OrigWS(url,protocols):new OrigWS(url);
-  capturedSocket=ws;
-  console.log('[PesquisAI] WebSocket ttyd capturado');
-  return ws;
-};
-window.WebSocket.prototype=OrigWS.prototype;
-window.WebSocket.OPEN=OrigWS.OPEN;
-window.WebSocket.CLOSED=OrigWS.CLOSED;
-window.WebSocket.CONNECTING=OrigWS.CONNECTING;
-window.WebSocket.CLOSING=OrigWS.CLOSING;
+// --- Debug overlay ---
+var dbgEl=document.createElement('div');dbgEl.id='pesq-debug';dbgEl.style.display='none';
+document.body?document.body.appendChild(dbgEl):document.documentElement.appendChild(dbgEl);
+function dbg(msg){if(!PESQ_DEBUG)return;dbgEl.style.display='block';dbgEl.textContent=msg}
+function dbgClear(){dbgEl.style.display='none'}
 
-// Se o WebSocket já foi criado antes do monkey-patch, tentar encontrar
-// percorrendo propriedades globais (ttyd às vezes guarda em window.term)
-function findExistingSocket(){
-  if(capturedSocket&&capturedSocket.readyState===1)return capturedSocket;
-  // ttyd pode guardar o terminal/socket em uma variável global
-  var candidates=['term','tty','socket','ws','terminal','xterm'];
-  for(var i=0;i<candidates.length;i++){
-    try{
-      var v=window[candidates[i]];
-      if(v&&v.socket&&v.socket.readyState===1){capturedSocket=v.socket;return v.socket}
-      if(v&&v._socket&&v._socket.readyState===1){capturedSocket=v._socket;return v._socket}
-      if(v&&v.io&&v.io.readyState===1){capturedSocket=v.io;return v.io}
-    }catch(e){}
-  }
+// --- Patch WebSocket.prototype.send para capturar socket ativo ---
+// (mais robusto que monkey-patch do constructor — funciona mesmo em módulos ES)
+var origSend=WebSocket.prototype.send;
+WebSocket.prototype.send=function(data){
+  if(!capturedSocket||capturedSocket.readyState!==1){capturedSocket=this}
+  return origSend.call(this,data);
+};
+
+// --- Acessar window.term (exposta pelo ttyd) ---
+function findTerminal(){
+  if(term)return term;
+  if(window.term){term=window.term;dbg('term OK');return term}
+  // fallback: procurar no DOM
+  var el=document.querySelector('.xterm');
+  if(el&&el._terminal){term=el._terminal;return term}
   return null;
 }
 
-// --- Enviar tecla ao terminal (2 métodos: WebSocket + keyboard fallback) ---
-// Escape sequences para teclas de seta e Page Up/Down:
-//   ArrowUp:    \\x1b[A    ArrowDown:  \\x1b[B
-//   PageUp:     \\x1b[5~   PageDown:   \\x1b[6~
-function sendEscape(seq){
-  // Método 1: enviar diretamente ao WebSocket (mais confiável)
-  var sock=findExistingSocket();
-  if(sock&&sock.readyState===1){
-    try{sock.send(seq);return true}catch(e){}
+// --- Enviar dados ao terminal via protocolo binário do ttyd ---
+// Protocolo: Uint8Array[0]=48 (INPUT), [1:]=dados UTF-8
+function sendToTerminal(data){
+  // Método 1: WebSocket binário com opcode INPUT
+  var sock=capturedSocket;
+  if(!sock||sock.readyState!==1){
+    // tentar re-capturar
+    dbg('sem socket');
+    return false;
   }
-  // Método 2: synthetic keydown no .xterm-helper-textarea
-  if(!helperTextarea)helperTextarea=document.querySelector('.xterm-helper-textarea');
-  if(helperTextarea){
-    var keyName,code,keyCode;
-    if(seq==='\\x1b[A'){keyName='ArrowUp';code='ArrowUp';keyCode=38}
-    else if(seq==='\\x1b[B'){keyName='ArrowDown';code='ArrowDown';keyCode=40}
-    else if(seq==='\\x1b[5~'){keyName='PageUp';code='PageUp';keyCode=33}
-    else if(seq==='\\x1b[6~'){keyName='PageDown';code='PageDown';keyCode=34}
-    else{return false}
-    try{
-      helperTextarea.focus();
-      var ev=new KeyboardEvent('keydown',{
-        key:keyName,code:code,keyCode:keyCode,which:keyCode,
-        bubbles:true,cancelable:true
-      });
-      helperTextarea.dispatchEvent(ev);
-      // Também tentar keyup para completar o ciclo
-      var evu=new KeyboardEvent('keyup',{
-        key:keyName,code:code,keyCode:keyCode,which:keyCode,
-        bubbles:true,cancelable:true
-      });
-      helperTextarea.dispatchEvent(evu);
-      return true;
-    }catch(e){return false}
-  }
-  return false;
+  try{
+    var encoder=new TextEncoder();
+    var encoded=encoder.encode(data);
+    var payload=new Uint8Array(encoded.length+1);
+    payload[0]=48; // Command.INPUT = '0'.charCodeAt(0) = 48
+    payload.set(encoded,1);
+    origSend.call(sock,payload); // usar origSend para não recursar no patch
+    return true;
+  }catch(e){dbg('err:'+e.message);return false}
 }
 
-// --- Múltiplas teclas com throttle (para scroll contínuo) ---
-var lastSendTime=0, accumulatedDelta=0, scrollTimer=null;
+// --- Enviar mouse wheel events (múltiplos formatos para compatibilidade) ---
+// Bubble Tea habilita mouse — responde a wheel events, não a Arrow keys
+function sendWheel(direction){
+  // direction: 1=scroll up (ver conteúdo acima), -1=scroll down (ver conteúdo abaixo)
+  var x=1,y=1; // coordenadas aproximadas (wheel não precisa de posição precisa)
+  var sent=0;
 
-function doScroll(deltaY){
-  // deltaY > 0: dedo foi para baixo → quer ver conteúdo ACIMA → ArrowUp
-  // deltaY < 0: dedo foi para cima → quer ver conteúdo ABAIXO → ArrowDown
-  var absDelta=Math.abs(deltaY);
-  // Acumular delta para decidir Arrow vs Page
-  accumulatedDelta+=deltaY;
+  // Formato 1: SGR mouse mode (1006) — mais moderno, preferido
+  // Scroll up: ESC[<64;x;yM   Scroll down: ESC[<65;x;yM
+  var sgr=direction>0?'\\x1b[<64;'+x+';'+y+'M':'\\x1b[<65;'+x+';'+y+'M';
+  if(sendToTerminal(sgr))sent++;
 
-  // Threshold: a cada 15px de arrasto, envia 1 Arrow. A cada 80px, envia 1 Page.
-  // Throttle: mínimo 30ms entre envios para não sobrecarregar o PTY
+  // Formato 2: X10/normal mouse mode (1000)
+  // ESC[M + chr(32+button) + chr(32+x) + chr(32+y)
+  // button 64=wheel up, 65=wheel down
+  var btn=direction>0?64:65;
+  var x10='\\x1b[M'+String.fromCharCode(32+btn)+String.fromCharCode(32+x)+String.fromCharCode(32+y);
+  if(sendToTerminal(x10))sent++;
+
+  // Formato 3: URxvt mouse mode (1015)
+  // ESC[{button+32};{x};{y}M
+  var urxvt='\\x1b['+(btn+32)+';'+x+';'+y+'M';
+  if(sendToTerminal(urxvt))sent++;
+
+  return sent;
+}
+
+// --- Enviar Page Up/Down como fallback adicional ---
+function sendPageKey(direction){
+  // direction: 1=Page Up, -1=Page Down
+  var seq=direction>0?'\\x1b[5~':'\\x1b[6~';
+  return sendToTerminal(seq);
+}
+
+// --- Variáveis de scroll ---
+var lastY=0,scrolling=false,startY=0,startT=0,startX=0;
+var lastSendTime=0, wheelAccum=0;
+
+function onTouchStart(e){
+  if(e.touches.length===1){
+    lastY=e.touches[0].clientY;startY=lastY;startT=Date.now();startX=e.touches[0].clientX;
+    scrolling=true;wheelAccum=0;
+    findTerminal(); // garantir que temos a referência
+  }else{scrolling=false}
+}
+
+function onTouchMove(e){
+  if(!scrolling||e.touches.length!==1)return;
+  var cy=e.touches[0].clientY;
+  var dy=lastY-cy; // dy>0: dedo subiu → scroll down; dy<0: dedo desceu → scroll up
+  lastY=cy;
+
+  // Ignorar swipe horizontal
+  var cx=e.touches[0].clientX;
+  if(Math.abs(cx-startX)>Math.abs(cy-startY)*2&&Math.abs(cy-startY)<30)return;
+
+  if(Math.abs(dy)<3)return; // mínimo de 3px
+
+  // Throttle: mínimo 40ms entre wheel events
   var now=Date.now();
-  if(now-lastSendTime<30)return;
+  if(now-lastSendTime<40)return;
 
-  if(absDelta>=80){
-    // Swipe rápido → Page Up/Down
-    var seq=deltaY>0?'\\x1b[5~':'\\x1b[6~';
-    sendEscape(seq);
-    // Enviar múltiplas páginas se o swipe for muito rápido
-    if(absDelta>=160){sendEscape(seq);sendEscape(seq)}
-    lastSendTime=now;
-    accumulatedDelta=0;
-  }else if(absDelta>=15){
-    // Arrasto normal → Arrow Up/Down
-    var seq2=deltaY>0?'\\x1b[A':'\\x1b[B';
-    sendEscape(seq2);
-    lastSendTime=now;
-    accumulatedDelta=0;
+  // Acumular delta para decidir direção e intensidade
+  wheelAccum+=dy;
+  var direction=dy>0?-1:1; // dy>0 (dedo subiu) → scroll down (-1)
+
+  // Enviar wheel event
+  var count=sendWheel(direction);
+  // Se wheel não funcionou, tentar Page Up/Down
+  if(count===0){sendPageKey(direction)}
+
+  lastSendTime=now;
+
+  if(PESQ_DEBUG){
+    dbg('scroll dir='+direction+'\\nwheel sent='+count+'\\nsock='+(capturedSocket?'OK':'NONE')+'\\nterm='+(term?'OK':'NONE'));
   }
+
+  e.preventDefault();e.stopPropagation();
 }
 
-// --- Momentum: continuar enviando teclas após o dedo levantar ---
-var momentumV=0, momentumActive=false;
-function momentumLoop(){
-  if(!momentumActive)return;
-  if(Math.abs(momentumV)<0.3){momentumActive=false;return}
-  var seq=momentumV>0?'\\x1b[A':'\\x1b[B';
-  // Envia 1-3 teclas dependendo da velocidade
-  var count=Math.min(3,Math.ceil(Math.abs(momentumV)));
-  for(var i=0;i<count;i++)sendEscape(seq);
-  if(Math.abs(momentumV)>2){sendEscape(momentumV>0?'\\x1b[5~':'\\x1b[6~')}
-  momentumV*=0.88; // decaimento
-  setTimeout(momentumLoop,60);
-}
-
-function init(){
-  if(ready)return;
-  xtermElem=document.querySelector('.xterm');
-  termContainer=document.querySelector('#terminal')||xtermElem;
-  helperTextarea=document.querySelector('.xterm-helper-textarea');
-  if(!xtermElem){setTimeout(init,300);return}
-  setupScroll();setupZoom();ready=true;
-  console.log('[PesquisAI] Touch scroll (keyboard) + zoom ativados no ttyd');
-  // Tentar encontrar WebSocket existente
-  findExistingSocket();
-}
-
-// --- Single-finger scroll → envia teclas à TUI ---
-function setupScroll(){
-  var lastY=0,scrolling=false,startY=0,startT=0,startX=0;
-
-  function ts(e){
-    if(e.touches.length===1){
-      lastY=e.touches[0].clientY;startY=lastY;startT=Date.now();
-      startX=e.touches[0].clientX;scrolling=true;momentumActive=false;
-    }else{scrolling=false}
-  }
-  function tm(e){
-    if(!scrolling||e.touches.length!==1)return;
-    var cy=e.touches[0].clientY;
-    var dy=lastY-cy; // dy>0: dedo subiu (quer ver conteúdo abaixo)
-    lastY=cy;
-    // Ignorar movimento horizontal (para não interferir em swipe lateral)
-    var cx=e.touches[0].clientX;
-    var dxAbs=Math.abs(cx-startX);
-    var dyAbs=Math.abs(cy-startY);
-    if(dxAbs>dyAbs*2&&dyAbs<30)return; // é swipe horizontal, ignorar
-    if(Math.abs(dy)>2){
-      doScroll(dy);
-      e.preventDefault();e.stopPropagation();
-    }
-  }
-  function te(e){
-    if(scrolling&&e.changedTouches.length>0){
-      var endY=e.changedTouches[0].clientY;
-      var dt=Date.now()-startT;
-      if(dt>0&&dt<400){
-        var v=(startY-endY)/dt; // v>0: dedo subiu rápido → scroll down
-        if(Math.abs(v)>0.15){
-          momentumV=v*8;
-          momentumActive=true;
-          momentumLoop();
+function onTouchEnd(e){
+  if(scrolling&&e.changedTouches.length>0){
+    // Momentum: se o swipe foi rápido, continuar enviando wheels
+    var endY=e.changedTouches[0].clientY;
+    var dt=Date.now()-startT;
+    if(dt>0&&dt<400){
+      var v=(startY-endY)/dt;
+      if(Math.abs(v)>0.2){
+        var direction=v>0?-1:1;
+        var frames=Math.min(8,Math.ceil(Math.abs(v)*4));
+        var delay=0;
+        for(var i=0;i<frames;i++){
+          (function(d,dir){
+            setTimeout(function(){
+              sendWheel(dir);
+              if(i===0&&PESQ_DEBUG)dbg('momentum dir='+dir);
+            },d);
+          })(delay,direction);
+          delay+=50;
         }
       }
     }
-    scrolling=false;
   }
-
-  // Listeners no container E no document (fallback)
-  var target=termContainer||document;
-  target.addEventListener('touchstart',ts,{passive:true});
-  target.addEventListener('touchmove',tm,{passive:false});
-  target.addEventListener('touchend',te,{passive:true});
-  // Fallback no document (caso termContainer não pegue os eventos)
-  if(target!==document){
-    document.addEventListener('touchstart',function(e){
-      if(!scrolling&&e.touches.length===1)ts(e);
-    },{passive:true});
-    document.addEventListener('touchmove',function(e){
-      if(scrolling)tm(e);
-    },{passive:false});
-    document.addEventListener('touchend',te,{passive:true});
-  }
+  scrolling=false;
+  setTimeout(dbgClear,2000);
 }
 
-// --- Two-finger pinch zoom + double-tap reset (inalterado, funciona) ---
-function setupZoom(){
-  var pinchDist=0,pinchZoom=1,pinching=false;
-  function dist(t){
-    var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;
-    return Math.sqrt(dx*dx+dy*dy);
+// --- Pinch zoom (2 dedos) + double-tap reset ---
+var pinchDist=0,pinchZoom=1,pinching=false;
+function dist2(t){
+  var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function onPinchStart(e){
+  if(e.touches.length===2){pinchDist=dist2(e.touches);pinchZoom=zoomLevel;pinching=true;scrolling=false}
+}
+function onPinchMove(e){
+  if(!pinching||e.touches.length!==2)return;
+  var d=dist2(e.touches);
+  if(pinchDist>0){
+    var s=d/pinchDist;
+    zoomLevel=Math.max(0.5,Math.min(4,pinchZoom*s));
+    if(xtermElem)xtermElem.style.zoom=zoomLevel;
   }
-  var zt=termContainer||document;
-  zt.addEventListener('touchstart',function(e){
-    if(e.touches.length===2){pinchDist=dist(e.touches);pinchZoom=zoomLevel;pinching=true;scrolling=false}
-  },{passive:true});
-  zt.addEventListener('touchmove',function(e){
-    if(!pinching||e.touches.length!==2)return;
-    var d=dist(e.touches);
-    if(pinchDist>0){
-      var s=d/pinchDist;
-      zoomLevel=Math.max(0.5,Math.min(4,pinchZoom*s));
-      if(xtermElem)xtermElem.style.zoom=zoomLevel;
-    }
-    e.preventDefault();
-  },{passive:false});
-  zt.addEventListener('touchend',function(e){
-    if(e.touches.length<2){pinching=false;pinchDist=0}
-  },{passive:true});
+  e.preventDefault();
+}
+function onPinchEnd(e){
+  if(e.touches.length<2){pinching=false;pinchDist=0}
+}
 
-  // Double-tap reset zoom
-  var lastTap=0;
-  document.addEventListener('touchend',function(e){
-    var now=Date.now();
-    if(now-lastTap<300&&e.changedTouches.length===1){
-      zoomLevel=1;
-      if(xtermElem)xtermElem.style.zoom='1';
-    }
-    lastTap=now;
-  },{passive:true});
+// Double-tap reset zoom
+var lastTap=0;
+function onDoubleTap(e){
+  var now=Date.now();
+  if(now-lastTap<300&&e.changedTouches.length===1){
+    zoomLevel=1;
+    if(xtermElem)xtermElem.style.zoom='1';
+  }
+  lastTap=now;
 }
 
 // --- Inicialização ---
+function init(){
+  if(ready)return;
+  xtermElem=document.querySelector('.xterm');
+  termContainer=document.querySelector('#terminal')||xtermElem||document.body;
+  if(!xtermElem){setTimeout(init,300);return}
+
+  // Registrar listeners de toque no container
+  termContainer.addEventListener('touchstart',function(e){
+    onTouchStart(e);
+    if(e.touches.length===2)onPinchStart(e);
+  },{passive:true});
+  termContainer.addEventListener('touchmove',function(e){
+    if(pinching){onPinchMove(e);return}
+    onTouchMove(e);
+  },{passive:false});
+  termContainer.addEventListener('touchend',function(e){
+    onTouchEnd(e);
+    onPinchEnd(e);
+    onDoubleTap(e);
+  },{passive:true});
+
+  // Fallback: listeners no document também
+  document.addEventListener('touchstart',function(e){
+    if(!scrolling&&!pinching){
+      if(e.touches.length===1)onTouchStart(e);
+      else if(e.touches.length===2)onPinchStart(e);
+    }
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(scrolling)onTouchMove(e);
+    else if(pinching)onPinchMove(e);
+  },{passive:false});
+  document.addEventListener('touchend',function(e){
+    if(scrolling)onTouchEnd(e);
+    if(pinching)onPinchEnd(e);
+    onDoubleTap(e);
+  },{passive:true});
+
+  ready=true;
+  findTerminal();
+  dbg('PesquisAI touch ATIVO\\nsock='+(capturedSocket?'OK':'aguardando')+'\\nterm='+(term?'OK':'aguardando'));
+  console.log('[PesquisAI] Touch scroll (mouse wheel binário) + zoom ativados');
+}
+
+// --- Esperar DOM ---
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded',init);
 }else{init()}
 
-// MutationObserver: detecta quando xterm é adicionado ao DOM
-var obs=new MutationObserver(function(){if(!ready)init()});
+// MutationObserver: detecta quando xterm é adicionado
+var obs=new MutationObserver(function(){if(!ready)init();else if(!term)findTerminal()});
 obs.observe(document.body||document.documentElement,{childList:true,subtree:true});
 setTimeout(function(){obs.disconnect()},30000);
 
-// Re-tentar encontrar WebSocket periodicamente (caso monkey-patch falhou)
-setInterval(function(){if(!capturedSocket)findExistingSocket()},2000);
+// Re-tentar encontrar terminal periodicamente
+setInterval(function(){
+  if(!term)findTerminal();
+  if(PESQ_DEBUG&&ready){
+    dbg('sock='+(capturedSocket&&capturedSocket.readyState===1?'OK':'NONE')+' term='+(term?'OK':'NONE')+' zoom='+zoomLevel.toFixed(1));
+  }
+},3000);
 })();
 </script>"""
 
