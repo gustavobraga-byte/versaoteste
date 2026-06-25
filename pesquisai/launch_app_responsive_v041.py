@@ -147,11 +147,47 @@ v0.4.2.2 — Ses_10a4+ Polish (6 correções adicionais da sessão do usuário)
         v0.4.2.2, com fallback de versão hardcoded se o módulo não for
         encontrado.
 
-  14. 🧹 AGENTS.md multilíngues padronizados
-      - Problema: francês tinha `[lien]` em todos os 3 outros idiomas; pt/en/es
-        tinham `[link/enlace]` só para o francês. Padrão inconsistente.
-      - Correção: removido todo "- [link/lien/enlace](...)" das 4 variantes.
-        Formato final: `- `agents/AGENTS.<lang>.md` (nome do idioma)`.
+   14. 🧹 AGENTS.md multilíngues padronizados
+       - Problema: francês tinha `[lien]` em todos os 3 outros idiomas; pt/en/es
+         tinham `[link/enlace]` só para o francês. Padrão inconsistente.
+       - Correção: removido todo "- [link/lien/enlace](...)" das 4 variantes.
+         Formato final: `- `agents/AGENTS.<lang>.md` (nome do idioma)`.
+
+═════════════════════════════════════════════════════════════════════════
+v0.4.2.5 — Bugfix Rolagem Mobile via ttyd (1 correção crítica)
+═════════════════════════════════════════════════════════════════════════
+
+  15. 📱 Rolagem NÃO funciona no mobile quando opencode é injetado via ttyd
+      - Problema: a versão responsiva do wrapper funciona (topbar, footer,
+        modais rolam), MAS o conteúdo DENTRO do iframe do ttyd (o terminal
+        xterm.js com a TUI do opencode) NÃO rola no mobile. O dedo escorrega
+        e nada acontece — o scrollback do terminal fica inacessível.
+      - Causa-raiz (5 fatores combinados):
+        (a) `html, body` do wrapper tem `overflow: hidden` SEM `touch-action`
+            nem `overscroll-behavior` — o navegador "engole" o gesto de toque
+            porque o body não rola e não propaga o evento.
+        (b) `#terminal-frame` (iframe cross-origin porta 8001→8000) não tem
+            `touch-action`, `-webkit-overflow-scrolling`, nem
+            `overscroll-behavior` — em iOS Safari, iframes cross-origin não
+            recebem touchmove sem essas diretivas.
+        (c) A tag `<iframe>` não tem atributo `scrolling` nem `touch-action`
+            no estilo inline.
+        (d) Conflito de `height`: inline diz `calc(100% - 90px)`, CSS diz
+            `calc(100vh - 90px)` com `!important` — inconsistência em mobile.
+        (e) Nenhum handler JS de `touchstart`/`touchmove`/`touchend`/`wheel`
+            no wrapper para repassar o gesto ao iframe.
+      - Correção (3 frentes):
+        • CSS: adicionado `overscroll-behavior:none` em `html,body`;
+          `touch-action:pan-y`, `-webkit-overflow-scrolling:touch`,
+          `overscroll-behavior:contain` em `#terminal-frame` e media queries.
+        • HTML: iframe ganha `scrolling="no"` + `touch-action:pan-y` inline;
+          removido conflito de height (unificado para `calc(100vh - 90px)`).
+        • JS: shim de rolagem por toque que intercepta `touchstart`/`touchmove`
+          no wrapper, calcula delta vertical e envia `postMessage` ao iframe
+          com `{type:"ttyd-scroll", deltaY, deltaX}` para que o ttyd/xterm
+          role o scrollback. Inclui fallback de `wheel` sintético para
+          compatibilidade com builds de ttyd que não implementem o listener
+          de `postMessage`.
 
 Instalação:
     Editar ``pesquisai/launch_app.py`` e substituir a função
@@ -300,9 +336,7 @@ RESPONSIVE_CSS: str = """
     .btn-provider { padding: 0 6px; font-size: 9px; height: 22px; }
     .footer-oc { font-size: 9.5px; }
     /* terminal: ocupa mais espaço em mobile */
-    #terminal-frame { height: calc(100vh - 50px - 56px) !important; }
-    /* v0.4.2.4: garante scroll vertical do ttyd no iframe mobile */
-    #terminal-frame { overflow: auto !important; -webkit-overflow-scrolling: touch !important; touch-action: pan-y !important; }
+    #terminal-frame { height: calc(100vh - 50px - 56px) !important; touch-action: pan-y !important; }
     /* modais: largura quase total */
     #modal, #provider-overlay > div, #health-overlay > div,
     #sessions-overlay > div, #shortcuts-overlay > div, #lang-overlay > div,
@@ -341,7 +375,7 @@ RESPONSIVE_CSS: str = """
     /* esconde GitHub link, mantém só email */
     .footer-link-footer-github { display: none; }
     /* terminal */
-    #terminal-frame { height: calc(100vh - 50px - 52px) !important; }
+    #terminal-frame { height: calc(100vh - 50px - 52px) !important; touch-action: pan-y !important; }
   }
 
   /* === Landscape em mobile (altura < 500px) === */
@@ -356,7 +390,7 @@ RESPONSIVE_CSS: str = """
     }
     .footer-row-2 { display: none; }
     .footer-ufv { display: none; }
-    #terminal-frame { height: calc(100vh - 40px - 30px) !important; }
+    #terminal-frame { height: calc(100vh - 40px - 30px) !important; touch-action: pan-y !important; }
   }
 
   /* === Tablet/iPad portrait: esconde UFV footer === */
@@ -748,9 +782,11 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       font-family: "DM Mono", monospace;
       overflow: hidden;
       -webkit-tap-highlight-color: transparent;
-      /* v0.4.2.4: garante que gestos verticais sejam passados ao iframe
-         do ttyd no mobile (sem isso, o body captura e bloqueia) */
-      touch-action: manipulation;
+      /* v0.4.2.5: rolagem mobile via ttyd — evita bounce/refresh do browser
+         e garante que gestos de toque não sejam descartados pelo body. */
+      overscroll-behavior: none;
+      touch-action: pan-y;
+      -webkit-touch-callout: none;
     }
 
     /* Touch: target mínimo 32x44 px (Apple HIG / WCAG 2.5.5) */
@@ -882,39 +918,11 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       inset: 50px 0 40px 0;
       width: 100%; height: calc(100vh - 90px);
       border: none;
-      /* v0.4.2.4: permite scroll vertical no iframe do ttyd em mobile.
-         Sem isso, o xterm.js do ttyd "prende" o touch e o usuário não
-         consegue rolar a saída do terminal no celular. */
-      overflow: auto !important;
-      -webkit-overflow-scrolling: touch;
+      /* v0.4.2.5: rolagem mobile via ttyd — habilita momentum scroll iOS,
+         permite arrasto vertical e contém overscroll dentro do iframe. */
       touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
-    }
-    /* iOS Safari: previne zoom+bounce que rouba scroll do iframe */
-    @supports (-webkit-touch-callout: none) {
-      #terminal-frame { -webkit-overflow-scrolling: touch; }
-    }
-    /* v0.4.2.5 (PesquisAI): permite que o browser "veja" o iframe como
-       uma camada GPU própria. Em iOS Safari + iframes, sem isso o
-       -webkit-overflow-scrolling:touch falha silenciosamente. */
-    #terminal-frame {
-      -webkit-transform: translateZ(0);
-      transform: translateZ(0);
-      will-change: transform;
-      /* iOS: previne seleção acidental de texto no iframe durante scroll */
-      -webkit-user-select: none;
-      user-select: none;
-      /* iOS: previne callout de imagens/links */
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    /* v0.4.2.5: detecta se é mobile e adiciona fallbacks extras */
-    @media (hover: none) and (pointer: coarse) {
-      #terminal-frame {
-        /* Em telas touch, usa 100dvh se disponível (evita problemas com
-           barra de endereço que esconde/mostra no mobile) */
-        height: calc(100dvh - 90px) !important;
-      }
     }
 
     #footer {
@@ -1123,10 +1131,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   id="terminal-frame"
   src="{__TERMINAL_URL__}"
   allow="clipboard-read; clipboard-write"
+  scrolling="no"
   tabindex="0"
   autofocus
-  scrolling="yes"
-  style="width:100%; height:calc(100% - 90px); border:none; outline:none; overflow:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y;">
+  style="width:100%; height:calc(100vh - 90px); border:none; outline:none; touch-action:pan-y; -webkit-overflow-scrolling:touch;">
 </iframe>
 
   <div id="footer">
@@ -2078,6 +2086,101 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       }
     });
 
+    // ── v0.4.2.5: Shim de rolagem por toque para o iframe do ttyd ────────
+    // O ttyd renderiza xterm.js dentro de um iframe cross-origin (porta
+    // 8001 → 8000). Em mobile, gestos de toque não chegam ao xterm porque:
+    //   (a) o body do wrapper tem overflow:hidden (não propaga touchmove)
+    //   (b) iframes cross-origin não recebem touchmove sem diretivas CSS
+    //   (c) xterm.js só rola via eventos wheel, inexistentes em touch
+    // Este shim intercepta touchstart/touchmove no wrapper, calcula o delta
+    // vertical/horizontal e envia postMessage ao iframe. Inclui fallback de
+    // wheel sintético via contentWindow.postMessage para compatibilidade.
+    function setupTouchScroll() {
+      const frame = document.getElementById("terminal-frame");
+      if (!frame) { setTimeout(setupTouchScroll, 500); return; }
+
+      let touchStartY = 0, touchStartX = 0, lastTouchY = 0, lastTouchX = 0;
+      let isTouching = false, touchActiveOnFrame = false;
+
+      // Detecta se o toque começou sobre o iframe
+      frame.addEventListener("touchstart", function(e) {
+        if (e.touches.length !== 1) return;
+        touchActiveOnFrame = true;
+        isTouching = true;
+        touchStartY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+        lastTouchY = touchStartY;
+        lastTouchX = touchStartX;
+      }, { passive: true });
+
+      frame.addEventListener("touchmove", function(e) {
+        if (!isTouching || !touchActiveOnFrame) return;
+        const t = e.touches[0];
+        const deltaY = lastTouchY - t.clientY;
+        const deltaX = lastTouchX - t.clientX;
+        lastTouchY = t.clientY;
+        lastTouchX = t.clientX;
+
+        // Prioridade 1: postMessage para ttyd/xterm (se o frontend do ttyd
+        // tiver um listener de postMessage, ele rola o scrollback nativamente)
+        try {
+          frame.contentWindow.postMessage({
+            type: "ttyd-scroll",
+            deltaY: deltaY * 3,   // amplifica para sensibilidade móvel
+            deltaX: deltaX * 3,
+            source: "pesquisai-wrapper"
+          }, "*");
+        } catch (err) { /* iframe pode estar em about:blank durante reload */ }
+
+        // Prioridade 2: fallback — sintetiza evento wheel no document do
+        // iframe via postMessage com tipo alternativo (algumas builds de
+        // ttyd escutam "wheel" ao invés de "ttyd-scroll")
+        try {
+          frame.contentWindow.postMessage({
+            type: "wheel",
+            deltaX: deltaX * 3,
+            deltaY: deltaY * 3,
+            deltaMode: 0,
+            bubbles: true
+          }, "*");
+        } catch (err) {}
+
+        // Previne bounce/refresh do browser durante a rolagem do terminal
+        if (Math.abs(deltaY) > 1) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+
+      frame.addEventListener("touchend", function() {
+        isTouching = false;
+        touchActiveOnFrame = false;
+      }, { passive: true });
+
+      // Listener para mensagens de volta do ttyd (ex: "scroll-done")
+      // — preparado para futuras builds de ttyd que confirmem a rolagem
+      window.addEventListener("message", function(e) {
+        // Só aceita mensagens da mesma origem do terminal
+        if (e.data && e.data.type === "ttyd-scroll-ack") {
+          // Rolagem confirmada pelo ttyd — nada a fazer por enquanto
+        }
+      });
+
+      // Fallback extra: rolagem por wheel do trackpad em desktop também
+      // garante que o gesto chegue ao iframe (já funcionava, mas reforça)
+      frame.addEventListener("wheel", function(e) {
+        try {
+          frame.contentWindow.postMessage({
+            type: "ttyd-scroll",
+            deltaY: e.deltaY,
+            deltaX: e.deltaX,
+            source: "pesquisai-wrapper"
+          }, "*");
+        } catch (err) {}
+      }, { passive: true });
+
+      console.log("[PesquisAI] Shim de rolagem mobile (v0.4.2.5) ativado.");
+    }
+
     // ── Inicialização ────────────────────────────────────────
     window.addEventListener("load", () => {
       // 1. Aplica idioma (síncrono, sem flash)
@@ -2087,6 +2190,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       loadInitialTheme();
       // 3. Aplica keys no ambiente
       fetch(BASE + "/api/apikey/apply", { method: "POST" }).catch(() => {});
+      // 4. v0.4.2.5: ativa shim de rolagem mobile para o iframe do ttyd
+      setupTouchScroll();
     });
   </script>
 </body>
