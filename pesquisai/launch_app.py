@@ -30,29 +30,6 @@ except ImportError:
         # Fallback v0.4.2.2: saudação curta + dica entre parênteses
         return "Olá! (Dica: A partir de agora responda em português brasileiro.)"
 
-# v0.4.2.4: detector de idioma a partir de texto
-try:
-    from i18n import detect_from_user_message
-except ImportError:
-    try:
-        from pesquisai.i18n import detect_from_user_message
-    except ImportError:
-        try:
-            from ..i18n import detect_from_user_message
-        except ImportError:
-            # Fallback: detecção minimalista
-            def detect_from_user_message(text: str) -> str:
-                t = (text or "").lower()
-                if any(w in t for w in (" o ", " a ", " não ", " que ", " você ", "olá", "ola")):
-                    return "pt_BR"
-                if any(w in t for w in (" the ", " is ", " you ", "hello", "hi ", "thanks")):
-                    return "en_US"
-                if any(w in t for w in ("hola", "gracias", "cómo", "usted", "español")):
-                    return "es_ES"
-                if any(w in t for w in ("bonjour", "merci", "vous", "français", "francais")):
-                    return "fr_FR"
-                return "pt_BR"
-
 
 _opencode_bin: str | None = None
 _env: dict | None = None
@@ -184,80 +161,286 @@ def kill_previous():
     time.sleep(0.5)
 
 
-def start_ttyd(lang: str | None = None, initial_text: str | None = None):
+# ── v0.4.2.5: Touch scroll + pinch-zoom para ttyd/xterm.js em mobile ──
+# O xterm.js nativamente só rola via wheel events (desktop). Em mobile,
+# touch events não são convertidos para wheel — o scrollback fica inacessível.
+# Estes helpers injetam JavaScript de touch handlers diretamente no HTML
+# servido pelo ttyd (via flag --index), resolvendo scroll + zoom no mobile.
+
+_TTYD_TOUCH_INDEX_PATH: str | None = None  # cache do caminho do HTML custom
+
+
+def _get_touch_handler_script() -> str:
+    """Retorna o script JS de touch scroll + pinch-zoom para injetar no ttyd.
+
+    O script:
+      1. Injeta CSS para desbloquear touch-action nos elementos do xterm
+      2. Polla até o xterm.js criar .xterm-viewport (scroll container)
+      3. Single-finger drag → ajusta viewport.scrollTop (scroll)
+      4. Two-finger pinch → ajusta CSS zoom (zoom in/out)
+      5. Double-tap → reset zoom
+      6. Momentum/inércia no scroll (arrasto com velocidade)
+    """
+    return """<script>
+(function(){'use strict';
+// ====== PesquisAI v0.4.2.5 — Touch Scroll + Pinch Zoom para ttyd/xterm.js ======
+// xterm.js só rola via wheel events (inexistente em mobile). Este script
+// intercepta touch events e manipula scrollTop + CSS zoom diretamente.
+
+var viewport=null, xtermElem=null, termContainer=null, zoomLevel=1, ready=false;
+
+// --- CSS: desbloquear touch-action nos elementos do xterm ---
+var css=document.createElement('style');
+css.textContent=[
+  '.xterm,.xterm-viewport,.xterm-screen,.xterm-rows{touch-action:auto!important;-webkit-overflow-scrolling:touch!important}',
+  '.xterm-viewport{overscroll-behavior:contain!important}',
+  '#terminal{touch-action:auto!important}',
+  'body{overscroll-behavior:none!important;-webkit-touch-callout:none}',
+  '.xterm{transform-origin:top left}'
+].join('\\n');
+(document.head||document.documentElement).appendChild(css);
+
+function init(){
+  if(ready)return;
+  viewport=document.querySelector('.xterm-viewport');
+  xtermElem=document.querySelector('.xterm');
+  termContainer=document.querySelector('#terminal')||xtermElem;
+  if(!viewport||!xtermElem){setTimeout(init,300);return}
+  setupScroll();setupZoom();ready=true;
+  console.log('[PesquisAI] Touch scroll+zoom ativados no ttyd');
+}
+
+// --- Single-finger scroll (com momentum) ---
+function setupScroll(){
+  var lastY=0,lastX=0,scrolling=false,startY=0,startT=0;
+
+  function ts(e){
+    if(e.touches.length===1){
+      lastY=e.touches[0].clientY;lastX=e.touches[0].clientX;
+      startY=lastY;startT=Date.now();scrolling=true;
+    }else{scrolling=false}
+  }
+  function tm(e){
+    if(!scrolling||e.touches.length!==1)return;
+    var cy=e.touches[0].clientY,cx=e.touches[0].clientX;
+    var dy=lastY-cy,dx=lastX-cx;lastY=cy;lastX=cx;
+    if(viewport)viewport.scrollTop+=dy*2.5;
+    e.preventDefault();e.stopPropagation();
+  }
+  function te(e){
+    if(scrolling&&e.changedTouches.length>0){
+      var endY=e.changedTouches[0].clientY;
+      var dt=Date.now()-startT;
+      if(dt>0&&dt<300){
+        var v=(startY-endY)/dt;
+        if(Math.abs(v)>0.1&&viewport)momentum(v*180,viewport);
+      }
+    }
+    scrolling=false;
+  }
+  function momentum(v,vp){
+    if(Math.abs(v)<0.5)return;
+    vp.scrollTop+=v*0.1;
+    requestAnimationFrame(function(){momentum(v*0.92,vp)});
+  }
+
+  // Listeners no container do terminal E no document (fallback)
+  if(termContainer){
+    termContainer.addEventListener('touchstart',ts,{passive:true});
+    termContainer.addEventListener('touchmove',tm,{passive:false});
+    termContainer.addEventListener('touchend',te,{passive:true});
+  }
+  document.addEventListener('touchstart',function(e){
+    if(!scrolling&&e.touches.length===1)ts(e);
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(scrolling)tm(e);
+  },{passive:false});
+  document.addEventListener('touchend',te,{passive:true});
+}
+
+// --- Two-finger pinch zoom + double-tap reset ---
+function setupZoom(){
+  var pinchDist=0,pinchZoom=1,pinching=false;
+
+  function dist(t){
+    var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;
+    return Math.sqrt(dx*dx+dy*dy);
+  }
+  if(termContainer){
+    termContainer.addEventListener('touchstart',function(e){
+      if(e.touches.length===2){pinchDist=dist(e.touches);pinchZoom=zoomLevel;pinching=true}
+    },{passive:true});
+    termContainer.addEventListener('touchmove',function(e){
+      if(!pinching||e.touches.length!==2)return;
+      var d=dist(e.touches);
+      if(pinchDist>0){
+        var s=d/pinchDist;
+        zoomLevel=Math.max(0.5,Math.min(4,pinchZoom*s));
+        if(xtermElem)xtermElem.style.zoom=zoomLevel;
+        if(viewport)viewport.style.zoom=zoomLevel;
+      }
+      e.preventDefault();
+    },{passive:false});
+    termContainer.addEventListener('touchend',function(e){
+      if(e.touches.length<2){pinching=false;pinchDist=0}
+    },{passive:true});
+  }
+
+  // Double-tap para resetar zoom
+  var lastTap=0;
+  document.addEventListener('touchend',function(e){
+    var now=Date.now();
+    if(now-lastTap<300&&e.changedTouches.length===1){
+      zoomLevel=1;
+      if(xtermElem)xtermElem.style.zoom='1';
+      if(viewport)viewport.style.zoom='1';
+    }
+    lastTap=now;
+  },{passive:true});
+}
+
+// --- Inicialização: espera DOM + xterm estar pronto ---
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',init);
+}else{init()}
+
+// MutationObserver: detecta quando xterm é adicionado ao DOM
+var obs=new MutationObserver(function(){if(!ready)init()});
+obs.observe(document.body||document.documentElement,{childList:true,subtree:true});
+setTimeout(function(){obs.disconnect()},30000); // para após 30s
+})();
+</script>"""
+
+
+def _prepare_ttyd_touch_index(env: dict) -> str | None:
+    """Prepara um index.html custom com touch handlers para o ttyd.
+
+    1. Inicia ttyd temporariamente com comando dummy
+    2. Busca o HTML padrão em http://localhost:{TERMINAL_PORT}/
+    3. Injeta o script de touch handlers antes de </body>
+    4. Salva em /tmp/ttyd_touch.html
+    5. Mata o ttyd temporário
+    6. Retorna o caminho do arquivo (ou None se falhar)
+
+    Usa cache: só busca o HTML uma vez por sessão.
+    """
+    global _TTYD_TOUCH_INDEX_PATH
+    if _TTYD_TOUCH_INDEX_PATH and os.path.exists(_TTYD_TOUCH_INDEX_PATH):
+        return _TTYD_TOUCH_INDEX_PATH
+
+    import urllib.request as _urllib
+
+    # 1. Iniciar ttyd temporário com comando dummy
+    print("📱 Preparando HTML do ttyd com touch handlers...")
+    tmp_proc = subprocess.Popen(
+        ["ttyd", "-p", str(TERMINAL_PORT), "echo", "pesquisai_touch_tmp"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
+    )
+    time.sleep(2)
+
+    # 2. Buscar HTML padrão do ttyd
+    html_content: str | None = None
+    try:
+        url = f"http://localhost:{TERMINAL_PORT}/"
+        req = _urllib.Request(url, headers={"User-Agent": "PesquisAI-Touch-Setup"})
+        html_content = _urllib.urlopen(req, timeout=5).read().decode("utf-8")
+    except Exception as e:
+        logger.warning("Falha ao buscar HTML do ttyd para touch handlers: %s", e)
+
+    # 3. Matar ttyd temporário
+    try:
+        tmp_proc.terminate()
+        tmp_proc.wait(timeout=3)
+    except Exception:
+        subprocess.run(["pkill", "-f", "ttyd"], capture_output=True, timeout=5)
+    subprocess.run(["pkill", "-f", "ttyd"], capture_output=True, timeout=5)
+    time.sleep(0.5)
+
+    if not html_content:
+        print("⚠️  Não foi possível obter HTML do ttyd — touch handlers não injetados.")
+        return None
+
+    # 4. Injetar script de touch handlers antes de </body>
+    touch_script = _get_touch_handler_script()
+    if "</body>" in html_content:
+        html_content = html_content.replace("</body>", touch_script + "</body>", 1)
+    elif "</html>" in html_content:
+        html_content = html_content.replace("</html>", touch_script + "</html>", 1)
+    else:
+        html_content = html_content + touch_script
+
+    # 5. Salvar HTML custom
+    index_path = "/tmp/ttyd_touch.html"
+    try:
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        _TTYD_TOUCH_INDEX_PATH = index_path
+        print(f"✅ Touch handlers injetados no HTML do ttyd: {index_path}")
+        return index_path
+    except Exception as e:
+        logger.warning("Falha ao salvar HTML custom do ttyd: %s", e)
+        return None
+
+
+def _build_ttyd_args(base_args: list, env: dict) -> list:
+    """Constrói os argumentos do ttyd, adicionando --index se touch handlers estiverem prontos.
+
+    Args:
+        base_args: Argumentos base do ttyd (ex: ["ttyd", "-p", "8000", "--writable"])
+        env: Dicionário de environment.
+
+    Returns:
+        Lista completa de argumentos incluindo --index se disponível.
+    """
+    touch_index = _prepare_ttyd_touch_index(env)
+    if touch_index:
+        # Inserir --index logo após "ttyd" (posição 1)
+        # Flags podem aparecer em qualquer ordem antes do comando.
+        result = [base_args[0], "--index", touch_index] + base_args[1:]
+        return result
+    return base_args
+
+
+def start_ttyd(lang: str | None = None):
     """Inicia o ttyd com saudação no idioma solicitado.
 
     Args:
         lang: Código do idioma (pt_BR, en_US, es_ES, fr_FR). Se None, usa
               o _current_lang global ou o env PESQUISAI_LANG.
-        initial_text: Texto da primeira mensagem do usuário. Se fornecido
-              e lang=None, detecta o idioma a partir do texto (v0.4.2.4).
 
     v0.4.2.2: ao invés de `--prompt 'oi'` genérico, usa saudação no idioma
               + instrução "(a partir de agora responda em X)".
-    v0.4.2.4: detecta automaticamente o idioma da mensagem inicial do
-              usuário quando lang não é fornecido explicitamente.
+    v0.4.2.5: injeta touch handlers (scroll + pinch-zoom) no HTML do ttyd
+              via flag --index, habilitando rolagem e zoom em mobile.
     """
-    # v0.4.2.4 fix: declaração global deve vir ANTES de qualquer uso
-    # da variável (leitura ou escrita) dentro da função.
-    global _current_lang
     print(f"\n{next_joke('economia')}")
     opencode_bin, env = resolve_opencode()
 
-    # Resolve idioma (param > initial_text > env > _current_lang > pt_BR)
+    # Resolve idioma (param > env > _current_lang > pt_BR)
     if lang is None:
-        if initial_text and initial_text.strip():
-            # v0.4.2.4: detecta do texto do usuário
-            lang = detect_from_user_message(initial_text)
-            print(f"🔍 Idioma detectado da mensagem: {lang}")
-        else:
-            lang = os.environ.get("PESQUISAI_LANG") or _current_lang or "pt_BR"
+        lang = os.environ.get("PESQUISAI_LANG") or _current_lang or "pt_BR"
     # Normaliza para o conjunto canônico
     _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
     short = (lang or "pt_BR").split("_")[0].lower()
     full_lang = _valid.get(short, lang if lang in _valid.values() else "pt_BR")
-
-    # Persiste o idioma detectado para a próxima execução
-    _current_lang = full_lang
-    try:
-        os.makedirs(os.path.dirname(_LANG_COOKIE_FILE), exist_ok=True)
-        with open(_LANG_COOKIE_FILE, "w", encoding="utf-8") as f:
-            f.write(full_lang)
-    except Exception:
-        pass
 
     greeting = get_greeting(full_lang)
     # Escapar aspas para o bash -c "..."
     safe_prompt = greeting.replace('"', '\\"').replace("'", "\\'")
     bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" ; exec bash'
 
-    # v0.4.2.5: HTML customizado com patch de scroll mobile
-    # O ttyd padrão tem `body, html { overflow: hidden }` e canvas sem
-    # `touch-action: pan-y`, o que BLOQUEIA o scroll vertical em mobile.
-    # O patch (em pesquisai/ttyd_index.html) injeta CSS que sobrescreve
-    # isso. Apontamos o ttyd para esse HTML com a flag `-I`.
-    ttyd_index_html = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ttyd_index.html")
-    ttyd_cmd = ["ttyd"]
-    if os.path.isfile(ttyd_index_html):
-        ttyd_cmd += ["-I", ttyd_index_html]
-        logger.info("Usando ttyd_index.html customizado: %s", ttyd_index_html)
-    else:
-        logger.warning("ttyd_index.html não encontrado em %s — usando HTML padrão", ttyd_index_html)
-    ttyd_cmd += [
-        # v0.4.2.4: --writable permite que o usuário digite comandos no terminal
-        # (sem isso, o ttyd abre em modo read-only no mobile)
-        "--writable",
-        "-p", str(TERMINAL_PORT),
-        "bash", "-i", "-c", bash_cmd,
-    ]
+    # v0.4.2.5: construir args com --index (touch handlers)
+    base_args = ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd]
+    ttyd_args = _build_ttyd_args(base_args, env)
 
     subprocess.Popen(
-        ttyd_cmd,
+        ttyd_args,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         env=env,
     )
-    print(f"🚀 Terminal iniciado (idioma: {full_lang}).")
+    print(f"🚀 Terminal iniciado (idioma: {full_lang}, touch: {'ON' if '--index' in ttyd_args else 'OFF'}).")
     time.sleep(2)
 
 
@@ -783,9 +966,13 @@ def start_wrapper_server():
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
                 
+                # v0.4.2.5: usar --index com touch handlers se disponível
+                base_ttyd = ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
+                     "bash", "-i", "-c", bash_cmd]
+                ttyd_cmd = _build_ttyd_args(base_ttyd, _env)
+
                 subprocess.Popen(
-                    ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
-                     "bash", "-i", "-c", bash_cmd],
+                    ttyd_cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     env=_env,
@@ -1086,40 +1273,6 @@ def start_wrapper_server():
                     self._json(500, {
                         "ok": False,
                         "error": "Falha ao reiniciar ttyd com o novo idioma.",
-                    })
-                return
-
-            if p == "/api/detect_lang":
-                # v0.4.2.4: detecta o idioma da mensagem do usuário e,
-                # opcionalmente, reinicia o ttyd com a saudação apropriada.
-                # Body: { "text": "...", "apply": false }
-                # Se apply=true, persiste o idioma e reinicia o ttyd.
-                text = (body.get("text", "") or "").strip()
-                apply = bool(body.get("apply", False))
-                if not text:
-                    self._json(400, {"error": "text obrigatório"})
-                    return
-                detected = detect_from_user_message(text)
-                if apply:
-                    ok = restart_ttyd_with_lang(detected)
-                    self._json(200, {
-                        "ok": ok,
-                        "lang": detected,
-                        "greeting": get_greeting(detected),
-                        "applied": ok,
-                        "message": (
-                            f"Idioma detectado: {detected}. "
-                            f"ttyd reiniciado com saudação em {detected}."
-                            if ok else
-                            f"Idioma detectado: {detected}, mas falhou ao reiniciar ttyd."
-                        ),
-                    })
-                else:
-                    self._json(200, {
-                        "ok": True,
-                        "lang": detected,
-                        "greeting": get_greeting(detected),
-                        "applied": False,
                     })
                 return
 
