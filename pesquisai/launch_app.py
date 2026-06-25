@@ -175,132 +175,266 @@ def _get_touch_handler_script() -> str:
 
     O script:
       1. Injeta CSS para desbloquear touch-action nos elementos do xterm
-      2. Polla até o xterm.js criar .xterm-viewport (scroll container)
-      3. Single-finger drag → ajusta viewport.scrollTop (scroll)
+      2. Captura o WebSocket do ttyd (para enviar escape sequences diretamente)
+      3. Single-finger drag → envia Arrow Up/Down + Page Up/Down ao terminal
+         (TUIs como opencode/Bubble Tea usam alternate screen — NÃO há
+         scrollback para scrollTop; é preciso enviar TECLAS à TUI)
       4. Two-finger pinch → ajusta CSS zoom (zoom in/out)
       5. Double-tap → reset zoom
-      6. Momentum/inércia no scroll (arrasto com velocidade)
+      6. Fallback: synthetic KeyboardEvent no .xterm-helper-textarea
     """
     return """<script>
 (function(){'use strict';
-// ====== PesquisAI v0.4.2.5 — Touch Scroll + Pinch Zoom para ttyd/xterm.js ======
-// xterm.js só rola via wheel events (inexistente em mobile). Este script
-// intercepta touch events e manipula scrollTop + CSS zoom diretamente.
+// ====== PesquisAI v0.4.2.5b — Touch Scroll + Pinch Zoom para TUI no ttyd ======
+// PROBLEMA: opencode é uma TUI (Bubble Tea) em ALTERNATE SCREEN MODE.
+// Não há scrollback para .xterm-viewport.scrollTop rolar. A TUI controla
+// a tela inteira via códigos ANSI. Para rolar, é preciso enviar TECLAS
+// (Arrow Up/Down, Page Up/Down) ao terminal.
+//
+// SOLUÇÃO: 1 dedo arrasta → envia escape sequences ao WebSocket do ttyd
+// (ou synthetic keydown no .xterm-helper-textarea como fallback).
 
-var viewport=null, xtermElem=null, termContainer=null, zoomLevel=1, ready=false;
+var xtermElem=null, termContainer=null, helperTextarea=null;
+var zoomLevel=1, ready=false;
+var capturedSocket=null;
 
 // --- CSS: desbloquear touch-action nos elementos do xterm ---
 var css=document.createElement('style');
 css.textContent=[
-  '.xterm,.xterm-viewport,.xterm-screen,.xterm-rows{touch-action:auto!important;-webkit-overflow-scrolling:touch!important}',
+  '.xterm,.xterm-viewport,.xterm-screen,.xterm-rows,.xterm-helper-textarea{touch-action:auto!important}',
   '.xterm-viewport{overscroll-behavior:contain!important}',
   '#terminal{touch-action:auto!important}',
   'body{overscroll-behavior:none!important;-webkit-touch-callout:none}',
-  '.xterm{transform-origin:top left}'
+  '.xterm{transform-origin:top left}',
+  '.xterm-helper-textarea{position:absolute!important;opacity:0!important;left:-9999px}'
 ].join('\\n');
 (document.head||document.documentElement).appendChild(css);
 
-function init(){
-  if(ready)return;
-  viewport=document.querySelector('.xterm-viewport');
-  xtermElem=document.querySelector('.xterm');
-  termContainer=document.querySelector('#terminal')||xtermElem;
-  if(!viewport||!xtermElem){setTimeout(init,300);return}
-  setupScroll();setupZoom();ready=true;
-  console.log('[PesquisAI] Touch scroll+zoom ativados no ttyd');
+// --- Capturar WebSocket do ttyd para enviar escape sequences ---
+// Monkey-patch ANTES do ttyd criar o socket. Se já foi criado, tentamos
+// encontrar via polling.
+var OrigWS=window.WebSocket;
+window.WebSocket=function(url,protocols){
+  var ws=protocols?new OrigWS(url,protocols):new OrigWS(url);
+  capturedSocket=ws;
+  console.log('[PesquisAI] WebSocket ttyd capturado');
+  return ws;
+};
+window.WebSocket.prototype=OrigWS.prototype;
+window.WebSocket.OPEN=OrigWS.OPEN;
+window.WebSocket.CLOSED=OrigWS.CLOSED;
+window.WebSocket.CONNECTING=OrigWS.CONNECTING;
+window.WebSocket.CLOSING=OrigWS.CLOSING;
+
+// Se o WebSocket já foi criado antes do monkey-patch, tentar encontrar
+// percorrendo propriedades globais (ttyd às vezes guarda em window.term)
+function findExistingSocket(){
+  if(capturedSocket&&capturedSocket.readyState===1)return capturedSocket;
+  // ttyd pode guardar o terminal/socket em uma variável global
+  var candidates=['term','tty','socket','ws','terminal','xterm'];
+  for(var i=0;i<candidates.length;i++){
+    try{
+      var v=window[candidates[i]];
+      if(v&&v.socket&&v.socket.readyState===1){capturedSocket=v.socket;return v.socket}
+      if(v&&v._socket&&v._socket.readyState===1){capturedSocket=v._socket;return v._socket}
+      if(v&&v.io&&v.io.readyState===1){capturedSocket=v.io;return v.io}
+    }catch(e){}
+  }
+  return null;
 }
 
-// --- Single-finger scroll (com momentum) ---
+// --- Enviar tecla ao terminal (2 métodos: WebSocket + keyboard fallback) ---
+// Escape sequences para teclas de seta e Page Up/Down:
+//   ArrowUp:    \\x1b[A    ArrowDown:  \\x1b[B
+//   PageUp:     \\x1b[5~   PageDown:   \\x1b[6~
+function sendEscape(seq){
+  // Método 1: enviar diretamente ao WebSocket (mais confiável)
+  var sock=findExistingSocket();
+  if(sock&&sock.readyState===1){
+    try{sock.send(seq);return true}catch(e){}
+  }
+  // Método 2: synthetic keydown no .xterm-helper-textarea
+  if(!helperTextarea)helperTextarea=document.querySelector('.xterm-helper-textarea');
+  if(helperTextarea){
+    var keyName,code,keyCode;
+    if(seq==='\\x1b[A'){keyName='ArrowUp';code='ArrowUp';keyCode=38}
+    else if(seq==='\\x1b[B'){keyName='ArrowDown';code='ArrowDown';keyCode=40}
+    else if(seq==='\\x1b[5~'){keyName='PageUp';code='PageUp';keyCode=33}
+    else if(seq==='\\x1b[6~'){keyName='PageDown';code='PageDown';keyCode=34}
+    else{return false}
+    try{
+      helperTextarea.focus();
+      var ev=new KeyboardEvent('keydown',{
+        key:keyName,code:code,keyCode:keyCode,which:keyCode,
+        bubbles:true,cancelable:true
+      });
+      helperTextarea.dispatchEvent(ev);
+      // Também tentar keyup para completar o ciclo
+      var evu=new KeyboardEvent('keyup',{
+        key:keyName,code:code,keyCode:keyCode,which:keyCode,
+        bubbles:true,cancelable:true
+      });
+      helperTextarea.dispatchEvent(evu);
+      return true;
+    }catch(e){return false}
+  }
+  return false;
+}
+
+// --- Múltiplas teclas com throttle (para scroll contínuo) ---
+var lastSendTime=0, accumulatedDelta=0, scrollTimer=null;
+
+function doScroll(deltaY){
+  // deltaY > 0: dedo foi para baixo → quer ver conteúdo ACIMA → ArrowUp
+  // deltaY < 0: dedo foi para cima → quer ver conteúdo ABAIXO → ArrowDown
+  var absDelta=Math.abs(deltaY);
+  // Acumular delta para decidir Arrow vs Page
+  accumulatedDelta+=deltaY;
+
+  // Threshold: a cada 15px de arrasto, envia 1 Arrow. A cada 80px, envia 1 Page.
+  // Throttle: mínimo 30ms entre envios para não sobrecarregar o PTY
+  var now=Date.now();
+  if(now-lastSendTime<30)return;
+
+  if(absDelta>=80){
+    // Swipe rápido → Page Up/Down
+    var seq=deltaY>0?'\\x1b[5~':'\\x1b[6~';
+    sendEscape(seq);
+    // Enviar múltiplas páginas se o swipe for muito rápido
+    if(absDelta>=160){sendEscape(seq);sendEscape(seq)}
+    lastSendTime=now;
+    accumulatedDelta=0;
+  }else if(absDelta>=15){
+    // Arrasto normal → Arrow Up/Down
+    var seq2=deltaY>0?'\\x1b[A':'\\x1b[B';
+    sendEscape(seq2);
+    lastSendTime=now;
+    accumulatedDelta=0;
+  }
+}
+
+// --- Momentum: continuar enviando teclas após o dedo levantar ---
+var momentumV=0, momentumActive=false;
+function momentumLoop(){
+  if(!momentumActive)return;
+  if(Math.abs(momentumV)<0.3){momentumActive=false;return}
+  var seq=momentumV>0?'\\x1b[A':'\\x1b[B';
+  // Envia 1-3 teclas dependendo da velocidade
+  var count=Math.min(3,Math.ceil(Math.abs(momentumV)));
+  for(var i=0;i<count;i++)sendEscape(seq);
+  if(Math.abs(momentumV)>2){sendEscape(momentumV>0?'\\x1b[5~':'\\x1b[6~')}
+  momentumV*=0.88; // decaimento
+  setTimeout(momentumLoop,60);
+}
+
+function init(){
+  if(ready)return;
+  xtermElem=document.querySelector('.xterm');
+  termContainer=document.querySelector('#terminal')||xtermElem;
+  helperTextarea=document.querySelector('.xterm-helper-textarea');
+  if(!xtermElem){setTimeout(init,300);return}
+  setupScroll();setupZoom();ready=true;
+  console.log('[PesquisAI] Touch scroll (keyboard) + zoom ativados no ttyd');
+  // Tentar encontrar WebSocket existente
+  findExistingSocket();
+}
+
+// --- Single-finger scroll → envia teclas à TUI ---
 function setupScroll(){
-  var lastY=0,lastX=0,scrolling=false,startY=0,startT=0;
+  var lastY=0,scrolling=false,startY=0,startT=0,startX=0;
 
   function ts(e){
     if(e.touches.length===1){
-      lastY=e.touches[0].clientY;lastX=e.touches[0].clientX;
-      startY=lastY;startT=Date.now();scrolling=true;
+      lastY=e.touches[0].clientY;startY=lastY;startT=Date.now();
+      startX=e.touches[0].clientX;scrolling=true;momentumActive=false;
     }else{scrolling=false}
   }
   function tm(e){
     if(!scrolling||e.touches.length!==1)return;
-    var cy=e.touches[0].clientY,cx=e.touches[0].clientX;
-    var dy=lastY-cy,dx=lastX-cx;lastY=cy;lastX=cx;
-    if(viewport)viewport.scrollTop+=dy*2.5;
-    e.preventDefault();e.stopPropagation();
+    var cy=e.touches[0].clientY;
+    var dy=lastY-cy; // dy>0: dedo subiu (quer ver conteúdo abaixo)
+    lastY=cy;
+    // Ignorar movimento horizontal (para não interferir em swipe lateral)
+    var cx=e.touches[0].clientX;
+    var dxAbs=Math.abs(cx-startX);
+    var dyAbs=Math.abs(cy-startY);
+    if(dxAbs>dyAbs*2&&dyAbs<30)return; // é swipe horizontal, ignorar
+    if(Math.abs(dy)>2){
+      doScroll(dy);
+      e.preventDefault();e.stopPropagation();
+    }
   }
   function te(e){
     if(scrolling&&e.changedTouches.length>0){
       var endY=e.changedTouches[0].clientY;
       var dt=Date.now()-startT;
-      if(dt>0&&dt<300){
-        var v=(startY-endY)/dt;
-        if(Math.abs(v)>0.1&&viewport)momentum(v*180,viewport);
+      if(dt>0&&dt<400){
+        var v=(startY-endY)/dt; // v>0: dedo subiu rápido → scroll down
+        if(Math.abs(v)>0.15){
+          momentumV=v*8;
+          momentumActive=true;
+          momentumLoop();
+        }
       }
     }
     scrolling=false;
   }
-  function momentum(v,vp){
-    if(Math.abs(v)<0.5)return;
-    vp.scrollTop+=v*0.1;
-    requestAnimationFrame(function(){momentum(v*0.92,vp)});
-  }
 
-  // Listeners no container do terminal E no document (fallback)
-  if(termContainer){
-    termContainer.addEventListener('touchstart',ts,{passive:true});
-    termContainer.addEventListener('touchmove',tm,{passive:false});
-    termContainer.addEventListener('touchend',te,{passive:true});
+  // Listeners no container E no document (fallback)
+  var target=termContainer||document;
+  target.addEventListener('touchstart',ts,{passive:true});
+  target.addEventListener('touchmove',tm,{passive:false});
+  target.addEventListener('touchend',te,{passive:true});
+  // Fallback no document (caso termContainer não pegue os eventos)
+  if(target!==document){
+    document.addEventListener('touchstart',function(e){
+      if(!scrolling&&e.touches.length===1)ts(e);
+    },{passive:true});
+    document.addEventListener('touchmove',function(e){
+      if(scrolling)tm(e);
+    },{passive:false});
+    document.addEventListener('touchend',te,{passive:true});
   }
-  document.addEventListener('touchstart',function(e){
-    if(!scrolling&&e.touches.length===1)ts(e);
-  },{passive:true});
-  document.addEventListener('touchmove',function(e){
-    if(scrolling)tm(e);
-  },{passive:false});
-  document.addEventListener('touchend',te,{passive:true});
 }
 
-// --- Two-finger pinch zoom + double-tap reset ---
+// --- Two-finger pinch zoom + double-tap reset (inalterado, funciona) ---
 function setupZoom(){
   var pinchDist=0,pinchZoom=1,pinching=false;
-
   function dist(t){
     var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;
     return Math.sqrt(dx*dx+dy*dy);
   }
-  if(termContainer){
-    termContainer.addEventListener('touchstart',function(e){
-      if(e.touches.length===2){pinchDist=dist(e.touches);pinchZoom=zoomLevel;pinching=true}
-    },{passive:true});
-    termContainer.addEventListener('touchmove',function(e){
-      if(!pinching||e.touches.length!==2)return;
-      var d=dist(e.touches);
-      if(pinchDist>0){
-        var s=d/pinchDist;
-        zoomLevel=Math.max(0.5,Math.min(4,pinchZoom*s));
-        if(xtermElem)xtermElem.style.zoom=zoomLevel;
-        if(viewport)viewport.style.zoom=zoomLevel;
-      }
-      e.preventDefault();
-    },{passive:false});
-    termContainer.addEventListener('touchend',function(e){
-      if(e.touches.length<2){pinching=false;pinchDist=0}
-    },{passive:true});
-  }
+  var zt=termContainer||document;
+  zt.addEventListener('touchstart',function(e){
+    if(e.touches.length===2){pinchDist=dist(e.touches);pinchZoom=zoomLevel;pinching=true;scrolling=false}
+  },{passive:true});
+  zt.addEventListener('touchmove',function(e){
+    if(!pinching||e.touches.length!==2)return;
+    var d=dist(e.touches);
+    if(pinchDist>0){
+      var s=d/pinchDist;
+      zoomLevel=Math.max(0.5,Math.min(4,pinchZoom*s));
+      if(xtermElem)xtermElem.style.zoom=zoomLevel;
+    }
+    e.preventDefault();
+  },{passive:false});
+  zt.addEventListener('touchend',function(e){
+    if(e.touches.length<2){pinching=false;pinchDist=0}
+  },{passive:true});
 
-  // Double-tap para resetar zoom
+  // Double-tap reset zoom
   var lastTap=0;
   document.addEventListener('touchend',function(e){
     var now=Date.now();
     if(now-lastTap<300&&e.changedTouches.length===1){
       zoomLevel=1;
       if(xtermElem)xtermElem.style.zoom='1';
-      if(viewport)viewport.style.zoom='1';
     }
     lastTap=now;
   },{passive:true});
 }
 
-// --- Inicialização: espera DOM + xterm estar pronto ---
+// --- Inicialização ---
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded',init);
 }else{init()}
@@ -308,7 +442,10 @@ if(document.readyState==='loading'){
 // MutationObserver: detecta quando xterm é adicionado ao DOM
 var obs=new MutationObserver(function(){if(!ready)init()});
 obs.observe(document.body||document.documentElement,{childList:true,subtree:true});
-setTimeout(function(){obs.disconnect()},30000); // para após 30s
+setTimeout(function(){obs.disconnect()},30000);
+
+// Re-tentar encontrar WebSocket periodicamente (caso monkey-patch falhou)
+setInterval(function(){if(!capturedSocket)findExistingSocket()},2000);
 })();
 </script>"""
 
