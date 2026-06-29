@@ -24,6 +24,15 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═════════════════════════════════════════════════════════════════════════
+  v0.5.1  — 🤖 Obsidian Autopilot (salvamento autônomo)
+            • Módulo pesquisai.obsidian.autopilot (API de alto nível)
+            • run_fast.py chama auto_init() na inicialização
+            • Vault é CRIADO AUTOMATICAMENTE no Google Drive
+            • Daily note e MOC raiz criados automaticamente
+            • Sessão de log iniciada automaticamente
+            • AGENTS.md injetado com instruções de salvamento autônomo
+            • O agente SALVA SOZINHO — não espera o usuário pedir
+            • API: recall(), save(), save_finding(), end_session()
   v0.5.0  — 🧠 Obsidian Second Brain (Long-Term Memory)
             • Módulo pesquisai.obsidian (8 arquivos, ~1.500 linhas)
             • Skill obsidian-memory (repositório git separado)
@@ -77,11 +86,11 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.5.0"
+__version__: str = "0.5.1"
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-06-29"
-__codename__: str = "obsidian second brain (long-term memory via Obsidian vault)"
+__codename__: str = "obsidian autopilot (autonomous saving — agent saves without user asking)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.5.1] — 2026-06-29 — 🤖 Obsidian Autopilot (Salvamento Autônomo)
+
+### 🤖 O agente agora SALVA SOZINHO
+
+A partir da v0.5.1, o PesquisAI **salva autonomamente** no vault do
+Obsidian — **não espera o usuário pedir**. Isto é feito via:
+
+1. **`pesquisai/obsidian/autopilot.py`** (NOVO) — API de alto nível
+   com funções que o agente LLM chama diretamente:
+   - `recall(query)` — busca no vault antes de responder
+   - `save(title, body, tags)` — salva nota após concluir tarefa
+   - `save_finding(text, source)` — captura rápida (1 linha)
+   - `start_session()` / `end_session(summary)` — log automático
+   - `log_skill(id)` / `log_file(path)` — tracking de atividades
+   - `auto_init()` — inicializa vault + daily + MOC + sessão
+
+2. **`run_fast.py`** (EDITADO) — chama `auto_init()` na inicialização:
+   - Cria o vault automaticamente em `<DRIVE>/PesquisAI/vault/`
+   - Cria a daily note de hoje
+   - Cria o MOC raiz
+   - Inicia a sessão de log automático
+   - Instala `pyyaml>=6.0` como dependência
+
+3. **Prompt do agente** (EDITADO) — `_setup_theme_and_agent()` injeta
+   instruções de autopilot no `pesquisai.md` que o OpenCode carrega.
+   O agente recebe instruções explícitas de:
+   - QUANDO salvar autonomamente (após coletar dados, escrever seção…)
+   - QUANDO NÃO salvar (respostas curtas, conversa informal)
+   - COMO usar a API (exemplos de código prontos)
+
+### 📋 O que o agente faz automaticamente
+
+| Momento | Ação autônoma |
+|---|---|
+| Início da sessão | `auto_init()` cria vault + daily + MOC + sessão |
+| Antes de responder | `recall("tema")` busca notas relevantes |
+| Após coletar dados | `save(title, body, tags=["pesquisai/ibge"])` |
+| Após escrever seção | `save(..., template="research")` |
+| Ao usar skill | `log_skill("ibge-br")` |
+| Ao gerar arquivo | `log_file("resultado.csv")` |
+| Fim da conversa | `end_session(summary="...")` |
+
+### 🛡️ Garantias
+
+- **Tudo é no-op** se o vault não estiver disponível — o agente nunca quebra
+- **Notas humanas são read-only** — o agente não sobrescreve
+- **Vault SEMPRE no Google Drive** — validação `discovery._is_in_drive()`
+- **Auditoria** — toda escrita é logada em `.pesquisai-audit.log`
+
+### 📊 Estatísticas
+
+| Métrica | Valor |
+|---|---|
+| Arquivo novo | `pesquisai/obsidian/autopilot.py` (~250 linhas) |
+| Arquivos editados | `run_fast.py`, `__version__.py`, `pyproject.toml`, `Dockerfile`, `CHANGELOG.md` |
+| Testes | 71 (skill) + 16 (repo) = 87 passing |
+| Funções públicas do autopilot | 10 (`recall`, `save`, `save_finding`, `context_brief`, `start_session`, `end_session`, `log_request`, `log_skill`, `log_file`, `stats`, `is_active`, `auto_init`) |
+
+---
+
 ## [0.5.0] — 2026-06-29 — 🧠 Obsidian Second Brain (Long-Term Memory)
 
 ### 🧠 Memória persistente via Obsidian (NOVO)

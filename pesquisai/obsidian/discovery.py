@@ -158,36 +158,51 @@ def ensure_drive_path(path: Optional[str] = None) -> str:
 def _find_template(name: str) -> str:
     """Encontra um template oficial pelo nome (sem extensão).
 
+    Ordem de busca:
+    1. Skill instalada em ``~/.agents/skills/obsidian-memory/templates/``
+    2. Skill em ``skills/obsidian-memory/templates/`` (dev local)
+    3. Templates embutidos em ``builtin_templates.py`` (fallback)
+
     Args:
-        name: nome do template (ex.: ``"daily-note"``).
+        name: nome do template (ex.: ``"daily-note"`` ou ``"daily"``).
 
     Returns:
         O conteúdo do template.
 
     Raises:
-        FileNotFoundError: se o template não existe.
+        FileNotFoundError: se o template não existe em nenhuma fonte.
     """
     import importlib.resources as resources
+    from pathlib import Path
+    import os
 
-    # Primeiro tenta o pacote skill (recomendado)
-    try:
-        files = resources.files("skills.obsidian-memory.templates")
-        # Procura o arquivo
-        for f in files.iterdir():
-            if f.name == f"{name}.md" or f.name == name:
-                return f.read_text(encoding="utf-8")
-    except (ModuleNotFoundError, FileNotFoundError, AttributeError):
-        pass
+    candidates: list[str] = [name, f"{name}.md", f"{name}-note", f"{name}-note.md"]
 
-    # Fallback: caminho relativo (para dev local)
+    # 1. Skill instalada (~/.agents/skills/obsidian-memory/templates/)
+    skill_templates_dir = Path.home() / ".agents" / "skills" / "obsidian-memory" / "templates"
+    if skill_templates_dir.is_dir():
+        for cand in candidates:
+            p = skill_templates_dir / cand if cand.endswith(".md") else skill_templates_dir / f"{cand}.md"
+            if p.is_file():
+                return p.read_text(encoding="utf-8")
+
+    # 2. Skill em dev local (skills/obsidian-memory/templates/)
     here = Path(__file__).resolve().parent
-    for candidate in [
-        here.parent.parent / "skills" / "obsidian-memory" / "templates" / f"{name}.md",
-        here.parent.parent / "skills" / "obsidian-memory" / "templates" / name,
-    ]:
-        if candidate.is_file():
-            return candidate.read_text(encoding="utf-8")
+    dev_dir = here.parent.parent / "skills" / "obsidian-memory" / "templates"
+    if dev_dir.is_dir():
+        for cand in candidates:
+            p = dev_dir / cand if cand.endswith(".md") else dev_dir / f"{cand}.md"
+            if p.is_file():
+                return p.read_text(encoding="utf-8")
+
+    # 3. Fallback: templates embutidos
+    from .builtin_templates import BUILTIN_TEMPLATES
+    for cand in candidates:
+        key = cand.replace(".md", "")
+        if key in BUILTIN_TEMPLATES:
+            return BUILTIN_TEMPLATES[key]
 
     raise FileNotFoundError(
-        f"Template '{name}' não encontrado em skills/obsidian-memory/templates/"
+        f"Template '{name}' não encontrado. Procurado em: "
+        f"{skill_templates_dir}, {dev_dir}, builtin_templates"
     )
