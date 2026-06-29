@@ -685,6 +685,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <button class="tb-icon" onclick="openShortcuts()" title="Atalhos de Teclado" data-i18n-title="shortcuts.title">
         <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
       </button>
+      <button class="tb-icon" onclick="openMemory()" id="memory-btn" title="Memória Obsidian" data-i18n-title="memory.tooltip">
+        <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 7l1 1v3a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-3l1-1c1.5-2 3-4 3-7a7 7 0 0 0-7-7z"/><path d="M9 22h6"/><path d="M12 2v20"/></svg>
+      </button>
       <button class="tb-icon" onclick="toggleTheme()" id="theme-toggle" title="Alternar tema" data-theme="pesquisai" data-i18n-title="theme.toggle">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       </button>
@@ -739,6 +742,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
+    <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória Obsidian</span></button>
     <button class="modal-close" onclick="toggleTheme(); toggleMobileMenu();">◑ <span data-i18n="theme.toggle">Alternar Tema</span></button>
     <button class="modal-close" onclick="toggleLangMenu();">🌐 <span data-i18n="languages.label">Idioma</span></button>
   </div>
@@ -855,6 +859,29 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     </div>
   </div>
 
+  <!-- Modal de Memória Obsidian (v0.5.1.2) -->
+  <div id="memory-overlay" onclick="if(event.target===this)closeMemory()" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:0;width:640px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">🧠</span>
+        <div style="flex:1;min-width:0;">
+          <div class="modal-title" style="margin-bottom:2px;" data-i18n="memory.title">Memória Obsidian</div>
+          <div style="font-size:10.5px;color:var(--ink-muted);" data-i18n="memory.subtitle">Camada de memória persistente do agente</div>
+        </div>
+        <span id="memory-status-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:'DM Mono',monospace;">…</span>
+        <button onclick="closeMemory()" class="modal-close" style="width:auto;padding:4px 10px;font-size:11px;" aria-label="Fechar">✕</button>
+      </div>
+      <div id="memory-content" style="flex:1;overflow-y:auto;padding:18px 22px;font-size:12px;line-height:1.6;color:var(--ink);">
+        <div class="modal-empty" data-i18n="ui.loading">Carregando…</div>
+      </div>
+      <div style="padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02);">
+        <button onclick="openMemory(true)" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="memory.refresh">Atualizar</span></button>
+        <div style="flex:1;"></div>
+        <a id="memory-open-drive" href="#" target="_blank" class="footer-link" style="font-size:10.5px;display:none;" data-i18n="memory.open_vault">Abrir vault no Drive</a>
+        <button onclick="closeMemory()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;" data-i18n="ui.close">Fechar</button>
+      </div>
+    </div>
+  </div>
   <script>
     // ════════════════════════════════════════════════════════════
     // PesquisAI v0.4.1 — Patch corretivo
@@ -1201,6 +1228,156 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       o.style.opacity = "0"; o.style.pointerEvents = "none";
     }
 
+    // ── Memória Obsidian (v0.5.1.2) ───────────────────────────
+    let _memoryCache = null;
+    let _memoryCacheAt = 0;
+    const _MEMORY_TTL_MS = 5000;
+
+    async function openMemory(force) {
+      const overlay = document.getElementById("memory-overlay");
+      if (overlay) {
+        overlay.style.opacity = "1";
+        overlay.style.pointerEvents = "all";
+      }
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      const content = document.getElementById("memory-content");
+      if (content) {
+        content.innerHTML = '<div class="modal-empty">' +
+          (dict["ui.loading"] || "Carregando…") + '</div>';
+      }
+      const now = Date.now();
+      if (!force && _memoryCache && (now - _memoryCacheAt) < _MEMORY_TTL_MS) {
+        renderMemory(_memoryCache, dict);
+        return;
+      }
+      try {
+        const r = await fetch(BASE + "/api/obsidian");
+        const d = await r.json();
+        _memoryCache = d;
+        _memoryCacheAt = Date.now();
+        renderMemory(d, dict);
+      } catch (e) {
+        if (content) {
+          content.innerHTML = '<div class="modal-empty">❌ ' +
+            (dict["agents.error"] || "Erro") + ': ' + e.message + '</div>';
+        }
+      }
+    }
+
+    function closeMemory() {
+      const overlay = document.getElementById("memory-overlay");
+      if (overlay) {
+        overlay.style.opacity = "0";
+        overlay.style.pointerEvents = "none";
+      }
+    }
+
+    function renderMemory(d, dict) {
+      const content = document.getElementById("memory-content");
+      const badge   = document.getElementById("memory-status-badge");
+      const driveLnk = document.getElementById("memory-open-drive");
+      if (!content) return;
+      dict = dict || (I18N[_currentLang] || I18N["pt_BR"]);
+
+      const statusMap = {
+        ready:          { txt: dict["memory.status_ready"]     || "Ativa",            color: "var(--green)" },
+        disabled:       { txt: dict["memory.status_disabled"]  || "Desativada",       color: "var(--ink-muted)" },
+        no_vault:       { txt: dict["memory.status_no_vault"]  || "Sem vault",        color: "var(--amber)" },
+        read_only:      { txt: dict["memory.status_read_only"] || "Somente leitura",  color: "var(--amber)" },
+        error:          { txt: dict["memory.status_error"]     || "Erro",             color: "var(--red)" },
+        module_unavailable: { txt: dict["memory.status_error"] || "Módulo indisponível", color: "var(--red)" },
+      };
+      const st = statusMap[d.status] || { txt: d.status || "?", color: "var(--ink-muted)" };
+      if (badge) {
+        badge.textContent = st.txt;
+        badge.style.color = st.color;
+        badge.style.borderColor = st.color;
+      }
+      const memBtn = document.getElementById("memory-btn");
+      if (memBtn) {
+        memBtn.style.color = (d.status === "ready") ? "var(--green)" : st.color;
+      }
+      if (driveLnk) {
+        if (d.root && d.status === "ready") {
+          driveLnk.href = "https://drive.google.com/drive/my-drive";
+          driveLnk.title = d.root;
+          driveLnk.style.display = "";
+        } else {
+          driveLnk.style.display = "none";
+        }
+      }
+      const msgHtml = d.message
+        ? '<div style="font-size:11.5px;color:var(--ink-muted);margin-bottom:14px;padding:8px 10px;background:rgba(255,255,255,.03);border-left:2px solid ' + st.color + ';border-radius:3px;">' +
+          escapeHtml(d.message) + '</div>'
+        : "";
+      let statsHtml = "";
+      if (d.status === "ready") {
+        const stats = [
+          ["📝 " + (dict["memory.notes_count"] || "Notas"),
+            d.notes_count],
+          ["🏷️ " + (dict["memory.tags_count"] || "Tags"), d.tags_count],
+          ["🔗 " + (dict["memory.links_count"] || "Links"),
+            (d.links && d.links.edges) || 0],
+          ["📏 " + (dict["memory.avg_len"] || "Tam. médio"),
+            d.avg_note_length ? d.avg_note_length + " chars" : "—"],
+        ];
+        statsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">' +
+          stats.map(s =>
+            '<div style="padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:var(--radius);">' +
+            '<div style="font-size:10.5px;color:var(--ink-muted);margin-bottom:3px;">' + s[0] + '</div>' +
+            '<div style="font-size:15px;color:var(--ink);font-family:DM Mono,monospace;">' + s[1] + '</div>' +
+            '</div>'
+          ).join("") + '</div>';
+      }
+      let pathHtml = "";
+      if (d.root) {
+        pathHtml = '<div style="font-size:10.5px;color:var(--ink-muted);margin-bottom:12px;font-family:DM Mono,monospace;word-break:break-all;">' +
+                   '📁 <span style="color:var(--accent);">' + escapeHtml(d.root) + '</span></div>';
+      }
+      let dailyHtml = "";
+      if (d.recent_daily && d.recent_daily.length) {
+        dailyHtml = '<div style="font-size:11px;color:var(--ink-muted);margin:6px 0 4px;text-transform:uppercase;letter-spacing:.05em;">' +
+                    (dict["memory.recent_daily"] || "Daily notes") + '</div>' +
+                    d.recent_daily.map(n =>
+                      '<div style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);">' +
+                      '<div style="font-size:12px;color:var(--ink);font-weight:500;">📅 ' + escapeHtml(n.title) + '</div>' +
+                      '<div style="font-size:10px;color:var(--ink-muted);font-family:DM Mono,monospace;margin-top:2px;">' + escapeHtml(n.path) + '</div>' +
+                      '</div>'
+                    ).join("");
+      }
+      let notesHtml = "";
+      if (d.recent_notes && d.recent_notes.length) {
+        notesHtml = '<div style="font-size:11px;color:var(--ink-muted);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em;">' +
+                    (dict["memory.recent_notes"] || "Notas recentes") + '</div>' +
+                    d.recent_notes.map(n => {
+                      const tagsHtml = (n.tags && n.tags.length)
+                        ? n.tags.map(t => '<span style="display:inline-block;font-size:9.5px;padding:1px 6px;background:var(--accent-dim);color:var(--accent);border-radius:3px;margin-right:3px;">#' + escapeHtml(t.replace(/^#/, "")) + '</span>').join("")
+                        : "";
+                      return '<div style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);">' +
+                             '<div style="font-size:12px;color:var(--ink);font-weight:500;">' + escapeHtml(n.title) + '</div>' +
+                             '<div style="font-size:10px;color:var(--ink-muted);font-family:DM Mono,monospace;margin-top:2px;">' + escapeHtml(n.path) + '</div>' +
+                             (tagsHtml ? '<div style="margin-top:4px;">' + tagsHtml + '</div>' : "") +
+                             '</div>';
+                    }).join("");
+      } else if (d.status === "ready") {
+        notesHtml = '<div class="modal-empty" style="margin-top:14px;">' +
+                    (dict["memory.no_notes"] || "Nenhuma nota ainda.") + '</div>';
+      }
+      let tplHtml = "";
+      if (d.templates && d.templates.length) {
+        tplHtml = '<div style="font-size:11px;color:var(--ink-muted);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em;">' +
+                  (dict["memory.templates"] || "Templates") + ' (' + d.templates.length + ')</div>' +
+                  '<div style="display:flex;flex-wrap:wrap;gap:5px;">' +
+                  d.templates.map(t =>
+                    '<span style="font-size:10.5px;padding:3px 8px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:3px;font-family:DM Mono,monospace;color:var(--ink-muted);">📄 ' + escapeHtml(t) + '</span>'
+                  ).join("") + '</div>';
+      }
+      const versionHtml = d.version
+        ? '<div style="font-size:10px;color:var(--ink-muted);margin-top:14px;font-family:DM Mono,monospace;text-align:right;">PesquisAI v' + escapeHtml(d.version) + '</div>'
+        : "";
+      content.innerHTML = msgHtml + pathHtml + statsHtml + dailyHtml + notesHtml + tplHtml + versionHtml;
+    }
+
     // ═══════════════════════════════════════════════════════════
     // 🐛 CORREÇÃO 2: toggleTheme() agora RECARREGA o iframe
     // ═══════════════════════════════════════════════════════════
@@ -1341,7 +1518,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         openShortcuts();
       }
       if (e.key === "Escape") {
-        closeHealth(); closeSessions(); closeShortcuts();
+        closeHealth(); closeSessions(); closeShortcuts(); closeMemory();  // v0.5.1.2
         closeProvider(); closeModal(); closeLangMenu();
         const mm = document.getElementById("mobile-menu");
         if (mm && mm.classList.contains("open")) toggleMobileMenu();
@@ -1407,6 +1584,26 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal recarregado com novo tema",
             "languages.label": "Idioma", "languages.switched_to": "Idioma alterado para",
             "success_messages.backup_saved": "Backup salvo",
+            # v0.5.1.2 — Memória Obsidian
+            "memory.title": "Memória Obsidian",
+            "memory.subtitle": "Camada de memória persistente do agente",
+            "memory.tooltip": "Memória Obsidian (segundo cérebro)",
+            "memory.status_ready": "🟢 Ativa",
+            "memory.status_disabled": "⚪ Desativada",
+            "memory.status_no_vault": "🟡 Sem vault",
+            "memory.status_read_only": "🟡 Somente leitura",
+            "memory.status_error": "🔴 Erro",
+            "memory.notes_count": "Notas",
+            "memory.notes_unit": "",
+            "memory.tags_count": "Tags",
+            "memory.links_count": "Wikilinks",
+            "memory.avg_len": "Tam. médio",
+            "memory.recent_daily": "Daily notes",
+            "memory.recent_notes": "Notas recentes",
+            "memory.no_notes": "Nenhuma nota ainda. O agente salvará aqui automaticamente.",
+            "memory.templates": "Templates",
+            "memory.open_vault": "Abrir Drive",
+            "memory.refresh": "Atualizar",
         },
         "en_US": {
             "ui.backup": "Save backup", "ui.restore": "Restore",
@@ -1431,6 +1628,26 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal reloaded with new theme",
             "languages.label": "Language", "languages.switched_to": "Language switched to",
             "success_messages.backup_saved": "Backup saved",
+            # v0.5.1.2 — Obsidian Memory
+            "memory.title": "Obsidian Memory",
+            "memory.subtitle": "Agent's persistent memory layer",
+            "memory.tooltip": "Obsidian Memory (second brain)",
+            "memory.status_ready": "🟢 Active",
+            "memory.status_disabled": "⚪ Disabled",
+            "memory.status_no_vault": "🟡 No vault",
+            "memory.status_read_only": "🟡 Read-only",
+            "memory.status_error": "🔴 Error",
+            "memory.notes_count": "Notes",
+            "memory.notes_unit": "",
+            "memory.tags_count": "Tags",
+            "memory.links_count": "Wikilinks",
+            "memory.avg_len": "Avg. length",
+            "memory.recent_daily": "Daily notes",
+            "memory.recent_notes": "Recent notes",
+            "memory.no_notes": "No notes yet. The agent will save here automatically.",
+            "memory.templates": "Templates",
+            "memory.open_vault": "Open Drive",
+            "memory.refresh": "Refresh",
         },
         "es_ES": {
             "ui.backup": "Guardar copia", "ui.restore": "Restaurar",
@@ -1455,6 +1672,26 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal recargado con nuevo tema",
             "languages.label": "Idioma", "languages.switched_to": "Idioma cambiado a",
             "success_messages.backup_saved": "Copia guardada",
+            # v0.5.1.2 — Memoria Obsidian
+            "memory.title": "Memoria Obsidian",
+            "memory.subtitle": "Capa de memoria persistente del agente",
+            "memory.tooltip": "Memoria Obsidian (segundo cerebro)",
+            "memory.status_ready": "🟢 Activa",
+            "memory.status_disabled": "⚪ Desactivada",
+            "memory.status_no_vault": "🟡 Sin vault",
+            "memory.status_read_only": "🟡 Solo lectura",
+            "memory.status_error": "🔴 Error",
+            "memory.notes_count": "Notas",
+            "memory.notes_unit": "",
+            "memory.tags_count": "Etiquetas",
+            "memory.links_count": "Wikienlaces",
+            "memory.avg_len": "Tam. medio",
+            "memory.recent_daily": "Daily notes",
+            "memory.recent_notes": "Notas recientes",
+            "memory.no_notes": "Aún no hay notas. El agente guardará aquí automáticamente.",
+            "memory.templates": "Plantillas",
+            "memory.open_vault": "Abrir Drive",
+            "memory.refresh": "Actualizar",
         },
         "fr_FR": {
             "ui.backup": "Sauvegarder", "ui.restore": "Restaurer",
@@ -1479,6 +1716,26 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal rechargé avec le nouveau thème",
             "languages.label": "Langue", "languages.switched_to": "Langue changée en",
             "success_messages.backup_saved": "Sauvegarde enregistrée",
+            # v0.5.1.2 — Mémoire Obsidian
+            "memory.title": "Mémoire Obsidian",
+            "memory.subtitle": "Couche de mémoire persistante de l'agent",
+            "memory.tooltip": "Mémoire Obsidian (deuxième cerveau)",
+            "memory.status_ready": "🟢 Active",
+            "memory.status_disabled": "⚪ Désactivée",
+            "memory.status_no_vault": "🟡 Pas de vault",
+            "memory.status_read_only": "🟡 Lecture seule",
+            "memory.status_error": "🔴 Erreur",
+            "memory.notes_count": "Notes",
+            "memory.notes_unit": "",
+            "memory.tags_count": "Étiquettes",
+            "memory.links_count": "Wikiliens",
+            "memory.avg_len": "Taille moy.",
+            "memory.recent_daily": "Daily notes",
+            "memory.recent_notes": "Notes récentes",
+            "memory.no_notes": "Aucune note pour l'instant. L'agent enregistrera ici automatiquement.",
+            "memory.templates": "Modèles",
+            "memory.open_vault": "Ouvrir Drive",
+            "memory.refresh": "Actualiser",
         },
     }
 

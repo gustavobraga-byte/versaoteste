@@ -980,6 +980,135 @@ def start_wrapper_server():
                 })
                 return
 
+            if p == "/api/obsidian":
+                # v0.5.1.2: status da memória Obsidian (segundo cérebro)
+                # Lê o vault via pesquisai.obsidian (módulo oficial).
+                # Retorna JSON com:
+                #   - enabled / status / root
+                #   - notes_count / tags_count / recent_notes / recent_daily
+                #   - templates / templates_path
+                #   - message (string amigável i18n pronta para toast)
+                result = {
+                    "ok": True,
+                    "enabled": False,
+                    "status": "disabled",
+                    "root": None,
+                    "writable": False,
+                    "notes_count": 0,
+                    "tags_count": 0,
+                    "avg_note_length": 0,
+                    "links": {"edges": 0, "nodes": 0},
+                    "recent_notes": [],
+                    "recent_daily": [],
+                    "templates": [],
+                    "templates_path": None,
+                    "message": "Módulo Obsidian não instalado.",
+                    "version": VERSION,
+                }
+                try:
+                    from pesquisai.obsidian import ObsidianMemory, ObsidianMemoryStatus
+                    mem = ObsidianMemory.from_env()
+                    if mem.status == ObsidianMemoryStatus.DISABLED:
+                        result["status"] = "disabled"
+                        result["message"] = (
+                            "Memória desativada. Defina PESQUISAI_OBSIDIAN_VAULT "
+                            "apontando para a pasta vault/ no Drive."
+                        )
+                    elif mem.status == ObsidianMemoryStatus.NO_VAULT:
+                        result["status"] = "no_vault"
+                        result["root"] = str(mem.root) if mem.root else None
+                        result["message"] = (
+                            "PESQUISAI_OBSIDIAN_VAULT definida, mas a pasta não existe. "
+                            "Crie a pasta vault/ no Google Drive."
+                        )
+                    elif mem.status == ObsidianMemoryStatus.READ_ONLY:
+                        result["status"] = "read_only"
+                        result["root"] = str(mem.root) if mem.root else None
+                        result["message"] = (
+                            "Vault existe, mas sem permissão de escrita. "
+                            f"Verifique as permissões de {mem.root}."
+                        )
+                    elif mem.status == ObsidianMemoryStatus.ERROR:
+                        result["status"] = "error"
+                        result["message"] = (
+                            f"Erro ao abrir vault: {mem.last_error or 'desconhecido'}"
+                        )
+                    elif mem.status == ObsidianMemoryStatus.READY:
+                        stats = mem.stats()
+                        # Notas recentes (top 5)
+                        recent = []
+                        try:
+                            for s in mem.search("", limit=5):
+                                n = s.note
+                                if n:
+                                    recent.append({
+                                        "path": n.path,
+                                        "title": n.metadata.title if n.metadata else n.path,
+                                        "tags": list(n.tags[:6]),
+                                        "length": len(n.body or ""),
+                                    })
+                        except Exception:
+                            pass
+                        # Daily notes recentes (top 3)
+                        recent_daily = []
+                        try:
+                            for n in mem.recent_daily_notes(limit=3):
+                                recent_daily.append({
+                                    "path": n.path,
+                                    "title": n.metadata.title if n.metadata else n.path,
+                                })
+                        except Exception:
+                            pass
+                        # Templates oficiais
+                        templates = []
+                        templates_path = None
+                        try:
+                            from pathlib import Path as _P
+                            # 1) skill instalada
+                            skill_tpl = _P.home() / ".agents" / "skills" / "obsidian-memory" / "templates"
+                            # 2) skills/obsidian-memory/templates (dev local)
+                            here = _P(__file__).resolve().parent
+                            dev_tpl = here.parent / "skills" / "obsidian-memory" / "templates"
+                            for cand in (skill_tpl, dev_tpl):
+                                if cand.is_dir():
+                                    templates_path = str(cand)
+                                    templates = sorted(
+                                        f.stem for f in cand.glob("*.md")
+                                    )
+                                    break
+                        except Exception:
+                            pass
+                        result.update({
+                            "enabled": True,
+                            "status": "ready",
+                            "root": stats.get("root"),
+                            "writable": True,
+                            "notes_count": stats.get("notes", 0),
+                            "tags_count": stats.get("tags", 0),
+                            "avg_note_length": stats.get("avg_note_length", 0),
+                            "links": stats.get("links", {"edges": 0, "nodes": 0}),
+                            "recent_notes": recent,
+                            "recent_daily": recent_daily,
+                            "templates": templates,
+                            "templates_path": templates_path,
+                            "message": "Memória ativa.",
+                        })
+                    else:
+                        result["status"] = str(mem.status.value)
+                        result["message"] = f"Status desconhecido: {mem.status.value}"
+                except ImportError:
+                    result["status"] = "module_unavailable"
+                    result["message"] = (
+                        "Módulo pesquisai.obsidian não encontrado. "
+                        "Verifique se o pacote foi instalado."
+                    )
+                except Exception as e:  # noqa: BLE001
+                    result["ok"] = False
+                    result["status"] = "error"
+                    result["message"] = f"Erro inesperado: {e!r}"
+                self._json(200, result)
+                return
+
             self.send_error(404)
         
         def do_POST(self):
