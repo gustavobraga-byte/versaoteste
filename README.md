@@ -1,193 +1,200 @@
-# 🔬 PesquisAI
+# 🔬 PesquisAI — Agente de IA para Pesquisadores Científicos
 
-> **Versão:** 0.4.1 (UI Fixes — Responsive + Theme + Language)
-> **Data:** 2026-06-23
-> **Status:** ✅ Pronto para deploy
-> **Tema padrão:** 🌙 **Escuro** (com anti-flash CSS)
+ [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
-Agente de IA para pesquisadores, executado em ttyd (terminal) + OpenCode + 8+ skills científicas.
+
+> Ecossistema de agentes de IA para acelerar a pesquisa científica.
+
+[![Abrir no Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
+[![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
+[![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br)
+
+O **PesquisAI** é um agente de Inteligência Artificial construído sobre a arquitetura **OpenCode**, projetado especificamente para pesquisadores, acadêmicos e cientistas. Ele automatiza etapas que vão do levantamento bibliográfico à estruturação de artigos, integrando fontes de dados públicos do Brasil.
+
+---
+## 🤯 PesquisAI: A ferramenta que seu orientador não te contou! (Só não esqueça de fazer o double-check 😅) 
+
+## ✨ O que ele faz
+
+| Capacidade | Descrição |
+|---|---|
+| 📊 **Dados IBGE** | Consulta e extração de dados estatísticos, demográficos e socioeconômicos |
+| 🏥 **Dados DataSUS** | Acesso e análise de dados públicos de saúde via OpenDataSUS |
+| 🌾 **Dados Agro & Ambientais** | Acesso a dados do agronegócio brasileiro e cadastro ambiental rural |
+| 🇧🇷 **Dados Brasil** | Conjunto amplo de indicadores e datasets oficiais brasileiros |
+| 📚 **Pesquisa científica** | Mineração de textos, revisão bibliográfica e suporte metodológico |
+| ✍️ **Redação acadêmica** | Auxílio na estruturação e revisão de artigos científicos |
+| 🔬 **Análise qualitativa** | Análise de conteúdo com métodos clássicos e avançados (Reinert, similitude, codificação) |
+| 📐 **Normas ABNT/UFV** | Formatação e normalização de trabalhos acadêmicos |
 
 ---
 
-## 📂 Estrutura do Repositório
+## 🚀 Início rápido
 
-```
-PesquisAI/
-│
-├── README.md                          ⭐ Este arquivo
-├── __version__.py                     # 0.4.1
-│
-├── 🔬 pesquisai/                      # Módulo principal do PesquisAI
-│   ├── launch_app_responsive.py       # ✅ v0.4.1 (responsivo + tema + idioma)
-│   └── launch_app_responsive_v041.py  # ✅ Drop-in patch para launch_app.py do GitHub
-│
-├── 🤖 agents/                         # AGENTS.md multilíngues
-│   ├── AGENTS.pt.md                   🇧🇷
-│   ├── AGENTS.en.md                   🇺🇸
-│   ├── AGENTS.es.md                   🇪🇸
-│   └── AGENTS.fr.md                   🇫🇷
-│
-├── 🌐 i18n/                           # Módulo multilíngue (4 idiomas)
-│   ├── __init__.py
-│   ├── translator.py
-│   ├── detector.py
-│   └── translations/
-│       ├── pt_BR.json
-│       ├── en_US.json
-│       ├── es_ES.json
-│       └── fr_FR.json
-│
-├── 🔍 grant_finder/                   # Skill de busca de fomento (13 agências)
-│   ├── matcher.py · budget.py · proposal.py
-│   ├── sources/  (CNPq, CAPES, FAPEMIG, FAPESP, FINEP, NIH, NSF, ERC, Wellcome, Horizon)
-│   ├── data/     (5 caches JSON)
-│   └── tests/    (48 testes ✅)
-│
-├── 🛠️ skills/                        # Skills adicionais
-│   └── meta-search-br/                # Busca meta em fontes BR
-│
-├── 📚 docs/                           # Documentação completa
-│   ├── CHANGELOG.md                   # Histórico de versões (v0.001 → v0.4.1)
-│   ├── PATCH_v0.4.1.md                # 🐛 3 correções críticas
-│   ├── MOBILE_RESPONSIVE_PATCH.md     # Patch mobile/tablet (v0.4.0)
-│   ├── ENTREGAS_JUNHO_2026.md         # Resumo das entregas
-│   ├── INTEGRITY.md                   # Política de integridade científica
-│   ├── gerar_pdf.py                   # Utilitário: Markdown → PDF
-│   └── *.pdf                          # Versões PDF dos .md acima
-│
-├── 📦 releases/                       # Releases completas (isoladas)
-│   └── v0.4.0/                        # Release v0.4.0/1 (52 arquivos, 79 testes)
-│       ├── README.md
-│       ├── pyproject.toml
-│       ├── LICENSE
-│       ├── __version__.py
-│       ├── CHANGELOG.md
-│       ├── RELEASE_SUMMARY.md         # Resumo do release
-│       ├── RELEASE_SUMMARY.pdf
-│       ├── PATCH_v0.4.1.md            # (versão completa dentro do release)
-│       ├── PATCH_v0.4.1.pdf
-│       ├── ENTREGAS_JUNHO_2026.md
-│       ├── ENTREGAS_JUNHO_2026.pdf
-│       ├── MOBILE_RESPONSIVE_PATCH.md
-│       ├── conftest.py
-│       ├── .github/workflows/ci.yml
-│       ├── agents/  (4 AGENTS.md)
-│       ├── grant_finder/
-│       ├── i18n/
-│       ├── docs/  (PATCH_v0.4.1, etc.)
-│       └── pesquisai/
-│
-├── 💾 backups/                        # Backups automáticos do sistema
-│   └── *.json                         # Snapshots de sessão
-│
-├── 📜 sessions/                       # Logs de sessão do PesquisAI
-│   ├── session-ses_10b7.md
-│   └── session-ses_127f.md
-│
-└── 🗂️ sandbox/                        # 🏖️ Sandbox pessoal (não-PesquisAI)
-    ├── artigos/                       # Artigos publicados, TCCs
-    ├── projetos/                      # Projetos de pesquisa (10+)
-    ├── figuras/                       # Figuras geradas
-    ├── documentos/                    # Documentos auxiliares
-    ├── dados/                         # Datasets
-    ├── douglas/                       # Arquivos de alunos
-    ├── scripts/                       # Scripts auxiliares
-    ├── utils/                         # Utilitários
-    ├── configuracao/                  # Configs de ambiente
-    └── node_modules/                  # Dependências npm (histórico)
-```
+### Opção 1 — Google Colab (sem instalação)
+
+A forma mais rápida. Nenhuma configuração necessária:
+
+1. Clique no badge do Colab acima
+2. No menu, vá em **Ambiente de execução → Executar tudo** (ou `Ctrl+F9`)
+3. Aguarde ~2 minutos para o ambiente carregar
+4. Role até a última célula e clique em **🤖 Abrir o PesquisAI**
+
+
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Skills disponíveis
 
-### 1. Usar o PesquisAI localmente
+O PesquisAI opera por módulos especializados (*skills*). Cada skill conecta o agente a uma fonte de dados ou capacidade específica:
+
+### `skill-ibge` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Consulta automatizada à API do IBGE. Suporta dados do Censo, PNAD, PIB municipal, índices de preços e indicadores demográficos.
+
+### `skill-datasus` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Integração com o OpenDataSUS para coleta e análise de dados de saúde pública: mortalidade, internações, cobertura vacinal e outros.
+
+### `skill-UFV-ABNT` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Formatação e normalização de trabalhos acadêmicos conforme as normas da Universidade Federal de Viçosa (UFV) e da ABNT.
+
+### `skill-analise-qualitativa` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Possibilita uma análise qualititativa e de conteúdo completa, substituindo sofwares especializados como NVivo e Iramuteq executando metódos clássicos e avançados (por exemplo, análise fatorial, análise de similitude, codificação qualitativa, método de Reinert, ...).
+
+### `scientific-skills` · [@K-Dense-AI](https://github.com/K-Dense-AI)
+Ferramentas focadas em pesquisa acadêmica: mineração de textos científicos, revisão bibliográfica e suporte metodológico.
+
+### `skill-dados-brasil` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Conjunto amplo de indicadores e datasets oficiais brasileiros, complementando as bases do IBGE e DataSUS com outras fontes nacionais.
+
+### `skill-agrobr` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+Dados do agronegócio brasileiro: produção agrícola, pecuária, comércio internacional do setor e cadastro ambiental rural (CAR).
+
+### `skill-obsidian-memory` · [@gustavobraga-byte](https://github.com/gustavobraga-byte)
+🧠 **Segundo cérebro do agente** — transforma um vault do Obsidian (no Google Drive do usuário) em memória persistente entre sessões. Inclui 10 templates (daily, research, literature, session, methodology, data-source, hypothesis, reference, project-moc, inbox), busca BM25 offline, backlinks, wikilinks e tags padronizadas `pesquisai/*`. Resolve a limitação "sem memória entre sessões" declarada no `AGENTS.md`.
+
+---
+
+## 🗺️ Roadmap
+
+| Fase | Período | Foco |
+|---|---|---|
+| **1 — Base sólida** | Meses 1–3 | CLI, testes, CI/CD, instalação local |
+| **2 — Expansão de dados** | Meses 4–7 | Inserir novas habilidades: IPEA, INEP, Sucupira/CAPES, plugins,... |
+| **3 — Interface** | Meses 8–11 | Aprimorar interface web, editor de artigos, possibilidade de copilot |
+| **4 — Ecossistema** | Meses 12–18 | API pública, versão SaaS, integração institucional |
+
+---
+
+## 🤝 Como contribuir
+
+Contribuições são bem-vindas — especialmente novas skills para fontes de dados públicos brasileiros.
 
 ```bash
-# Clone o repositório principal
-git clone https://github.com/gustavobraga-byte/PesquisAI.git
-cd PesquisAI
+# 1. Faça um fork e clone o seu fork
+git clone https://github.com/SEU_USUARIO/PesquisAI.git
 
-# Use o wrapper responsivo (v0.4.1)
-python -m pesquisai.main
+# 2. Crie uma branch para sua contribuição
+git checkout -b feature/skill-exemple
+# 3. Desenvolva, teste e abra um Pull Request
 ```
 
-### 2. Aplicar o patch v0.4.1 em um PesquisAI existente
+Consulte o arquivo [`AGENTS.md`](AGENTS.md) para entender a arquitetura das skills e os padrões de desenvolvimento esperados.
 
-```bash
-# Copie o patch para o PesquisAI
-cp pesquisai/launch_app_responsive_v041.py \
-   /caminho/pesquisai-existente/pesquisai/
+**Ideias de contribuição:**
+- Skills para novas fontes (IPEA, INEP, ANEEL, ANS, IBICT...)
+- Melhorias na skill científica (suporte a mais bases como Scielo, BDTD)
+- Traduções da documentação
+- Casos de uso e exemplos de pesquisa
 
-# Edite o launch_app.py existente
-# Substitua a definição de create_wrapper_html por:
-#   from .launch_app_responsive_v041 import create_wrapper_html
+---
+
+## ⚙️ Arquitetura
+
+O PesquisAI usa o **ttyd** para renderizar um terminal Linux interativo via navegador dentro do proxy do Google Colab, com o ecossistema OpenCode injetado como ambiente isolado:
+
+```
+Google Colab
+└── ttyd (terminal web na porta 8000)
+    └── opencode (runtime do agente)
+        ├── skill-ibge
+        ├── skill-datasus
+        ├── skill-dados-brasil
+        ├── skill-agrobr
+        ├── ufv-abnt
+        ├── skill-analise-qualitativa
+        ├── scientific-skills
+        ├── skill-obsidian-memory  ← 🧠 memória persistente (v0.5.0+)
+        └── pesquisai (instruções do agente)
+            └── pesquisai.obsidian (módulo Python no Drive)
 ```
 
-### 3. Gerar uma release standalone
+As dependências são gerenciadas pelo [uv (Astral)](https://github.com/astral-sh/uv) para instalação ultrarrápida e ambientes reproduzíveis.
 
-```bash
-cd releases/v0.4.0
-zip -r ../pesquisai-v0.4.1.zip .
+---
+
+## Declaração de Limitações
+
+O PesquisAI:
+- **Não substitui** a revisão por pares nem o julgamento de um pesquisador humano.
+- **Não acessa** bases de dados pagas sem integração configurada.
+- **Não realiza** coleta primária de dados (entrevistas, experimentos, surveys).
+- **Não garante** atualização em tempo real; a disponibilidade dos dados depende das APIs externas.
+- 🚨 **ATENÇÃO:** Sempre revise e confirme a precisão de todas as informações geradas por esta IA antes de utilizá-las em decisões ou projetos críticos.
+
+---
+---
+
+## Citação
+
+**ABNT NBR 6023:2018:**
+
+```
+BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para pesquisa
+científica. Versão 0.2.1. Viçosa: Universidade Federal de Viçosa, 2026.
+Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
+Acesso em: DD mês. AAAA.
+
+Projeto registrado no SisPPG/UFV sob nº 10356285004.
+Verificar autenticidade em: http://sisppg.ufv.br
+```
+
+**BibTeX:**
+
+```bibtex
+@software{braga2026pesquisai,
+  author       = {Gustavo Bastos Braga},
+  title        = {{PesquisAI}: Agente de Intelig{\^e}ncia Artificial
+                  para Pesquisa Cient{\'\i}fica},
+  year         = {2026},
+  version      = {0.2.1},
+  institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
+  url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
+}
 ```
 
 ---
 
-## 🐛 Correções v0.4.1 (2026-06-23)
+## Declaração de Uso de IA
 
-Bugs reportados pelo usuário no chat `session-ses_10b7.md`:
-
-| # | Bug | Solução | Detalhes |
-|---|-----|---------|----------|
-| 1 | Site não responsivo | 6 media queries + hamburger | `docs/PATCH_v0.4.1.md` §1 |
-| 2 | Tema não recarrega terminal | `toggleTheme()` recarrega iframe do ttyd | `docs/PATCH_v0.4.1.md` §2 |
-| 3 | Idioma sem opção na UI | Dropdown 4 idiomas + cookie | `docs/PATCH_v0.4.1.md` §3 |
-
-**Tema padrão:** 🌙 **Escuro** (com anti-flash CSS para evitar flash branco no load).
+O uso do PesquisAI em trabalhos acadêmicos **deve ser declarado** conforme diretrizes do COPE, CAPES e principais periódicos. Consulte o arquivo [`declaracao_uso_ia.md`](declaracao_uso_ia.md) para modelos prontos (ABNT, ICMJE, Nature, Science, Elsevier, Springer).
 
 ---
 
-## 🧪 Testes
+## Disclaimer
 
-```bash
-cd releases/v0.4.0
-python3 -m pytest grant_finder/tests/ i18n/tests/
+O PesquisAI é um **software experimental fornecido "como está"**, sem garantias. LLMs podem **alucinar** — é responsabilidade exclusiva do usuário validar todos os dados, análises e referências gerados. Consulte o [`disclaimer_pesquisai.md`](disclaimer_pesquisai.md) para os termos completos.
 
-# Resultado: 79 passed (100% verdes) · 83% cobertura
-```
+
+---
+## 📬 Contato
+
+Desenvolvido por **Gustavo Bastos Braga** na Universidade Federal de Viçosa (UFV).
+
+- ✉️ gustavo.braga@ufv.br
+- 🐙 [@gustavobraga-byte](https://github.com/gustavobraga-byte)
 
 ---
 
-## 📊 Estatísticas
-
-| Métrica | Valor |
-|---------|-------|
-| Versão | 0.4.1 |
-| Idiomas | 4 (pt_BR, en_US, es_ES, fr_FR) |
-| Agências de fomento | 13 (BR + internacional) |
-| Testes | 79 (100% verdes) |
-| Cobertura | 83% |
-| Media queries | 6 (5 breakpoints + landscape) |
-| Strings traduzidas inline | 40+ |
-
----
-
-## 🔗 Links
-
-- **Repositório:** https://github.com/gustavobraga-byte/PesquisAI
-- **Documentação completa:** `docs/`
-- **Release notes:** `docs/CHANGELOG.md`
-- **OpenCode:** https://opencode.ai
-
----
-
-## ✍️ Autoria
-
-**Gustavo Bastos Braga** — Universidade Federal de Viçosa (UFV)
-**Email:** gustavo.braga@ufv.br
-**SisPPG/UFV:** 10356285004
-**Licença:** MIT
-
----
-
-**Última atualização:** 2026-06-23 (v0.4.1)
+Feito com 💙 para impulsionar a ciência brasileira.

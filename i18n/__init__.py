@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from .translator import Translator, SUPPORTED_LANGUAGES
-from .detector import detect_language, detect_from_accept_language, detect_from_text
+from .detector import detect_language, detect_from_accept_language
 
 
 _DEFAULT_LANG: str = "pt_BR"
@@ -96,20 +96,6 @@ def detect() -> str:
     return detect_language(_DEFAULT_LANG)
 
 
-def detect_from_user_message(text: str) -> str:
-    """Detecta o idioma de uma mensagem do usuário (v0.4.2.4).
-
-    Usado pelo ttyd para saudar no idioma correto na primeira mensagem.
-
-    Args:
-        text: Conteúdo da mensagem do usuário.
-
-    Returns:
-        Código de idioma (pt_BR, en_US, es_ES, fr_FR).
-    """
-    return detect_from_text(text, _DEFAULT_LANG)
-
-
 def available_languages() -> list[dict[str, str]]:
     """Retorna lista de idiomas disponíveis com metadados."""
     return [
@@ -141,7 +127,6 @@ def _normalize_lang(lang: str) -> str:
 
 __all__ = [
     "t", "t_for", "set_language", "get_language", "detect",
-    "detect_from_user_message",
     "available_languages", "SUPPORTED_LANGUAGES", "TRANSLATIONS_DIR",
     "Translator",
 ]

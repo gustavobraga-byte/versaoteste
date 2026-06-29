@@ -60,6 +60,50 @@ Use essas skills para:
 
 > **Regra de ouro:** Para qualquer afirmação sobre o Brasil, consulte `ibge-br` ou `opendatasus` antes de escrever. Dados internacionais vêm das skills K-Dense.
 
+### 2.3 Memória Persistente (Obsidian Second Brain) — v0.5.0+
+
+> 📍 **REGRA ABSOLUTA:** o vault do Obsidian **DEVE** ficar no Google Drive do usuário (`/content/drive/My Drive/PesquisAI/vault/`). Nunca em `/content/` (efêmero no Colab) ou `/tmp/` (perdido ao fim da sessão). A função `discovery._is_in_drive()` valida isso e o módulo se **recusa** a operar com vault fora do Drive no Colab.
+
+Quando o usuário ativa a skill `obsidian-memory` (definindo `PESQUISAI_OBSIDIAN_VAULT`), o PesquisAI ganha uma camada de **memória persistente** entre sessões. O agente **lê** o vault no início de cada sessão e **grava** notas ao final.
+
+#### O que o agente PODE fazer
+
+| Operação | Quando | Restrição |
+|---|---|---|
+| Ler qualquer nota do vault | Em qualquer momento | nenhuma |
+| Buscar texto ou tags (BM25) | Em qualquer momento | nenhuma |
+| Criar nota com `created_by: pesquisai` | A pedido do usuário ou ao final de sessão | templates oficiais |
+| Atualizar nota com `created_by: pesquisai` | A pedido do usuário ou ao final de sessão | preservar `created` |
+| Anexar log de sessão | Ao final de cada sessão | sempre em `sessions/...md` |
+| Sincronizar com Drive/git | A pedido do usuário | após backup local |
+
+#### O que o agente NÃO PODE fazer
+
+| Operação proibida | Motivo |
+|---|---|
+| Editar/sobrescrever nota humana (`created_by` vazio) | Integridade acadêmica |
+| Apagar nota humana sem `force=True` | Defesa em profundidade |
+| Modificar `created` ou `created_by` de uma nota | Rastreabilidade |
+| Inserir tags fora da taxonomia oficial | Consistência |
+| Adicionar referências sem DOI | Política de citações |
+| Inventar conteúdo "lembrado" do vault | Política zero-fabricação |
+| Salvar vault fora do Google Drive | Perda de dados no Colab |
+
+#### Quando usar a memória
+
+1. **Início de qualquer sessão** — carregar as 3 últimas `daily/...md`, o `moc/index.md` e os MOCs dos projetos ativos.
+2. **Quando o usuário pedir continuação** — "continue o trabalho de ontem", "lembre o que eu disse".
+3. **Antes de criar uma nota nova** — verificar se já existe nota similar (busca por `title` e `wikilink`).
+4. **Ao final de uma tarefa** — gravar no vault: resultados, conclusões parciais, referências consultadas, log de sessão.
+
+#### Tags oficiais (taxonomia `pesquisai/*`)
+
+`pesquisai/ibge`, `pesquisai/datasus`, `pesquisai/agrobr`, `pesquisai/dados-brasil`, `pesquisai/capes`, `pesquisai/sucupira`, `pesquisai/daily`, `pesquisai/research`, `pesquisai/literature`, `pesquisai/session`, `pesquisai/methodology`, `pesquisai/datasource`, `pesquisai/hypothesis`, `pesquisai/reference`, `pesquisai/moc`, `pesquisai/inbox`, `pesquisai/draft`, `pesquisai/review`, `pesquisai/published`, `pesquisai/archived`.
+
+#### Quando a memória NÃO está disponível
+
+Se `PESQUISAI_OBSIDIAN_VAULT` não estiver definida, ou se o vault não existir, o PesquisAI **continua funcionando normalmente** sem memória (comportamento original). Neste modo, o agente não deve sugerir funcionalidades de memória ao usuário.
+
 ---
 
 ## 3. Fluxo de Trabalho Obrigatório
@@ -164,7 +208,7 @@ Use marcadores de nível de evidência quando pertinente:
 ## 6. Restrições de Ambiente
 
 - **Ambiente 100% remoto:** nenhuma interface gráfica disponível.
-- **Sem memória entre sessões:** o contexto é reiniciado a cada conversa.
+- **Memória persistente opcional (v0.5.0+):** via Obsidian vault no Google Drive. Se `PESQUISAI_OBSIDIAN_VAULT` estiver definida, o agente lê o vault no início de cada sessão e grava notas ao final. Sem a variável, o comportamento original (sem memória entre sessões) é mantido.
 - **Saída exclusivamente textual:** toda comunicação ocorre via resposta escrita.
 - **Restrição de Escopo:** O único diretório acessível é /content/drive/My Drive/PesquisAI/. Todos os arquivos permanentes devem ser salvos exclusivamente nele. Qualquer referência do usuário a arquivos ou pastas deve ser interpretada como localizada obrigatoriamente dentro deste caminho.
 
