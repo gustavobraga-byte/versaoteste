@@ -2073,7 +2073,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         dailyHtml = '<div style="font-size:11px;color:var(--ink-muted);margin:6px 0 4px;text-transform:uppercase;letter-spacing:.05em;">' +
                     (dict["memory.recent_daily"] || "Daily notes") + '</div>' +
                     d.recent_daily.map(n =>
-                      '<div class="memory-note" style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);cursor:pointer;" onclick="openObsidianNote(\'' + n.path.replace(/'/g, "\\'") + '\')">' +
+                      '<div class="memory-note" style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);cursor:pointer;" onclick="openObsidianNote(&apos;' + n.path.replace(/'/g, "&apos;") + '&apos;)">' +
                       '<div style="font-size:12px;color:var(--ink);font-weight:500;">📅 ' + escapeHtml(n.title) + '</div>' +
                       '<div style="font-size:10px;color:var(--ink-muted);font-family:DM Mono,monospace;margin-top:2px;">' + escapeHtml(n.path) + '</div>' +
                       '</div>'
@@ -2089,7 +2089,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
                       const tagsHtml = (n.tags && n.tags.length)
                         ? n.tags.map(t => '<span style="display:inline-block;font-size:9.5px;padding:1px 6px;background:var(--accent-dim);color:var(--accent);border-radius:3px;margin-right:3px;">#' + escapeHtml(t.replace(/^#/, "")) + '</span>').join("")
                         : "";
-                      return '<div class="memory-note" style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);cursor:pointer;" onclick="openObsidianNote(\'' + n.path.replace(/'/g, "\\'") + '\')">' +
+                      return '<div class="memory-note" style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);cursor:pointer;" onclick="openObsidianNote(&apos;' + n.path.replace(/'/g, "&apos;") + '&apos;)">' +
                              '<div style="font-size:12px;color:var(--ink);font-weight:500;">' + escapeHtml(n.title) + '</div>' +
                              '<div style="font-size:10px;color:var(--ink-muted);font-family:DM Mono,monospace;margin-top:2px;">' + escapeHtml(n.path) + '</div>' +
                              (tagsHtml ? '<div style="margin-top:4px;">' + tagsHtml + '</div>' : "") +
@@ -2097,7 +2097,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
                     }).join("");
       } else if (d.status === "ready") {
         notesHtml = '<div class="modal-empty" style="margin-top:14px;">' +
-                    (dict["memory.no_notes"] || "Nenhuma nota ainda. O agente salvará aqui automaticamente.") + '</div>';
+                    (dict["memory.no_notes"] || "Nenhuma nota ainda.") + '</div>';
       }
 
       // ── Templates ────────────────────────────────────────

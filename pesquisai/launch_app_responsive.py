@@ -685,6 +685,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <button class="tb-icon" onclick="openShortcuts()" title="Atalhos de Teclado" data-i18n-title="shortcuts.title">
         <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
       </button>
+      <button class="tb-icon" onclick="openAgents()" title="Diretrizes do Agente" data-i18n-title="agents.title">
+        <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/></svg>
+      </button>
       <button class="tb-icon" onclick="openMemory()" id="memory-btn" title="Memória Obsidian" data-i18n-title="memory.tooltip">
         <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 7l1 1v3a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-3l1-1c1.5-2 3-4 3-7a7 7 0 0 0-7-7z"/><path d="M9 22h6"/><path d="M12 2v20"/></svg>
       </button>
@@ -742,6 +745,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
+    <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
     <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória Obsidian</span></button>
     <button class="modal-close" onclick="toggleTheme(); toggleMobileMenu();">◑ <span data-i18n="theme.toggle">Alternar Tema</span></button>
     <button class="modal-close" onclick="toggleLangMenu();">🌐 <span data-i18n="languages.label">Idioma</span></button>
@@ -856,6 +860,28 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         <div class="shortcut-row"><span data-i18n="shortcuts.history_next">Histórico seguinte</span><span class="shortcut-key">↓</span></div>
       </div>
       <button onclick="closeShortcuts()" class="modal-close" data-i18n="ui.close">Fechar</button>
+    </div>
+  </div>
+
+  <!-- Modal de Diretrizes do Agente (v0.4.2 + markdown render v0.4.2.1) — HOTFIX v0.5.1.2 -->
+  <div id="agents-overlay" onclick="if(event.target===this)closeAgents()" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div id="agents-modal" class="modal-shell" style="border-radius:10px;padding:0;width:680px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">📋</span>
+        <div style="flex:1;min-width:0;">
+          <div class="modal-title" style="margin-bottom:2px;" data-i18n="agents.title">Diretrizes do Agente</div>
+          <div style="font-size:10.5px;color:var(--ink-muted);" data-i18n="agents.subtitle">Regras e princípios do PesquisAI (AGENTS.md)</div>
+        </div>
+        <span id="agents-lang-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:'DM Mono',monospace;">PT-BR</span>
+        <button onclick="closeAgents()" class="modal-close" style="width:auto;padding:4px 10px;font-size:11px;" aria-label="Fechar">✕</button>
+      </div>
+      <div id="agents-content" class="markdown-body" style="flex:1;overflow-y:auto;padding:22px 26px;font-size:12.5px;line-height:1.65;color:var(--ink);background:transparent;" data-i18n="agents.loading">Carregando diretrizes…</div>
+      <div style="padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02);">
+        <button onclick="copyAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;" data-i18n="agents.copy">Copiar</button>
+        <button onclick="reloadAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="ui.loading">Recarregar</span></button>
+        <div style="flex:1;"></div>
+        <a id="agents-source-link" href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS.pt.md" target="_blank" class="footer-link" style="font-size:10.5px;" data-i18n="agents.open_source">Ver fonte</a>
+      </div>
     </div>
   </div>
 
@@ -1228,6 +1254,125 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       o.style.opacity = "0"; o.style.pointerEvents = "none";
     }
 
+    // ── Diretrizes do Agente (HOTFIX v0.5.1.2) ──────────────────
+    // Carrega o AGENTS.md no idioma atual do backend.
+    // Endpoint: GET /api/agents?lang=pt_BR
+    let _agentsCache = null;
+    let _agentsCacheLang = null;
+
+    async function openAgents() {
+      const overlay = document.getElementById("agents-overlay");
+      if (overlay) {
+        overlay.style.opacity = "1";
+        overlay.style.pointerEvents = "all";
+      }
+      await loadAgents();
+    }
+
+    function closeAgents() {
+      const overlay = document.getElementById("agents-overlay");
+      if (overlay) {
+        overlay.style.opacity = "0";
+        overlay.style.pointerEvents = "none";
+      }
+    }
+
+    async function loadAgents(forceReload = false) {
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      const contentEl = document.getElementById("agents-content");
+      const badgeEl = document.getElementById("agents-lang-badge");
+      const sourceEl = document.getElementById("agents-source-link");
+      if (!contentEl) return;
+
+      const langShort = (_currentLang || "pt_BR").replace("_", "-");
+      if (badgeEl) badgeEl.textContent = langShort;
+      if (sourceEl) {
+        const code = (_currentLang || "pt_BR").split("_")[0];
+        sourceEl.href = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS." + code + ".md";
+      }
+
+      if (!forceReload && _agentsCacheLang === _currentLang && _agentsCache) {
+        renderAgentsContent(contentEl, _agentsCache);
+        return;
+      }
+
+      contentEl.textContent = dict["agents.loading"] || "Carregando diretrizes…";
+
+      try {
+        const r = await fetch(BASE + "/api/agents?lang=" + encodeURIComponent(_currentLang));
+        const d = await r.json();
+        if (d.ok && d.content) {
+          _agentsCache = d.content;
+          _agentsCacheLang = _currentLang;
+          renderAgentsContent(contentEl, d.content);
+        } else {
+          contentEl.textContent = dict["agents.error"] || "Erro ao carregar diretrizes.";
+        }
+      } catch (e) {
+        contentEl.textContent = (dict["agents.error"] || "Erro") + " — " + e.message;
+      }
+    }
+
+    // P4 fix: renderiza o markdown do AGENTS.md usando marked.js + github-markdown-css
+    function renderAgentsContent(el, mdText) {
+      try {
+        if (typeof marked !== "undefined") {
+          marked.setOptions({ breaks: true, gfm: true, headerIds: true });
+          const _b = String.fromCharCode(92);
+          const _re = new RegExp(
+            "^---" + _b + "s*" + _b + "n[" + _b + "s" + _b + "S]*?" +
+            _b + "n---" + _b + "s*" + _b + "n"
+          );
+          const cleaned = mdText.replace(_re, "");
+          el.innerHTML = marked.parse(cleaned);
+        } else {
+          el.textContent = mdText;
+        }
+      } catch (e) {
+        el.textContent = mdText;
+        console.error("Erro ao renderizar markdown:", e);
+      }
+    }
+
+    function reloadAgents() {
+      _agentsCache = null;
+      _agentsCacheLang = null;
+      loadAgents(true);
+    }
+
+    async function copyAgents() {
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      const text = _agentsCache || document.getElementById("agents-content").textContent || "";
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        toast("✅ " + (dict["agents.copy_ok"] || "Diretrizes copiadas!"), "ok");
+      } catch (e) {
+        toast("❌ " + e.message, "err");
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => {
+        if (c === "&") return "&amp;";
+        if (c === "<") return "&lt;";
+        if (c === ">") return "&gt;";
+        if (c === '"') return "&quot;";
+        if (c === "'") return "&#39;";
+        return c;
+      });
+    }
+
     // ── Memória Obsidian (v0.5.1.2) ───────────────────────────
     let _memoryCache = null;
     let _memoryCacheAt = 0;
@@ -1339,7 +1484,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         dailyHtml = '<div style="font-size:11px;color:var(--ink-muted);margin:6px 0 4px;text-transform:uppercase;letter-spacing:.05em;">' +
                     (dict["memory.recent_daily"] || "Daily notes") + '</div>' +
                     d.recent_daily.map(n =>
-                      '<div style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);">' +
+                      '<div class="memory-note" style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);cursor:pointer;" onclick="openObsidianNote(&apos;' + n.path.replace(/'/g, "&apos;") + '&apos;)">' +
                       '<div style="font-size:12px;color:var(--ink);font-weight:500;">📅 ' + escapeHtml(n.title) + '</div>' +
                       '<div style="font-size:10px;color:var(--ink-muted);font-family:DM Mono,monospace;margin-top:2px;">' + escapeHtml(n.path) + '</div>' +
                       '</div>'
@@ -1353,7 +1498,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
                       const tagsHtml = (n.tags && n.tags.length)
                         ? n.tags.map(t => '<span style="display:inline-block;font-size:9.5px;padding:1px 6px;background:var(--accent-dim);color:var(--accent);border-radius:3px;margin-right:3px;">#' + escapeHtml(t.replace(/^#/, "")) + '</span>').join("")
                         : "";
-                      return '<div style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);">' +
+                      return '<div class="memory-note" style="padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:5px;background:rgba(255,255,255,.02);cursor:pointer;" onclick="openObsidianNote(&apos;' + n.path.replace(/'/g, "&apos;") + '&apos;)">' +
                              '<div style="font-size:12px;color:var(--ink);font-weight:500;">' + escapeHtml(n.title) + '</div>' +
                              '<div style="font-size:10px;color:var(--ink-muted);font-family:DM Mono,monospace;margin-top:2px;">' + escapeHtml(n.path) + '</div>' +
                              (tagsHtml ? '<div style="margin-top:4px;">' + tagsHtml + '</div>' : "") +
@@ -1376,6 +1521,16 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         ? '<div style="font-size:10px;color:var(--ink-muted);margin-top:14px;font-family:DM Mono,monospace;text-align:right;">PesquisAI v' + escapeHtml(d.version) + '</div>'
         : "";
       content.innerHTML = msgHtml + pathHtml + statsHtml + dailyHtml + notesHtml + tplHtml + versionHtml;
+    }
+
+    // Clique em uma nota → abre a URL do Drive (heurística)
+    function openObsidianNote(path) {
+      const a = document.getElementById("memory-open-drive");
+      if (a && a.href && a.style.display !== "none") {
+        window.open(a.href, "_blank");
+      } else {
+        toast("⚠️ Memória não está pronta. Verifique o vault.", "err");
+      }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1518,7 +1673,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         openShortcuts();
       }
       if (e.key === "Escape") {
-        closeHealth(); closeSessions(); closeShortcuts(); closeMemory();  // v0.5.1.2
+        closeHealth(); closeSessions(); closeShortcuts(); closeAgents(); closeMemory();  // v0.5.1.2
         closeProvider(); closeModal(); closeLangMenu();
         const mm = document.getElementById("mobile-menu");
         if (mm && mm.classList.contains("open")) toggleMobileMenu();
@@ -1604,6 +1759,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "memory.templates": "Templates",
             "memory.open_vault": "Abrir Drive",
             "memory.refresh": "Atualizar",
+            # v0.5.1.2 hotfix — Diretrizes do Agente
+            "agents.title": "Diretrizes do Agente",
+            "agents.subtitle": "Regras e princípios do PesquisAI (AGENTS.md)",
+            "agents.loading": "Carregando diretrizes…",
+            "agents.error": "Erro ao carregar diretrizes do agente.",
+            "agents.copy_ok": "Diretrizes copiadas!",
+            "agents.copy": "Copiar",
+            "agents.open_source": "Ver fonte",
         },
         "en_US": {
             "ui.backup": "Save backup", "ui.restore": "Restore",
@@ -1648,6 +1811,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "memory.templates": "Templates",
             "memory.open_vault": "Open Drive",
             "memory.refresh": "Refresh",
+            # v0.5.1.2 hotfix — Agent Guidelines
+            "agents.title": "Agent Guidelines",
+            "agents.subtitle": "PesquisAI rules and principles (AGENTS.md)",
+            "agents.loading": "Loading guidelines…",
+            "agents.error": "Error loading agent guidelines.",
+            "agents.copy_ok": "Guidelines copied!",
+            "agents.copy": "Copy",
+            "agents.open_source": "View source",
         },
         "es_ES": {
             "ui.backup": "Guardar copia", "ui.restore": "Restaurar",
@@ -1692,6 +1863,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "memory.templates": "Plantillas",
             "memory.open_vault": "Abrir Drive",
             "memory.refresh": "Actualizar",
+            # v0.5.1.2 hotfix — Directrices del Agente
+            "agents.title": "Directrices del Agente",
+            "agents.subtitle": "Reglas y principios del PesquisAI (AGENTS.md)",
+            "agents.loading": "Cargando directrices…",
+            "agents.error": "Error al cargar las directrices del agente.",
+            "agents.copy_ok": "¡Directrices copiadas!",
+            "agents.copy": "Copiar",
+            "agents.open_source": "Ver fuente",
         },
         "fr_FR": {
             "ui.backup": "Sauvegarder", "ui.restore": "Restaurer",
@@ -1736,6 +1915,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "memory.templates": "Modèles",
             "memory.open_vault": "Ouvrir Drive",
             "memory.refresh": "Actualiser",
+            # v0.5.1.2 hotfix — Directives de l'Agent
+            "agents.title": "Directives de l'Agent",
+            "agents.subtitle": "Règles et principes du PesquisAI (AGENTS.md)",
+            "agents.loading": "Chargement des directives…",
+            "agents.error": "Erreur lors du chargement des directives de l'agent.",
+            "agents.copy_ok": "Directives copiées !",
+            "agents.copy": "Copier",
+            "agents.open_source": "Voir la source",
         },
     }
 
