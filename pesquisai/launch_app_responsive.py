@@ -1214,16 +1214,29 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       const key = document.getElementById("prov-key-input").value.trim();
       if (!key) { toast("⚠️ Insira a API key.", "err"); return; }
       if (!_selProv) { toast("⚠️ Selecione um provedor.", "err"); return; }
-      closeProvider();
+      // 🐛 HOTFIX v0.5.1.3 — guardar refs em variáveis locais ANTES de fechar overlay
+      // O bug original: closeProvider() setava _selProv = null, e a linha seguinte
+      // (_selProv.id no JSON.stringify) crashava com "Cannot read properties of null".
+      const provId = _selProv.id;
+      const provEnv = _selProv.env;
+      const provName = _selProv.name;
       toast("💾 Salvando…", "info");
       try {
-        await fetch(BASE + "/api/apikey", {
+        const r = await fetch(BASE + "/api/apikey", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: _selProv.id, env: _selProv.env, apikey: key })
+          body: JSON.stringify({ provider: provId, env: provEnv, apikey: key })
         });
-        toast("✅ Salvo!", "ok");
-      } catch(e) { toast("❌ " + e.message, "err"); }
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && (d.ok !== false)) {
+          toast(`✅ ${provName} conectado!`, "ok");
+          closeProvider();
+        } else {
+          toast("❌ " + (d.error || `Erro HTTP ${r.status}`), "err");
+        }
+      } catch(e) {
+        toast("❌ " + e.message, "err");
+      }
     }
 
     async function openHealth() {
