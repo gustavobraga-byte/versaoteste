@@ -25,6 +25,7 @@ Compatível com o PesquisAI principal (v0.2.1+).
 Histórico de versões:
 ════════════════════════════════════════════════════════════════════════
   v0.5.1.4 — 🧠 Editor de Memória Obsidian no botão 🧠
+    v0.5.1.5 — 🔧 Botões não funcionavam (SyntaxError JS em string multilinha)
             • NOVO split view no overlay de Memória: lista de notas
               à esquerda + editor markdown com tabs Edit/Preview/Split
               à direita
@@ -119,7 +120,7 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.5.1.4"
+__version__: str = "0.5.1.5"
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-07-01"

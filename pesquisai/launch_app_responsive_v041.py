@@ -1582,7 +1582,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     function closeMemory(force) {
       // Se houver mudanças não salvas, pedir confirmação (a menos que force=true)
       if (!force && _memoryDirty && _memoryCurrent) {
-        if (!confirm("Há mudanças não salvas em '" + _memoryCurrent.path + "'.\nFechar mesmo assim?")) {
+        if (!confirm("Há mudanças não salvas em '" + _memoryCurrent.path + "'.\\nFechar mesmo assim?")) {
           return;
         }
       }
@@ -1674,9 +1674,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
           const tagHtml = (n.tags || []).slice(0, 3).map(t =>
             '<span style="display:inline-block;font-size:9px;padding:0 4px;background:var(--accent-dim);color:var(--accent);border-radius:2px;margin-right:2px;">#' + escapeHtml(String(t).replace(/^#/, "")) + '</span>'
           ).join("");
-          html += '<div class="mem-note-item' + active + human + '" onclick="loadMemoryNote(\'' +
-                  n.path.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + '\')">' +
-                  '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>' +
+          html += `<div class="mem-note-item${active}${human}" onclick="loadMemoryNote('${n.path.replace(/\\\\/g, "\\\\\\\\").replace(/'/g, "\\'")}')">` +
+               '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>' +
                   '<div class="mem-note-path">' + escapeHtml(n.path) + '</div>' +
                   (tagHtml ? '<div style="margin-top:3px;">' + tagHtml + '</div>' : '') +
                   '</div>';
@@ -1698,7 +1697,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     // ── Carregar nota no editor ───────────────────────────────────
     async function loadMemoryNote(path) {
       if (_memoryDirty && _memoryCurrent && _memoryCurrent.path !== path) {
-        if (!confirm("Há mudanças não salvas em '" + _memoryCurrent.path + "'.\nDescartar e abrir outra nota?")) {
+        if (!confirm("Há mudanças não salvas em '" + _memoryCurrent.path + "'.\\nDescartar e abrir outra nota?")) {
           return;
         }
       }
@@ -1917,7 +1916,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     // ── Diálogo de nova nota ──────────────────────────────────────
     async function openCreateNoteDialog() {
       if (_memoryDirty && _memoryCurrent) {
-        if (!confirm("Há mudanças não salvas em '" + _memoryCurrent.path + "'.\nContinuar?")) return;
+        if (!confirm("Há mudanças não salvas em '" + _memoryCurrent.path + "'.\\nContinuar?")) return;
       }
       const dict = I18N[_currentLang] || I18N["pt_BR"];
       const overlay = document.getElementById("memory-new-overlay");
