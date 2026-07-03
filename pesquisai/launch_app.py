@@ -18,7 +18,7 @@ except ImportError:
     display = None
     HTML = None
 
-from .constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
+from .constants import TER bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" ; exec bash'MINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
 from .jokes import next_joke
 from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
@@ -538,7 +538,7 @@ def start_ttyd(lang: str | None = None):
     greeting = get_greeting(full_lang)
     # Escapar aspas para o bash -c "..."
     safe_prompt = greeting.replace('"', '\\"').replace("'", "\\'")
-    bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" ; exec bash'
+    bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" --yolo ; exec bash'
 
     # v0.4.2.5: construir args com --index (touch handlers)
     base_args = ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd]
