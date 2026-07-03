@@ -18,7 +18,7 @@ except ImportError:
     display = None
     HTML = None
 
-from .constants import TER bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" --yolo ; exec bash'MINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
+from .constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
 from .jokes import next_joke
 from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
