@@ -359,6 +359,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <!-- github-markdown-css: estilização markdown para o modal de Diretrizes -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.0/github-markdown-dark.min.css">
   <script>
     // ═══════════════════════════════════════════════════════════
     // 🛡️ ANTI-FLASH: aplica tema ANTES de qualquer renderização
@@ -875,7 +877,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         <span id="agents-lang-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:'DM Mono',monospace;">PT-BR</span>
         <button onclick="closeAgents()" class="modal-close" style="width:auto;padding:4px 10px;font-size:11px;" aria-label="Fechar">✕</button>
       </div>
-      <div id="agents-content" class="markdown-body" style="flex:1;overflow-y:auto;padding:22px 26px;font-size:12.5px;line-height:1.65;color:var(--ink);background:transparent;" data-i18n="agents.loading">Carregando diretrizes…</div>
+      <div id="agents-content" class="markdown-body" style="flex:1;overflow-y:auto;padding:22px 26px;font-size:12.5px;line-height:1.65;color:var(--ink);" data-i18n="agents.loading">Carregando diretrizes…</div>
       <div style="padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02);">
         <button onclick="copyAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;" data-i18n="agents.copy">Copiar</button>
         <button onclick="reloadAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="ui.loading">Recarregar</span></button>
@@ -1281,8 +1283,16 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         });
         const d = await r.json();
         if (d.ok) {
-          toast("✅ Importado!", "ok");
-          setTimeout(() => location.reload(), 800);
+          if (d.ttyd_restarted) {
+            toast("✅ Sessão " + (d.session_id || "") + " importada + ttyd reiniciado!", "ok");
+            // v0.5.1.6: aguardar 3.5s para o ttyd reiniciar antes de recarregar
+            // (o ttyd precisa reabrir o WebSocket + handshake do opencode)
+            setTimeout(() => location.reload(), 3500);
+          } else {
+            toast("⚠️ Importado, mas ttyd não reiniciou. Recarregue manualmente (Ctrl+Shift+R).", "warn");
+            // Fallback: tentar reload após 1.5s
+            setTimeout(() => location.reload(), 1500);
+          }
         } else {
           toast("❌ " + (d.error || "Erro"), "err");
         }
@@ -2143,6 +2153,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       fetch(BASE + "/api/apikey/apply", { method: "POST" }).catch(() => {});
     });
   </script>
+  <!-- marked.js: renderizador de markdown para o modal de Diretrizes do Agente e preview do editor -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 </body>
 </html>"""
 
