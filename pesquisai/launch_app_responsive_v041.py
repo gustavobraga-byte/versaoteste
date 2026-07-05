@@ -357,10 +357,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   <meta name="theme-color" content="#0d0f10">
   <title>PesquisAI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
   <!-- github-markdown-css: estilização markdown para o modal de Diretrizes -->
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.0/github-markdown-dark.min.css" as="style">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.0/github-markdown-dark.min.css">
+  <!-- marked.js: preload para acelerar renderização de markdown -->
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" as="script">
   <script>
     // ═══════════════════════════════════════════════════════════
     // 🛡️ ANTI-FLASH: aplica tema ANTES de qualquer renderização
@@ -1388,23 +1392,200 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       }
     }
 
+    // ── Cache compartilhado (5s) ──────────────────────────────────
+    let _healthCache = { data: null, ts: 0 };
+    let _sessionsCache = { data: null, ts: 0 };
+    const CACHE_TTL = 5000;
+
+    // ── Dashboard de Saude ───────────────────────────────────────
     async function openHealth() {
       const overlay = document.getElementById("health-overlay");
       overlay.style.opacity = "1"; overlay.style.pointerEvents = "all";
+      await loadHealth();
     }
     function closeHealth() {
       const o = document.getElementById("health-overlay");
       o.style.opacity = "0"; o.style.pointerEvents = "none";
     }
 
+    async function loadHealth(force) {
+      const listEl = document.getElementById("health-list");
+      if (!listEl) return;
+      const now = Date.now();
+      if (!force && _healthCache.data && (now - _healthCache.ts) < CACHE_TTL) {
+        renderHealth(listEl, _healthCache.data);
+        return;
+      }
+      listEl.innerHTML = '<div class="modal-empty" data-i18n="ui.loading">Carregando diagnóstico…</div>';
+      try {
+        const r = await fetch(BASE + "/api/health");
+        const d = await r.json();
+        if (d.ok && d.checks) {
+          _healthCache = { data: d, ts: Date.now() };
+          renderHealth(listEl, d);
+        } else {
+          listEl.innerHTML = '<div class="modal-empty">❌ Erro ao carregar diagnóstico.</div>';
+        }
+      } catch (e) {
+        listEl.innerHTML = '<div class="modal-empty">❌ ' + e.message + '</div>';
+      }
+    }
+
+    function renderHealth(listEl, d) {
+      var c = d.checks;
+      var h = '<div style="padding:6px 0;">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+      h += '<span style="font-size:11px;color:var(--ink-muted);">v' + (d.version || '?') + '</span>';
+      h += '<button onclick="loadHealth(true)" style="background:none;border:1px solid var(--line);border-radius:var(--radius);padding:3px 8px;font-size:10px;color:var(--accent);cursor:pointer;">↻ Atualizar</button>';
+      h += '</div>';
+      var checks = [
+        { k: "drive_mounted", l: "Google Drive montado" },
+        { k: "backup_dir_exists", l: "Diretório de backup" },
+        { k: "ttyd_alive", l: "Terminal ttyd ativo" },
+        { k: "opencode_found", l: "OpenCode encontrado" },
+        { k: "keys_loaded_count", l: "Chaves carregadas (" + (c.keys_loaded_count||0) + ")" },
+        { k: "ffmpeg_ok", l: "FFmpeg disponível" },
+        { k: "skills_count", l: "Skills instaladas (" + (c.skills_count||0) + ")" }
+      ];
+      for (var i = 0; i < checks.length; i++) {
+        var ok = c[checks[i].k];
+        var icon = ok ? '✅' : '❌';
+        var color = ok ? 'var(--accent)' : '#ff6b6b';
+        h += '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line);font-size:12px;">';
+        h += '<span style="color:' + color + ';">' + icon + '</span>';
+        h += '<span style="flex:1;">' + checks[i].l + '</span>';
+        if (checks[i].k === 'keys_loaded_count' && c.keys_loaded && c.keys_loaded.length) {
+          h += '<span style="font-size:10px;color:var(--ink-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + c.keys_loaded.join(', ') + '</span>';
+        }
+        h += '</div>';
+      }
+      // disco
+      var diskPct = c.disk_total_mb > 0 ? Math.round(c.disk_free_mb / c.disk_total_mb * 100) : 0;
+      var diskColor = diskPct < 10 ? '#ff6b6b' : diskPct < 25 ? '#ffd93d' : 'var(--accent)';
+      h += '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;font-size:12px;">';
+      h += '<span style="color:' + diskColor + ';">💾</span>';
+      h += '<span style="flex:1;">Disco livre: ' + (c.disk_free_mb||'?') + ' MB / ' + (c.disk_total_mb||'?') + ' MB (' + diskPct + '%)</span>';
+      h += '</div>';
+      h += '</div>';
+      listEl.innerHTML = h;
+    }
+
+    // ── Historico de Sessoes ─────────────────────────────────────
     let _allSessions = [];
+    let _filteredSessions = [];
+    let _sessionsPage = 0;
+    const SESSIONS_PAGE_SIZE = 20;
+
     async function openSessions() {
       const overlay = document.getElementById("sessions-overlay");
       overlay.style.opacity = "1"; overlay.style.pointerEvents = "all";
+      await loadSessions();
     }
     function closeSessions() {
       const o = document.getElementById("sessions-overlay");
       o.style.opacity = "0"; o.style.pointerEvents = "none";
+    }
+
+    async function loadSessions(force) {
+      const listEl = document.getElementById("session-list");
+      if (!listEl) return;
+      const now = Date.now();
+      if (!force && _sessionsCache.data && (now - _sessionsCache.ts) < CACHE_TTL) {
+        _allSessions = _sessionsCache.data;
+        _filteredSessions = _allSessions;
+        _sessionsPage = 0;
+        renderSessions(listEl);
+        return;
+      }
+      listEl.innerHTML = '<div class="modal-empty" data-i18n="ui.loading">Carregando sessões…</div>';
+      try {
+        const r = await fetch(BASE + "/api/sessions");
+        const d = await r.json();
+        if (d && d.sessions) {
+          _sessionsCache = { data: d.sessions, ts: Date.now() };
+          _allSessions = d.sessions;
+          _filteredSessions = d.sessions;
+          _sessionsPage = 0;
+          renderSessions(listEl);
+        } else {
+          listEl.innerHTML = '<div class="modal-empty" data-i18n="sessions.empty">Nenhuma sessão encontrada.</div>';
+        }
+      } catch (e) {
+        listEl.innerHTML = '<div class="modal-empty">❌ ' + e.message + '</div>';
+      }
+    }
+
+    function renderSessions(listEl) {
+      var start = 0;
+      var end = (_sessionsPage + 1) * SESSIONS_PAGE_SIZE;
+      var items = _filteredSessions.slice(start, end);
+      if (!items.length) {
+        listEl.innerHTML = '<div class="modal-empty" data-i18n="sessions.empty_filtered">Nenhuma sessão corresponde ao filtro.</div>';
+        return;
+      }
+      var h = '<div style="padding:4px 0;">';
+      for (var i = 0; i < items.length; i++) {
+        var s = items[i];
+        var id = s.id || '';
+        var title = s.title || s.name || id;
+        var date = s.date || s.created || '';
+        h += '<div class="session-item" data-session-id="' + id.replace(/"/g,'&quot;') + '" onclick="restoreSession(this.dataset.sessionId)" style="padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;font-size:12px;" onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">';
+        h += '<div style="font-weight:500;">' + escapeHtml(title) + '</div>';
+        if (date) h += '<div style="font-size:10px;color:var(--ink-muted);margin-top:2px;">' + escapeHtml(date) + '</div>';
+        h += '<div style="font-size:10px;color:var(--ink-muted);opacity:.6;">' + escapeHtml(id) + '</div>';
+        h += '</div>';
+      }
+      h += '</div>';
+      if (end < _filteredSessions.length) {
+        h += '<button onclick="loadMoreSessions()" style="width:100%;padding:8px;background:none;border:1px solid var(--line);border-radius:var(--radius);color:var(--accent);font-size:11px;cursor:pointer;margin-top:4px;">Ver mais (' + (_filteredSessions.length - end) + ' restantes)</button>';
+      }
+      listEl.innerHTML = h;
+    }
+
+    function loadMoreSessions() {
+      _sessionsPage++;
+      var listEl = document.getElementById("session-list");
+      if (listEl) renderSessions(listEl);
+    }
+
+    function filterSessions() {
+      var q = (document.getElementById("session-search").value || "").toLowerCase().trim();
+      if (!q) {
+        _filteredSessions = _allSessions;
+      } else {
+        _filteredSessions = _allSessions.filter(function(s) {
+          var str = (s.id || "") + " " + (s.title || "") + " " + (s.name || "") + " " + (s.date || "") + " " + (s.created || "");
+          return str.toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      _sessionsPage = 0;
+      var listEl = document.getElementById("session-list");
+      if (listEl) renderSessions(listEl);
+    }
+
+    async function restoreSession(sessionId) {
+      if (!sessionId) return;
+      if (!confirm("Restaurar sessao " + sessionId + " ?")) return;
+      try {
+        var listEl = document.getElementById("session-list");
+        if (listEl) listEl.innerHTML = '<div class="modal-empty">Restaurando sessão…</div>';
+        const r = await fetch(BASE + "/api/run_terminal", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({cmd: "opencode session restore " + sessionId})
+        });
+        const d = await r.json();
+        if (r.ok) {
+          toast("✅ Sessão " + sessionId + " restaurada!", "ok");
+          closeSessions();
+        } else {
+          toast("❌ Erro ao restaurar: " + (d.error || r.status), "err");
+          loadSessions(true);
+        }
+      } catch(e) {
+        toast("❌ " + e.message, "err");
+        loadSessions(true);
+      }
     }
 
     function openShortcuts() {
@@ -1551,6 +1732,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     let _memoryDirty = false;
     let _memorySearch = "";
     let _memoryTab = "preview";
+    // v0.5.1.9: navegação por pastas + calendário
+    let _memoryCurrentFolder = null;     // null = lista de pastas, "daily/" = calendário, etc
+    let _memoryCalendarDate = new Date(); // mês atual do calendário
+    let _memoryCalendarDailies = [];     // paths das daily notes existentes
 
     async function openMemory(force) {
       const overlay = document.getElementById("memory-overlay");
@@ -1560,6 +1745,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       }
       const dict = I18N[_currentLang] || I18N["pt_BR"];
       const list = document.getElementById("memory-list");
+      // v0.5.1.9: reseta para lista de pastas ao abrir
+      _memoryCurrentFolder = null;
+      _memoryCalendarDate = new Date();
       if (list) {
         list.innerHTML = '<div class="modal-empty" style="padding:14px;">' +
           (dict["ui.loading"] || "Carregando…") + '</div>';
@@ -1652,6 +1840,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       }
       _memoryDirty = false;
       _memoryCurrent = null;
+      _memoryCurrentFolder = null; // v0.5.1.9
       markDirty();
     }
 
@@ -1694,53 +1883,251 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       }
     }
 
-    // ── Renderização: sidebar (lista de notas agrupadas por pasta) ──
+    // ── Renderização: sidebar (navegação por pastas + calendário) ──
+    // v0.5.1.9: três modos:
+    //   1. Busca ativa → resultados filtrados (comportamento original)
+    //   2. Nenhuma pasta → lista de pastas (primeiro nível)
+    //   3. Pasta selecionada → calendário (daily/) ou lista de notas
     function renderMemorySidebar() {
       const list = document.getElementById("memory-list");
       const cnt  = document.getElementById("memory-count");
       if (!list) return;
       const dict = I18N[_currentLang] || I18N["pt_BR"];
-      // Filtra por busca
       const q = (_memorySearch || "").toLowerCase().trim();
-      const filtered = [];
-      for (const folder of _memoryTree) {
-        const matches = [];
-        for (const n of folder.notes) {
-          if (!q) { matches.push(n); continue; }
-          if ((n.title || "").toLowerCase().includes(q) ||
-              (n.path || "").toLowerCase().includes(q) ||
-              (n.tags || []).some(t => (t || "").toLowerCase().includes(q))) {
-            matches.push(n);
+
+      // 1) Modo busca: exibe resultados filtrados (comportamento original)
+      if (q) {
+        const filtered = [];
+        for (const folder of _memoryTree) {
+          const matches = [];
+          for (const n of folder.notes) {
+            if ((n.title || "").toLowerCase().includes(q) ||
+                (n.path || "").toLowerCase().includes(q) ||
+                (n.tags || []).some(t => (t || "").toLowerCase().includes(q))) {
+              matches.push(n);
+            }
+          }
+          if (matches.length) filtered.push({ folder: folder.folder, notes: matches });
+        }
+        const total = filtered.reduce((s, f) => s + f.notes.length, 0);
+        if (cnt) cnt.textContent = total + " " + (dict["memory.notes_count"] || "notas");
+        if (total === 0) {
+          list.innerHTML = '<div class="modal-empty" style="padding:14px;font-size:11.5px;">' +
+            (dict["memory.no_results"] || "Nenhum resultado para '" + escapeHtml(q) + "'.") + '</div>';
+          return;
+        }
+        let html = "";
+        for (const folder of filtered) {
+          const label = folder.folder || "📁 (raiz)";
+          html += '<div class="mem-folder-label">' + escapeHtml(label) + '</div>';
+          for (const n of folder.notes) {
+            const active = (_memoryCurrent && _memoryCurrent.path === n.path) ? " active" : "";
+            const human  = n.is_pesquisai_generated ? "" : " human";
+            const tagHtml = (n.tags || []).slice(0, 3).map(t =>
+              '<span style="display:inline-block;font-size:9px;padding:0 4px;background:var(--accent-dim);color:var(--accent);border-radius:2px;margin-right:2px;">#' + escapeHtml(String(t).replace(/^#/, "")) + '</span>'
+            ).join("");
+            html += '<div class="mem-note-item' + active + human + '" onclick="loadMemoryNote(\'' + n.path.replace(/\\\\/g, "\\\\\\\\").replace(/'/g, "\\'") + '\')">' +
+                 '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>' +
+                    '<div class="mem-note-path">' + escapeHtml(n.path) + '</div>' +
+                    (tagHtml ? '<div style="margin-top:3px;">' + tagHtml + '</div>' : '') +
+                    '</div>';
           }
         }
-        if (matches.length) filtered.push({ folder: folder.folder, notes: matches });
-      }
-      const total = filtered.reduce((s, f) => s + f.notes.length, 0);
-      if (cnt) cnt.textContent = total + " " + (dict["memory.notes_count"] || "notas");
-      if (total === 0) {
-        list.innerHTML = '<div class="modal-empty" style="padding:14px;font-size:11.5px;">' +
-          (q ? (dict["memory.no_results"] || "Nenhum resultado para '" + escapeHtml(q) + "'.") :
-               (dict["memory.no_notes"] || "Nenhuma nota ainda.")) + '</div>';
+        list.innerHTML = html;
         return;
       }
-      let html = "";
-      for (const folder of filtered) {
-        const label = folder.folder || "📁 (raiz)";
-        html += '<div class="mem-folder-label">' + escapeHtml(label) + '</div>';
-        for (const n of folder.notes) {
-          const active = (_memoryCurrent && _memoryCurrent.path === n.path) ? " active" : "";
-          const human  = n.is_pesquisai_generated ? "" : " human";
-          const tagHtml = (n.tags || []).slice(0, 3).map(t =>
-            '<span style="display:inline-block;font-size:9px;padding:0 4px;background:var(--accent-dim);color:var(--accent);border-radius:2px;margin-right:2px;">#' + escapeHtml(String(t).replace(/^#/, "")) + '</span>'
-          ).join("");
-          html += `<div class="mem-note-item${active}${human}" onclick="loadMemoryNote('${n.path.replace(/\\\\/g, "\\\\\\\\").replace(/'/g, "\\'")}')">` +
-               '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>' +
-                  '<div class="mem-note-path">' + escapeHtml(n.path) + '</div>' +
-                  (tagHtml ? '<div style="margin-top:3px;">' + tagHtml + '</div>' : '') +
-                  '</div>';
+
+      // 2) Modo pasta selecionada: mostra conteúdo da pasta
+      if (_memoryCurrentFolder) {
+        renderFolderContent(_memoryCurrentFolder, list, cnt, dict);
+        return;
+      }
+
+      // 3) Modo raiz: lista de pastas
+      renderFolderList(list, cnt, dict);
+    }
+
+    // ── Lista de pastas (primeiro nível) ─────────────────────────
+    function renderFolderList(list, cnt, dict) {
+      // Agrupa e conta notas por pasta
+      const folderMap = {};
+      const folderIcons = {
+        "daily/": "📅", "research/": "🔬", "literature/": "📚",
+        "sessions/": "📜", "reference/": "📖", "methodology/": "⚙️",
+        "hypothesis/": "💡", "datasource/": "🗄️", "moc/": "🗺️",
+        "inbox/": "📥", "assets/": "🎨"
+      };
+      let totalNotes = 0;
+      for (const folder of _memoryTree) {
+        const f = folder.folder || "";
+        if (!folderMap[f]) folderMap[f] = 0;
+        folderMap[f] += folder.notes.length;
+        totalNotes += folder.notes.length;
+      }
+      if (cnt) cnt.textContent = totalNotes + " " + (dict["memory.notes_count"] || "notas");
+      let html = '<div style="padding:6px 0;">';
+      // Ordem: daily sempre primeiro, depois alfabético
+      const ordered = Object.keys(folderMap).sort((a, b) => {
+        if (a === "daily/") return -1;
+        if (b === "daily/") return 1;
+        return a.localeCompare(b);
+      });
+      for (const f of ordered) {
+        const icon = folderIcons[f] || "📁";
+        const label = f ? f.replace(/\/$/, "") : "(raiz)";
+        const count = folderMap[f];
+        const isDaily = f === "daily/";
+        html += '<div class="mem-folder-card" onclick="navigateToFolder(\'' + f.replace(/'/g, "\\'") + '\')" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">';
+        html += '<span style="font-size:16px;">' + icon + '</span>';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<div style="font-size:12px;font-weight:500;">' + escapeHtml(label) + '</div>';
+        html += '<div style="font-size:10px;color:var(--ink-muted);">' + count + ' nota' + (count !== 1 ? 's' : '') + '</div>';
+        html += '</div>';
+        html += '<span style="color:var(--ink-muted);font-size:10px;">→</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+      list.innerHTML = html;
+    }
+
+    // ── Conteúdo de uma pasta ────────────────────────────────────
+    function renderFolderContent(folderName, list, cnt, dict) {
+      // Encontra as notas da pasta
+      const notes = [];
+      for (const folder of _memoryTree) {
+        if (folder.folder === folderName) {
+          for (const n of folder.notes) notes.push(n);
+        }
+      }
+      if (cnt) cnt.textContent = notes.length + " " + (dict["memory.notes_count"] || "notas");
+
+      // Botão voltar
+      let html = '<div style="padding:6px 8px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;">';
+      html += '<button onclick="navigateBack()" style="background:none;border:1px solid var(--line);border-radius:var(--radius);padding:3px 8px;font-size:10px;color:var(--accent);cursor:pointer;">← ' + (dict["memory.back"] || "Voltar") + '</button>';
+      const iconMap = {
+        "daily/": "📅", "research/": "🔬", "literature/": "📚",
+        "sessions/": "📜", "reference/": "📖", "methodology/": "⚙️",
+        "hypothesis/": "💡", "datasource/": "🗄️", "moc/": "🗺️",
+        "inbox/": "📥", "assets/": "🎨"
+      };
+      html += '<span style="font-size:12px;font-weight:500;color:var(--ink-muted);">' + (iconMap[folderName] || "📁") + ' ' + escapeHtml(folderName.replace(/\/$/, "")) + '</span>';
+      html += '</div>';
+
+      if (folderName === "daily/") {
+        // Calendário para daily notes
+        html += renderCalendar();
+      } else {
+        // Lista de notas para demais pastas
+        if (notes.length === 0) {
+          html += '<div class="modal-empty" style="padding:14px;font-size:11.5px;">' + (dict["memory.no_notes"] || "Nenhuma nota ainda.") + '</div>';
+        } else {
+          html += '<div style="padding:4px 0;">';
+          for (const n of notes) {
+            const active = (_memoryCurrent && _memoryCurrent.path === n.path) ? " active" : "";
+            const human  = n.is_pesquisai_generated ? "" : " human";
+            const tagHtml = (n.tags || []).slice(0, 3).map(t =>
+              '<span style="display:inline-block;font-size:9px;padding:0 4px;background:var(--accent-dim);color:var(--accent);border-radius:2px;margin-right:2px;">#' + escapeHtml(String(t).replace(/^#/, "")) + '</span>'
+            ).join("");
+            html += '<div class="mem-note-item' + active + human + '" onclick="loadMemoryNote(\'' + n.path.replace(/\\\\/g, "\\\\\\\\").replace(/'/g, "\\'") + '\')">' +
+                 '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>' +
+                    '<div class="mem-note-path">' + escapeHtml(n.path) + '</div>' +
+                    (tagHtml ? '<div style="margin-top:3px;">' + tagHtml + '</div>' : '') +
+                    '</div>';
+          }
+          html += '</div>';
         }
       }
       list.innerHTML = html;
+    }
+
+    // ── Calendário de Daily Notes ────────────────────────────────
+    function renderCalendar() {
+      // Extrai paths das daily notes existentes
+      _memoryCalendarDailies = [];
+      for (const folder of _memoryTree) {
+        if (folder.folder === "daily/") {
+          for (const n of folder.notes) {
+            if (n.path) _memoryCalendarDailies.push(n.path);
+          }
+        }
+      }
+      const date = _memoryCalendarDate;
+      const year = date.getFullYear();
+      const month = date.getMonth(); // 0-based
+      const today = new Date();
+      const todayStr = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
+
+      // Primeiro dia do mês (0=domingo..6=sábado)
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      // Mês e ano por extenso
+      const monthNames = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                          "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+      const weekDays = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+
+      let h = '<div style="padding:8px;">';
+      // Header: navegação entre meses
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+      h += '<button onclick="prevMonth()" style="background:none;border:1px solid var(--line);border-radius:var(--radius);padding:3px 8px;font-size:11px;color:var(--accent);cursor:pointer;">◀</button>';
+      h += '<span style="font-size:13px;font-weight:600;">' + monthNames[month] + ' ' + year + '</span>';
+      h += '<button onclick="nextMonth()" style="background:none;border:1px solid var(--line);border-radius:var(--radius);padding:3px 8px;font-size:11px;color:var(--accent);cursor:pointer;">▶</button>';
+      h += '</div>';
+      // Grid: dias da semana
+      h += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:10px;color:var(--ink-muted);margin-bottom:4px;">';
+      for (let w = 0; w < 7; w++) {
+        h += '<div style="padding:4px 0;">' + weekDays[w] + '</div>';
+      }
+      h += '</div>';
+      // Grid: dias do mês
+      h += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;">';
+      // Células vazias antes do primeiro dia
+      for (let i = 0; i < firstDay; i++) {
+        h += '<div style="padding:6px 0;"></div>';
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = year + "-" + String(month+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+        const path = "daily/" + dateStr + ".md";
+        const hasNote = _memoryCalendarDailies.indexOf(path) !== -1;
+        const isToday = dateStr === todayStr;
+        const isSelected = _memoryCurrent && _memoryCurrent.path === path;
+        let styles = "padding:6px 0;border-radius:4px;font-size:11px;cursor:pointer;transition:background .12s;position:relative;";
+        if (isSelected) styles += "background:var(--accent-dim);color:var(--accent);font-weight:700;";
+        else if (isToday) styles += "background:rgba(79,195,247,.12);color:var(--accent);font-weight:600;";
+        else styles += "color:var(--ink);";
+        h += '<div style="' + styles + '" onclick="loadMemoryNote(\'' + path + '\')" onmouseover="this.style.background=\'rgba(255,255,255,.06)\'" onmouseout="this.style.background=\'' + (isSelected ? 'var(--accent-dim)' : isToday ? 'rgba(79,195,247,.12)' : 'transparent') + '\'">';
+        h += d;
+        if (hasNote) {
+          h += '<div style="position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--accent);"></div>';
+        }
+        h += '</div>';
+      }
+      h += '</div></div>';
+      return h;
+    }
+
+    // ── Navegação entre pastas ───────────────────────────────────
+    function navigateToFolder(folderName) {
+      _memoryCurrentFolder = folderName;
+      if (folderName === "daily/") {
+        _memoryCalendarDate = new Date(); // volta para o mês atual
+      }
+      renderMemorySidebar();
+    }
+
+    function navigateBack() {
+      _memoryCurrentFolder = null;
+      renderMemorySidebar();
+    }
+
+    function prevMonth() {
+      _memoryCalendarDate.setMonth(_memoryCalendarDate.getMonth() - 1);
+      renderMemorySidebar();
+    }
+
+    function nextMonth() {
+      _memoryCalendarDate.setMonth(_memoryCalendarDate.getMonth() + 1);
+      renderMemorySidebar();
     }
 
     // ── Busca ──────────────────────────────────────────────────────
@@ -1758,6 +2145,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       if (_memoryDirty && _memoryCurrent && _memoryCurrent.path !== path) {
         if (!confirm("Há mudanças não salvas em '" + _memoryCurrent.path + "'.\\nDescartar e abrir outra nota?")) {
           return;
+        }
+      }
+      // v0.5.1.9: navega automaticamente para a pasta da nota
+      const slashIdx = path.indexOf("/");
+      if (slashIdx !== -1) {
+        const folder = path.substring(0, slashIdx + 1);
+        if (_memoryCurrentFolder !== folder) {
+          _memoryCurrentFolder = folder;
         }
       }
       const dict = I18N[_currentLang] || I18N["pt_BR"];
