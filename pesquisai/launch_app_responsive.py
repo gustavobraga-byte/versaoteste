@@ -748,7 +748,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <span data-i18n="providers.title">+ provedor</span>
     </button>
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
-    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
+    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <pan data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
@@ -1001,6 +1001,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       transition: background .12s; border-left: 2px solid transparent;
     }
     .mem-note-item:hover { background: rgba(255,255,255,.04); }
+    .mem-folder-card:hover { background: rgba(255,255,255,.04); }
+    .mem-cal-day:hover { background: rgba(255,255,255,.06) !important; }
     .mem-note-item.active {
       background: rgba(var(--accent-rgb, 99, 179, 237), .12);
       border-left-color: var(--accent);
@@ -1287,16 +1289,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         });
         const d = await r.json();
         if (d.ok) {
-          if (d.ttyd_restarted) {
-            toast("✅ Sessão " + (d.session_id || "") + " importada + ttyd reiniciado!", "ok");
-            // v0.5.1.6: aguardar 3.5s para o ttyd reiniciar antes de recarregar
-            // (o ttyd precisa reabrir o WebSocket + handshake do opencode)
-            setTimeout(() => location.reload(), 3500);
-          } else {
-            toast("⚠️ Importado, mas ttyd não reiniciou. Recarregue manualmente (Ctrl+Shift+R).", "warn");
-            // Fallback: tentar reload após 1.5s
-            setTimeout(() => location.reload(), 1500);
-          }
+          toast("✅ Importado!", "ok");
+          setTimeout(() => location.reload(), 800);
         } else {
           toast("❌ " + (d.error || "Erro"), "err");
         }
@@ -1529,7 +1523,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         var id = s.id || '';
         var title = s.title || s.name || id;
         var date = s.date || s.created || '';
-        h += '<div class="session-item" data-session-id="' + id.replace(/"/g,'&quot;') + '" onclick="restoreSession(this.dataset.sessionId)" style="padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;font-size:12px;" onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">';
+        h += '<div class="session-item" data-session-id="' + id.replace(/"/g,'&quot;') + '" onclick="restoreSession(this.dataset.sessionId)" style="padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;font-size:12px;" onmouseover="this.style.background=\\x27rgba(255,255,255,.04)\\x27" onmouseout="this.style.background=\\x27transparent\\x27">';
         h += '<div style="font-weight:500;">' + escapeHtml(title) + '</div>';
         if (date) h += '<div style="font-size:10px;color:var(--ink-muted);margin-top:2px;">' + escapeHtml(date) + '</div>';
         h += '<div style="font-size:10px;color:var(--ink-muted);opacity:.6;">' + escapeHtml(id) + '</div>';
@@ -1926,7 +1920,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             const tagHtml = (n.tags || []).slice(0, 3).map(t =>
               '<span style="display:inline-block;font-size:9px;padding:0 4px;background:var(--accent-dim);color:var(--accent);border-radius:2px;margin-right:2px;">#' + escapeHtml(String(t).replace(/^#/, "")) + '</span>'
             ).join("");
-            html += '<div class="mem-note-item' + active + human + '" onclick="loadMemoryNote(\'' + n.path.replace(/\\\\/g, "\\\\\\\\").replace(/'/g, "\\'") + '\')">' +
+            html += '<div class="mem-note-item' + active + human + '" data-path="' + encodeURIComponent(n.path) + '" onclick="loadMemoryNote(decodeURIComponent(this.dataset.path))">' +
                  '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>' +
                     '<div class="mem-note-path">' + escapeHtml(n.path) + '</div>' +
                     (tagHtml ? '<div style="margin-top:3px;">' + tagHtml + '</div>' : '') +
@@ -1974,7 +1968,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         const icon = folderIcons[f] || "📁";
         const label = f ? f.replace(/\/$/, "") : "(raiz)";
         const count = folderMap[f];
-        html += '<div class="mem-folder-card" onclick="navigateToFolder(\'' + f.replace(/'/g, "\\'") + '\')" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background=\'rgba(255,255,255,.04)\'" onmouseout="this.style.background=\'transparent\'">';
+        html += '<div class="mem-folder-card" data-folder="' + encodeURIComponent(f) + '" onclick="navigateToFolder(decodeURIComponent(this.dataset.folder))" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;display:flex;align-items:center;gap:10px;">';
         html += '<span style="font-size:16px;">' + icon + '</span>';
         html += '<div style="flex:1;min-width:0;">';
         html += '<div style="font-size:12px;font-weight:500;">' + escapeHtml(label) + '</div>';
@@ -2020,7 +2014,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             const tagHtml = (n.tags || []).slice(0, 3).map(t =>
               '<span style="display:inline-block;font-size:9px;padding:0 4px;background:var(--accent-dim);color:var(--accent);border-radius:2px;margin-right:2px;">#' + escapeHtml(String(t).replace(/^#/, "")) + '</span>'
             ).join("");
-            html += '<div class="mem-note-item' + active + human + '" onclick="loadMemoryNote(\'' + n.path.replace(/\\\\/g, "\\\\\\\\").replace(/'/g, "\\'") + '\')">' +
+            html += '<div class="mem-note-item' + active + human + '" data-path="' + encodeURIComponent(n.path) + '" onclick="loadMemoryNote(decodeURIComponent(this.dataset.path))">' +
                  '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>' +
                     '<div class="mem-note-path">' + escapeHtml(n.path) + '</div>' +
                     (tagHtml ? '<div style="margin-top:3px;">' + tagHtml + '</div>' : '') +
@@ -2077,7 +2071,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         if (isSelected) styles += "background:var(--accent-dim);color:var(--accent);font-weight:700;";
         else if (isToday) styles += "background:rgba(79,195,247,.12);color:var(--accent);font-weight:600;";
         else styles += "color:var(--ink);";
-        h += '<div style="' + styles + '" onclick="loadMemoryNote(\'' + path + '\')" onmouseover="this.style.background=\'rgba(255,255,255,.06)\'" onmouseout="this.style.background=\'' + (isSelected ? 'var(--accent-dim)' : isToday ? 'rgba(79,195,247,.12)' : 'transparent') + '\'">';
+         h += '<div class="mem-cal-day" style="' + styles + '" onclick="loadMemoryNote(\\'' + path + '\\')">';
         h += d;
         if (hasNote) {
           h += '<div style="position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--accent);"></div>';
