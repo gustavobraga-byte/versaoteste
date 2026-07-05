@@ -690,7 +690,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <button class="tb-icon" onclick="openAgents()" title="Diretrizes do Agente" data-i18n-title="agents.title">
         <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/></svg>
       </button>
-      <button class="tb-icon" onclick="openMemory()" id="memory-btn" title="Memória Obsidian" data-i18n-title="memory.tooltip">
+      <button class="tb-icon" onclick="openMemory()" id="memory-btn" title="Memória PesquisAI" data-i18n-title="memory.tooltip">
         <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 7l1 1v3a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-3l1-1c1.5-2 3-4 3-7a7 7 0 0 0-7-7z"/><path d="M9 22h6"/><path d="M12 2v20"/></svg>
       </button>
       <button class="tb-icon" onclick="toggleTheme()" id="theme-toggle" title="Alternar tema" data-theme="pesquisai" data-i18n-title="theme.toggle">
@@ -748,7 +748,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
-    <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória Obsidian</span></button>
+    <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória PesquisAI</span></button>
     <button class="modal-close" onclick="toggleTheme(); toggleMobileMenu();">◑ <span data-i18n="theme.toggle">Alternar Tema</span></button>
     <button class="modal-close" onclick="toggleLangMenu();">🌐 <span data-i18n="languages.label">Idioma</span></button>
   </div>
@@ -887,14 +887,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     </div>
   </div>
 
-  <!-- Modal de Memória Obsidian (v0.5.1.4 — navegar + editar) -->
+  <!-- Modal de Memória PesquisAI (v0.5.1.4 — navegar + editar) -->
   <div id="memory-overlay" onclick="if(event.target===this)closeMemory()" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
     <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:0;width:980px;max-width:96vw;max-height:92vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
       <!-- Header -->
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
         <span style="font-size:18px;">🧠</span>
         <div style="flex:1;min-width:0;">
-          <div class="modal-title" style="margin-bottom:2px;" data-i18n="memory.title">Memória Obsidian</div>
+          <div class="modal-title" style="margin-bottom:2px;" data-i18n="memory.title">Memória PesquisAI</div>
           <div id="memory-subtitle" style="font-size:10.5px;color:var(--ink-muted);" data-i18n="memory.subtitle">Camada de memória persistente do agente</div>
         </div>
         <span id="memory-status-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:'DM Mono',monospace;">…</span>
@@ -932,8 +932,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
 
           <!-- Tabs Edit/Preview -->
           <div id="memory-editor-tabs" style="display:none;padding:6px 14px 0;border-bottom:1px solid var(--line);background:rgba(255,255,255,.01);">
-            <button id="memory-tab-edit" class="mem-tab active" onclick="switchMemoryTab('edit')" data-i18n="memory.tab_edit">Editar</button>
-            <button id="memory-tab-preview" class="mem-tab" onclick="switchMemoryTab('preview')" data-i18n="memory.tab_preview">Preview</button>
+            <button id="memory-tab-preview" class="mem-tab active" onclick="switchMemoryTab('preview')" data-i18n="memory.tab_preview">Preview</button>
+            <button id="memory-tab-edit" class="mem-tab" onclick="switchMemoryTab('edit')" data-i18n="memory.tab_edit">Editar</button>
             <button id="memory-tab-split" class="mem-tab" onclick="switchMemoryTab('split')" data-i18n="memory.tab_split">Dividido</button>
           </div>
 
@@ -984,7 +984,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   </div>
 
   <style>
-    /* v0.5.1.4 — Editor de memória Obsidian */
+    /* v0.5.1.4 — Editor de memória PesquisAI */
     .mem-tab {
       background: transparent; color: var(--ink-muted); border: none;
       border-bottom: 2px solid transparent; padding: 6px 12px; font-size: 11.5px;
@@ -1535,7 +1535,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       });
     }
 
-    // ── Memória Obsidian (v0.5.1.4 — navegar + editar) ────────
+    // ── Memória PesquisAI (v0.5.1.4 — navegar + editar) ────────
     // Estado:
     //   _memoryTree      — lista plana de notas carregada do /api/obsidian/tree
     //   _memoryStatus    — {status, root, writable, notes_count, ...}
@@ -1543,12 +1543,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     //   _memoryDirty     — true se o editor tem mudanças não salvas
     //   _memorySearch    — termo de busca atual (filtro da sidebar)
     //   _memoryTab       — 'edit' | 'preview' | 'split'
+    // v0.5.1.8: cache de 5s para evitar refetch em aberturas repetidas
+    let _memoryCache = { tree: null, status: null, ts: 0 };
     let _memoryTree = [];
     let _memoryStatus = null;
     let _memoryCurrent = null;
     let _memoryDirty = false;
     let _memorySearch = "";
-    let _memoryTab = "edit";
+    let _memoryTab = "preview";
 
     async function openMemory(force) {
       const overlay = document.getElementById("memory-overlay");
@@ -1562,23 +1564,56 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         list.innerHTML = '<div class="modal-empty" style="padding:14px;">' +
           (dict["ui.loading"] || "Carregando…") + '</div>';
       }
-      // Sempre recarrega o status e a árvore; cache apenas para
-      // o caso de força=false numa sessão recente (5 s).
+      // v0.5.1.8: cache de 5s — evita nova requisição se cache for recente
+      const now = Date.now();
+      if (!force && _memoryCache.tree && (now - _memoryCache.ts) < 5000) {
+        _memoryStatus = _memoryCache.status;
+        _memoryTree = _memoryCache.tree;
+        renderMemoryHeader(_memoryCache.status, dict);
+        renderMemorySidebar();
+        if (_memoryCache.status && _memoryCache.status.status === "ready") {
+          if (!_memoryCurrent) {
+            const lastDaily = findLastDaily();
+            if (lastDaily) loadMemoryNote(lastDaily.path);
+          }
+        }
+        return;
+      }
       try {
-        const [rStatus, rTree] = await Promise.all([
-          fetch(BASE + "/api/obsidian"),
-          fetch(BASE + "/api/obsidian/tree"),
-        ]);
-        const dStatus = await rStatus.json();
-        const dTree = await rTree.json();
+        // v0.5.1.8: tenta rota unificada ?include=tree (1 request ao invés de 2)
+        let dStatus, dTree;
+        const unifiedResp = await fetch(BASE + "/api/obsidian?include=tree");
+        const unifiedData = await unifiedResp.json();
+        if (unifiedData.ok && unifiedData.tree) {
+          dStatus = unifiedData;
+          dTree = { tree: unifiedData.tree };
+        } else {
+          // Fallback: 2 chamadas separadas (backend antigo)
+          const [rStatus, rTree] = await Promise.all([
+            fetch(BASE + "/api/obsidian"),
+            fetch(BASE + "/api/obsidian/tree"),
+          ]);
+          dStatus = await rStatus.json();
+          dTree = await rTree.json();
+        }
         _memoryStatus = dStatus;
         _memoryTree = (dTree && dTree.tree) ? dTree.tree : [];
+        // Atualiza cache
+        _memoryCache = { tree: _memoryTree, status: dStatus, ts: Date.now() };
         renderMemoryHeader(dStatus, dict);
         renderMemorySidebar();
         if (dStatus.status !== "ready") {
           if (list) {
             list.innerHTML = '<div class="modal-empty" style="padding:14px;font-size:11.5px;">' +
               escapeHtml(dStatus.message || dStatus.status) + '</div>';
+          }
+        } else {
+          // Abre automaticamente o último daily note se nenhuma nota estiver carregada
+          if (!_memoryCurrent && !force) {
+            const lastDaily = findLastDaily();
+            if (lastDaily) {
+              loadMemoryNote(lastDaily.path);
+            }
           }
         }
       } catch (e) {
@@ -1587,6 +1622,20 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             (dict["agents.error"] || "Erro") + ': ' + escapeHtml(e.message) + '</div>';
         }
       }
+    }
+
+    // ── Encontra o último daily note na árvore da memória ──────
+    function findLastDaily() {
+      const dailies = [];
+      for (const folder of _memoryTree) {
+        for (const n of folder.notes) {
+          if (n.path && n.path.startsWith("daily/")) {
+            dailies.push(n);
+          }
+        }
+      }
+      dailies.sort((a, b) => b.path.localeCompare(a.path));
+      return dailies.length > 0 ? dailies[0] : null;
     }
 
     function closeMemory(force) {
@@ -2192,10 +2241,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal recarregado com novo tema",
             "languages.label": "Idioma", "languages.switched_to": "Idioma alterado para",
             "success_messages.backup_saved": "Backup salvo",
-            # v0.5.1.2 — Memória Obsidian
-            "memory.title": "Memória Obsidian",
+            # v0.5.1.2 — Memória PesquisAI
+            "memory.title": "Memória PesquisAI",
             "memory.subtitle": "Camada de memória persistente do agente",
-            "memory.tooltip": "Memória Obsidian (segundo cérebro)",
+            "memory.tooltip": "Memória PesquisAI (segundo cérebro)",
             "memory.status_ready": "🟢 Ativa",
             "memory.status_disabled": "⚪ Desativada",
             "memory.status_no_vault": "🟡 Sem vault",
@@ -2264,10 +2313,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal reloaded with new theme",
             "languages.label": "Language", "languages.switched_to": "Language switched to",
             "success_messages.backup_saved": "Backup saved",
-            # v0.5.1.2 — Obsidian Memory
-            "memory.title": "Obsidian Memory",
+            # v0.5.1.2 — PesquisAI Memory
+            "memory.title": "PesquisAI Memory",
             "memory.subtitle": "Agent's persistent memory layer",
-            "memory.tooltip": "Obsidian Memory (second brain)",
+            "memory.tooltip": "PesquisAI Memory (second brain)",
             "memory.status_ready": "🟢 Active",
             "memory.status_disabled": "⚪ Disabled",
             "memory.status_no_vault": "🟡 No vault",
@@ -2336,10 +2385,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal recargado con nuevo tema",
             "languages.label": "Idioma", "languages.switched_to": "Idioma cambiado a",
             "success_messages.backup_saved": "Copia guardada",
-            # v0.5.1.2 — Memoria Obsidian
-            "memory.title": "Memoria Obsidian",
+            # v0.5.1.2 — Memoria PesquisAI
+            "memory.title": "Memoria PesquisAI",
             "memory.subtitle": "Capa de memoria persistente del agente",
-            "memory.tooltip": "Memoria Obsidian (segundo cerebro)",
+            "memory.tooltip": "Memoria PesquisAI (segundo cerebro)",
             "memory.status_ready": "🟢 Activa",
             "memory.status_disabled": "⚪ Desactivada",
             "memory.status_no_vault": "🟡 Sin vault",
@@ -2408,10 +2457,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal rechargé avec le nouveau thème",
             "languages.label": "Langue", "languages.switched_to": "Langue changée en",
             "success_messages.backup_saved": "Sauvegarde enregistrée",
-            # v0.5.1.2 — Mémoire Obsidian
-            "memory.title": "Mémoire Obsidian",
+            # v0.5.1.2 — Mémoire PesquisAI
+            "memory.title": "Mémoire PesquisAI",
             "memory.subtitle": "Couche de mémoire persistante de l'agent",
-            "memory.tooltip": "Mémoire Obsidian (deuxième cerveau)",
+            "memory.tooltip": "Mémoire PesquisAI (deuxième cerveau)",
             "memory.status_ready": "🟢 Active",
             "memory.status_disabled": "⚪ Désactivée",
             "memory.status_no_vault": "🟡 Pas de vault",
