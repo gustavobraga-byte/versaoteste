@@ -76,7 +76,7 @@ SKILL_MAPPINGS: list[tuple[str, str]] = [
     ("/tmp/skill_grant-finder", "grant-finder"),
     ("/tmp/skill_meta-search-br", "meta-search-br"),
     ("/tmp/skill_obsidian-memory", "obsidian-memory"),
-    ("/tmp/skill_ufv", "memorial"),
+    ("/tmp/skill_memorial", "memorial"),
 ]
 
 # Skills que o sistema considera ESSENCIAIS para funcionar
