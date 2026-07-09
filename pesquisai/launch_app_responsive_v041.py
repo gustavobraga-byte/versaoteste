@@ -2679,17 +2679,39 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   <!-- marked.js: renderizador de markdown para o modal de Diretrizes do Agente e preview do editor -->
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <!-- Welcome hint (first-run onboarding) -->
-  <div id="welcome-hint" onclick="document.getElementById('welcome-hint').style.opacity='0';document.getElementById('welcome-hint').style.pointerEvents='none';try{localStorage.setItem('pesquisai_onboarded','1')}catch(e){}" style="position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .25s;">
-    <div style="background:#1c1f22;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:28px;width:420px;max-width:90vw;box-shadow:0 28px 72px rgba(0,0,0,.7);text-align:center;">
-      <div style="font-size:32px;margin-bottom:12px;">🩺</div>
-      <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:10px;">Bem-vindo ao PesquisAI</div>
-      <div style="font-size:12.5px;line-height:1.65;color:var(--ink-muted);margin-bottom:20px;">
-        Assistente de pesquisa científica com integridade acadêmica.<br/>
-        ✓ Fontes verificadas · ✓ Dados do IBGE/DataSUS · ✓ Normas ABNT<br/>
-        Conecte um provedor de IA no rodapé para começar.
-      </div>
-      <button onclick="document.getElementById('welcome-hint').style.opacity='0';document.getElementById('welcome-hint').style.pointerEvents='none';try{localStorage.setItem('pesquisai_onboarded','1')}catch(e){}" class="btn-ghost" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:600;padding:10px 28px;" data-i18n="ui.start">Começar</button>
+<div id="welcome-hint" onclick="document.getElementById('welcome-hint').style.opacity='0';document.getElementById('welcome-hint').style.pointerEvents='none';try{localStorage.setItem('pesquisai_onboarded','1')}catch(e){}" style="position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .25s;">
+  <div style="background:#1c1f22;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:28px 32px;width:420px;max-width:90vw;box-shadow:0 28px 72px rgba(0,0,0,.7);text-align:center;">
+    
+    <!-- Título -->
+    <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:8px;">PesquisAI</div>
+    
+    <!-- Descrição concisa -->
+    <div style="font-size:12.5px;line-height:1.65;color:var(--ink-muted);margin-bottom:8px;">
+      Agente de IA para pesquisa científica.
     </div>
+    
+    <!-- Linha 1: Links principais -->
+    <div style="font-size:12px;line-height:1.6;color:var(--ink-muted);margin-bottom:4px;">
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Manual</a>
+      &middot;
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/AGENTS.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Arquitetura</a>
+      &middot;
+      <a href="https://github.com/gustavobraga-byte/PesquisAI" target="_blank" style="color:var(--accent);text-decoration:underline;">Repositório</a>
+    </div>
+    
+    <!-- Linha 2: Links legais/éticos -->
+    <div style="font-size:12px;line-height:1.6;color:var(--ink-muted);margin-bottom:20px;">
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/disclaimer_pesquisai.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Disclaimer</a>
+      &middot;
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md#citação-do-pesquisai" target="_blank" style="color:var(--accent);text-decoration:underline;">Citações ABNT</a>
+      &middot;
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/declaracao_uso_ia.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Uso de IA</a>
+    </div>
+    
+    <!-- Botão -->
+    <button onclick="document.getElementById('welcome-hint').style.opacity='0';document.getElementById('welcome-hint').style.pointerEvents='none';try{localStorage.setItem('pesquisai_onboarded','1')}catch(e){}" class="btn-ghost" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:600;padding:10px 28px;cursor:pointer;border-radius:6px;border:1px solid transparent;font-size:13px;">Começar</button>
+  </div>
+</div>
   </div>
   <!-- Confirm dialog overlay (replaces native confirm()) -->
   <div id="confirm-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100001;opacity:0;pointer-events:none;transition:opacity .18s;">
