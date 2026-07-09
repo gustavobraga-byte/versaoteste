@@ -800,9 +800,6 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     <span class="footer-sep"></span>
     <span style="color:var(--ink-muted)">UFV · Viçosa, MG - Brasil</span>
     <span class="footer-sep"></span>
-    <span class="trust-chip" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-muted);padding:2px 8px;border:1px solid var(--line);border-radius:999px;" title="O PesquisAI nunca inventa dados: toda informação exige fonte verificada ([DADO CONFIRMADO]).">
-      <span style="width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18);flex-shrink:0;"></span>Integridade ativa
-    </span>
 
     <div class="footer-right">
       <button class="btn-provider" onclick="connectProvider()" title="Conectar novo provedor de IA">
@@ -1361,7 +1358,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       q = (q || "").trim().toLowerCase();
       const recommended = PROVIDERS.filter(p => p.recommended && (!q || p.name.toLowerCase().includes(q) || p.id.includes(q)));
       const others = PROVIDERS.filter(p => !p.recommended && (!q || p.name.toLowerCase().includes(q) || p.id.includes(q)));
-      const btn = (p) => `<button onclick="selectProvider('{{p.id}}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:11px;cursor:pointer;text-align:left;transition:background .12s,color .12s,border-color .12s;">{{p.name}}</button>`;
+      const btn = (p) => `<button onclick="selectProvider('${p.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:11px;cursor:pointer;text-align:left;transition:background .12s,color .12s,border-color .12s;">${p.name}</button>`;
       let html = "";
       if (recommended.length) html += '<div style="grid-column:1/-1;font-size:10px;letter-spacing:.06em;color:var(--ink-muted);text-transform:uppercase;margin:2px 0 4px;">Recomendados</div>' + recommended.map(btn).join("");
       if (others.length) html += others.map(btn).join("");
