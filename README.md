@@ -2,6 +2,7 @@
 
  [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
+![PesquisAI Banner](assets/banner.svg)
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
