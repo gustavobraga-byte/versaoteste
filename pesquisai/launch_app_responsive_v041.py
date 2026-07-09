@@ -2703,7 +2703,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     <div style="font-size:12px;line-height:1.6;color:var(--ink-muted);margin-bottom:20px;">
       <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/disclaimer_pesquisai.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Disclaimer</a>
       &middot;
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md#citação-do-pesquisai" target="_blank" style="color:var(--accent);text-decoration:underline;">Citações ABNT</a>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md#citação-do-pesquisai" target="_blank" style="color:var(--accent);text-decoration:underline;">Como citar</a>
       &middot;
       <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/declaracao_uso_ia.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Uso de IA</a>
     </div>
