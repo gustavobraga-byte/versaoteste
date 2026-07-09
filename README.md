@@ -1,4 +1,4 @@
-# <img src="assets/logo.svg" alt="PesquisAI" width="40"/> PesquisAI
+# <img src="assets/logo.svg" alt="PesquisAI"> 
 
 [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
