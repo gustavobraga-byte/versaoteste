@@ -1,8 +1,8 @@
-# 🔬 PesquisAI — Agente de IA para Pesquisadores Científicos
+![PesquisAI Banner](assets/logo.svg)
 
  [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
-![PesquisAI Banner](assets/logo.svg)
+
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
