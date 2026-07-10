@@ -1473,7 +1473,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
           toast(`✅ ${provName} ${isEdit ? (I18N[_currentLang]?.["providers.updated"] || "atualizado") : (I18N[_currentLang]?.["providers.connected"] || "conectado")}!`, "ok");
           closeProvider();
           // Atualiza a lista de chaves salvas se estiver visível
-          setTimeout(() => loadSavedKeys(true).catch(()=>{}), 300);
+          _savedKeys = {};
+          setTimeout(() => loadSavedKeys(true).catch(()=>{}), 350);
         } else {
           toast("❌ " + (d.error || `Erro HTTP ${r.status}`), "err");
         }
@@ -1489,6 +1490,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       const theme = document.documentElement.getAttribute("data-theme") || "pesquisai";
       const origSrc = (fr.src || "{__TERMINAL_URL__}").split("?")[0];
       fr.src = "about:blank";
+      // Uma nova sessão pode ter sido criada — invalida cache de histórico.
+      _sessionsCache = { data: null, ts: 0 };
       setTimeout(() => {
         fr.src = origSrc + "?theme=" + theme + "&t=" + Date.now();
       }, 3500);
@@ -1545,11 +1548,15 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     }
 
     function editSavedKey(provider) {
-      const p = PROVIDERS.find(x => x.id === provider);
-      if (!p) { toast("⚠️ Provedor não reconhecido.", "err"); return; }
+      let p = PROVIDERS.find(x => x.id === provider);
+      if (!p) {
+        // Fallback para providers customizados/antigos ainda salvos no Drive.
+        const savedEnv = _savedKeys["_env_" + provider] || "";
+        p = { id: provider, name: provider, env: savedEnv, hint: "Cole sua key aqui…" };
+      }
       _selProv = { ...p, _edit: true };
       document.getElementById("prov-name-title").textContent = p.name;
-      document.getElementById("prov-env-code").textContent = p.env;
+      document.getElementById("prov-env-code").textContent = p.env || (provider.toUpperCase() + "_API_KEY");
       document.getElementById("prov-key-input").placeholder = p.hint || "Cole sua key aqui…";
       document.getElementById("prov-key-input").value = "";
       document.getElementById("prov-step0").style.display = "none";
@@ -1571,9 +1578,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok && (d.ok !== false)) {
-            delete _savedKeys[provider];
-            delete _savedKeys["_env_" + provider];
+            // Invalida cache local e recarrega do servidor para refletir estado real.
+            _savedKeys = {};
             renderSavedKeys();
+            await loadSavedKeys(true);
             toast("🗑 " + name + " " + (dict["providers.deleted"] || "excluído"), "ok");
           } else {
             toast("❌ " + (d.error || "Erro"), "err");
@@ -1668,17 +1676,36 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     let _allSessions = [];
     let _filteredSessions = [];
     let _sessionsPage = 0;
+    let _sessionsPollId = null;
     const SESSIONS_PAGE_SIZE = 20;
+    const SESSIONS_POLL_MS = 8000;  // atualiza a cada 8s enquanto modal aberto
+
+    function _startSessionsPoll() {
+      _stopSessionsPoll();
+      _sessionsPollId = setInterval(() => {
+        const o = document.getElementById("sessions-overlay");
+        if (o && o.style.opacity === "1") {
+          loadSessions(true).catch(() => {});
+        } else {
+          _stopSessionsPoll();
+        }
+      }, SESSIONS_POLL_MS);
+    }
+    function _stopSessionsPoll() {
+      if (_sessionsPollId) { clearInterval(_sessionsPollId); _sessionsPollId = null; }
+    }
 
     async function openSessions() {
       const overlay = document.getElementById("sessions-overlay");
       overlay.style.opacity = "1"; overlay.style.pointerEvents = "all";
       // Força recarregamento para sempre mostrar a sessão mais recente
       await loadSessions(true);
+      _startSessionsPoll();
     }
     function closeSessions() {
       const o = document.getElementById("sessions-overlay");
       o.style.opacity = "0"; o.style.pointerEvents = "none";
+      _stopSessionsPoll();
     }
 
     async function loadSessions(force) {
@@ -2830,6 +2857,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         _welcomeEl.style.pointerEvents = "all";
       }
     });
+    window.addEventListener("beforeunload", () => { _stopSessionsPoll(); });
   </script>
   <!-- marked.js: renderizador de markdown para o modal de Diretrizes do Agente e preview do editor -->
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>

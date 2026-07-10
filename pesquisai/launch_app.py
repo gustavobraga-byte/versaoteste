@@ -1482,11 +1482,15 @@ def start_wrapper_server():
                         self._json(400, {"error": "provider obrigatório para exclusão."})
                         return
                     existing = load_encrypted_keys(DRIVE_BACKUP_DIR)
-                    removed_key = existing.pop(provider, None)
-                    removed_env = existing.pop(f"_env_{provider}", None)
-                    if not removed_key and not removed_env:
+                    # Verifica existência ANTES de dar pop, para não rejeitar chaves
+                    # corrompidas/vazias (valor "" é falsy mas a entrada existe).
+                    provider_exists = provider in existing
+                    env_exists = f"_env_{provider}" in existing
+                    if not provider_exists and not env_exists:
                         self._json(404, {"error": f"Chave não encontrada: {provider}"})
                         return
+                    removed_key = existing.pop(provider, None)
+                    removed_env = existing.pop(f"_env_{provider}", None)
                     if not save_encrypted_keys(DRIVE_BACKUP_DIR, existing):
                         self._json(500, {"error": "Falha ao salvar chaves após exclusão."})
                         return
