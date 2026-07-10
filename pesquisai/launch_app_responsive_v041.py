@@ -826,13 +826,27 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   </div>
 
   <div id="provider-overlay" onclick="if(event.target===this)closeProvider()" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:480px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
-      <div id="prov-step1">
+    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:520px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+      <div id="prov-step0">
+        <div class="modal-title">🔌 <span data-i18n="providers.title">Conectar Provedor de IA</span></div>
+        <p style="font-size:11.5px;color:var(--ink-muted);margin-bottom:14px;line-height:1.6;" data-i18n="providers.saved_keys">Chaves salvas no Drive:</p>
+        <div id="prov-saved-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px;margin-bottom:14px;">
+          <div style="font-size:11px;color:var(--ink-muted);padding:8px 0;text-align:center;" data-i18n="ui.loading">Carregando…</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="openNewProvider()" style="flex:1;padding:9px;background:var(--accent-dim);border:1px solid rgba(var(--accent-rgb),.3);border-radius:var(--radius);color:var(--accent);font-family:var(--font-sans);font-size:12px;cursor:pointer;">+ <span data-i18n="providers.add_new">Novo provedor</span></button>
+          <button onclick="closeProvider()" style="padding:9px 14px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:12px;cursor:pointer;" data-i18n="ui.close">Fechar</button>
+        </div>
+      </div>
+      <div id="prov-step1" style="display:none;">
         <div class="modal-title">🔌 <span data-i18n="providers.title">Conectar Provedor de IA</span></div>
         <p style="font-size:11.5px;color:var(--ink-muted);margin-bottom:14px;line-height:1.6;" data-i18n="providers.select">Selecione o provedor para configurar a API key:</p>
         <input id="prov-search" type="text" placeholder="Buscar provedor…" data-i18n-placeholder="providers.search" oninput="filterProviders(this.value)" style="display:block;width:100%;padding:8px 12px;box-sizing:border-box;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink);font-family:var(--font-sans);font-size:12px;outline:none;margin-bottom:12px;" />
         <div id="prov-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;"></div>
-        <button onclick="closeProvider()" style="display:block;width:100%;padding:8px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:12px;cursor:pointer;" data-i18n="ui.cancel">Cancelar</button>
+        <div style="display:flex;gap:8px;">
+          <button onclick="provBack()" style="padding:9px 14px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:12px;cursor:pointer;" data-i18n="providers.back">← Voltar</button>
+          <button onclick="closeProvider()" style="flex:1;padding:9px 14px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:12px;cursor:pointer;" data-i18n="ui.cancel">Cancelar</button>
+        </div>
       </div>
       <div id="prov-step2" style="display:none;">
         <div class="modal-title">🔑 <span id="prov-name-title"></span></div>
@@ -865,7 +879,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <div id="session-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
         <div class="modal-empty" data-i18n="ui.loading">Carregando sessões…</div>
       </div>
-      <button onclick="closeSessions()" class="modal-close" data-i18n="ui.close">Fechar</button>
+      <div style="display:flex;gap:8px;">
+        <button onclick="loadSessions(true)" class="modal-close" style="width:auto;" data-i18n="sessions.refresh">↻ Atualizar</button>
+        <button onclick="closeSessions()" class="modal-close" style="flex:1;" data-i18n="ui.close">Fechar</button>
+      </div>
     </div>
   </div>
 
@@ -1344,14 +1361,30 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     let _selProv = null;
 
     function connectProvider() {
-      document.getElementById("prov-search").value = "";
-      renderProviderList("");
-      document.getElementById("prov-step1").style.display = "block";
-      document.getElementById("prov-step2").style.display = "none";
-      document.getElementById("prov-key-input").value = "";
       const overlay = document.getElementById("provider-overlay");
       overlay.style.opacity = "1";
       overlay.style.pointerEvents = "all";
+      showProviderStep("prov-step0");
+      loadSavedKeys(true);
+    }
+
+    function showProviderStep(stepId) {
+      ["prov-step0", "prov-step1", "prov-step2"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (id === stepId) ? "block" : "none";
+      });
+      if (stepId === "prov-step1") {
+        document.getElementById("prov-search").value = "";
+        renderProviderList("");
+      }
+      if (stepId === "prov-step2") {
+        document.getElementById("prov-key-input").value = "";
+      }
+    }
+
+    function openNewProvider() {
+      _selProv = null;
+      showProviderStep("prov-step1");
     }
 
     function renderProviderList(q) {
@@ -1392,8 +1425,19 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     }
 
     function provBack() {
-      document.getElementById("prov-step1").style.display = "block";
-      document.getElementById("prov-step2").style.display = "none";
+      if (document.getElementById("prov-step2").style.display === "block") {
+        // Se estiver editando uma chave existente, volta para a lista de chaves
+        if (_selProv && _selProv._edit) {
+          _selProv = null;
+          showProviderStep("prov-step0");
+          loadSavedKeys(true);
+          return;
+        }
+        showProviderStep("prov-step1");
+      } else if (document.getElementById("prov-step1").style.display === "block") {
+        showProviderStep("prov-step0");
+        loadSavedKeys(true);
+      }
     }
 
     function closeProvider() {
@@ -1405,15 +1449,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
 
     async function confirmProvider() {
       const key = document.getElementById("prov-key-input").value.trim();
-      if (!key) { toast("⚠️ Insira a API key.", "err"); return; }
-      if (!_selProv) { toast("⚠️ Selecione um provedor.", "err"); return; }
-      // 🐛 HOTFIX v0.5.1.3 — guardar refs em variáveis locais ANTES de fechar overlay
-      // O bug original: closeProvider() setava _selProv = null, e a linha seguinte
-      // (_selProv.id no JSON.stringify) crashava com "Cannot read properties of null".
+      if (!key) { toast("⚠️ " + (I18N[_currentLang]?.["providers.key_required"] || "Insira a API key."), "err"); return; }
+      if (!_selProv) { toast("⚠️ " + (I18N[_currentLang]?.["providers.select_required"] || "Selecione um provedor."), "err"); return; }
+      // HOTFIX v0.5.1.3+ — guardar refs em variáveis locais ANTES de fechar overlay
       const provId = _selProv.id;
       const provEnv = _selProv.env;
       const provName = _selProv.name;
-      toast("💾 Salvando…", "info");
+      const isEdit = !!_selProv._edit;
+      toast("💾 " + (I18N[_currentLang]?.["providers.saving"] || "Salvando…"), "info");
       try {
         const r = await fetch(BASE + "/api/apikey", {
           method: "POST",
@@ -1422,14 +1465,123 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         });
         const d = await r.json().catch(() => ({}));
         if (r.ok && (d.ok !== false)) {
-          toast(`✅ ${provName} conectado!`, "ok");
+          // Aplica chaves no ambiente e recarrega ttyd para usar a nova key
+          try {
+            await fetch(BASE + "/api/apikey/apply", { method: "POST" });
+            reloadTerminalFrame();
+          } catch(_){}
+          toast(`✅ ${provName} ${isEdit ? (I18N[_currentLang]?.["providers.updated"] || "atualizado") : (I18N[_currentLang]?.["providers.connected"] || "conectado")}!`, "ok");
           closeProvider();
+          // Atualiza a lista de chaves salvas se estiver visível
+          setTimeout(() => loadSavedKeys(true).catch(()=>{}), 300);
         } else {
           toast("❌ " + (d.error || `Erro HTTP ${r.status}`), "err");
         }
       } catch(e) {
         toast("❌ " + e.message, "err");
       }
+    }
+
+    // Recarrega o iframe do ttyd (usado após salvar key/trocar tema/restaurar sessão)
+    function reloadTerminalFrame() {
+      const fr = document.getElementById("terminal-frame");
+      if (!fr) return;
+      const theme = document.documentElement.getAttribute("data-theme") || "pesquisai";
+      const origSrc = (fr.src || "{__TERMINAL_URL__}").split("?")[0];
+      fr.src = "about:blank";
+      setTimeout(() => {
+        fr.src = origSrc + "?theme=" + theme + "&t=" + Date.now();
+      }, 3500);
+    }
+
+    // ── Gestão de chaves salvas ─────────────────────────────────
+    let _savedKeys = {};
+
+    async function loadSavedKeys(force) {
+      const listEl = document.getElementById("prov-saved-list");
+      if (!listEl) return;
+      if (!force && Object.keys(_savedKeys).length) {
+        renderSavedKeys();
+        return;
+      }
+      listEl.innerHTML = '<div style="font-size:11px;color:var(--ink-muted);padding:8px 0;">' + (I18N[_currentLang]?.["ui.loading"] || "Carregando…") + '</div>';
+      try {
+        const r = await fetch(BASE + "/api/apikey");
+        const d = await r.json();
+        _savedKeys = d.keys || {};
+        renderSavedKeys();
+      } catch(e) {
+        listEl.innerHTML = '<div style="font-size:11px;color:var(--red);padding:8px 0;">❌ ' + e.message + '</div>';
+      }
+    }
+
+    function renderSavedKeys() {
+      const listEl = document.getElementById("prov-saved-list");
+      if (!listEl) return;
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      const keys = Object.keys(_savedKeys).filter(k => !k.startsWith("_env_"));
+      if (!keys.length) {
+        listEl.innerHTML = '<div style="font-size:11px;color:var(--ink-muted);padding:8px 0;text-align:center;">' + (dict["providers.no_saved_keys"] || "Nenhuma chave salva ainda.") + '</div>';
+        return;
+      }
+      let html = '<div style="display:flex;flex-direction:column;gap:6px;">';
+      for (const provider of keys) {
+        const p = PROVIDERS.find(x => x.id === provider);
+        const name = p ? p.name : provider;
+        const masked = _savedKeys[provider] || "••••";
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:var(--radius);">';
+        html += '<div style="min-width:0;">';
+        html += '<div style="font-size:12px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(name) + '</div>';
+        html += '<div style="font-size:10px;color:var(--ink-muted);font-family:var(--font-mono);">' + escapeHtml(masked) + '</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px;flex-shrink:0;">';
+        html += '<button onclick="editSavedKey(' + JSON.stringify(provider) + ')" style="padding:5px 10px;font-size:11px;background:var(--accent-dim);color:var(--accent);border:1px solid rgba(var(--accent-rgb),.25);border-radius:4px;cursor:pointer;">' + (dict["providers.edit"] || "Editar") + '</button>';
+        html += '<button onclick="deleteSavedKey(' + JSON.stringify(provider) + ')" style="padding:5px 10px;font-size:11px;background:var(--red-dim);color:var(--red);border:1px solid rgba(198,40,40,.25);border-radius:4px;cursor:pointer;">' + (dict["providers.delete"] || "Excluir") + '</button>';
+        html += '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+      listEl.innerHTML = html;
+    }
+
+    function editSavedKey(provider) {
+      const p = PROVIDERS.find(x => x.id === provider);
+      if (!p) { toast("⚠️ Provedor não reconhecido.", "err"); return; }
+      _selProv = { ...p, _edit: true };
+      document.getElementById("prov-name-title").textContent = p.name;
+      document.getElementById("prov-env-code").textContent = p.env;
+      document.getElementById("prov-key-input").placeholder = p.hint || "Cole sua key aqui…";
+      document.getElementById("prov-key-input").value = "";
+      document.getElementById("prov-step0").style.display = "none";
+      document.getElementById("prov-step1").style.display = "none";
+      document.getElementById("prov-step2").style.display = "block";
+      setTimeout(() => document.getElementById("prov-key-input").focus(), 80);
+    }
+
+    async function deleteSavedKey(provider) {
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      const p = PROVIDERS.find(x => x.id === provider);
+      const name = p ? p.name : provider;
+      pesquisaiConfirm((dict["providers.confirm_delete"] || "Excluir chave de") + " " + name + "?", async function() {
+        try {
+          const r = await fetch(BASE + "/api/apikey", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: provider, action: "delete" })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && (d.ok !== false)) {
+            delete _savedKeys[provider];
+            delete _savedKeys["_env_" + provider];
+            renderSavedKeys();
+            toast("🗑 " + name + " " + (dict["providers.deleted"] || "excluído"), "ok");
+          } else {
+            toast("❌ " + (d.error || "Erro"), "err");
+          }
+        } catch(e) {
+          toast("❌ " + e.message, "err");
+        }
+      });
     }
 
     // ── Cache compartilhado (5s) ──────────────────────────────────
@@ -1521,7 +1673,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     async function openSessions() {
       const overlay = document.getElementById("sessions-overlay");
       overlay.style.opacity = "1"; overlay.style.pointerEvents = "all";
-      await loadSessions();
+      // Força recarregamento para sempre mostrar a sessão mais recente
+      await loadSessions(true);
     }
     function closeSessions() {
       const o = document.getElementById("sessions-overlay");
@@ -1624,6 +1777,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         });
         const d = await r.json();
         if (r.ok) {
+          // Invalida cache para que a próxima abertura mostre a sessão atual
+          _sessionsCache = { data: null, ts: 0 };
           toast("✅ Sessão " + sessionId + " restaurada!", "ok");
           closeSessions();
         } else {
@@ -2682,9 +2837,11 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
 <div id="welcome-hint" onclick="document.getElementById('welcome-hint').style.opacity='0';document.getElementById('welcome-hint').style.pointerEvents='none';try{localStorage.setItem('pesquisai_onboarded','1')}catch(e){}" style="position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .25s;">
   <div style="background:#1c1f22;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:28px 32px;width:420px;max-width:90vw;box-shadow:0 28px 72px rgba(0,0,0,.7);text-align:center;">
     
-    <!-- Título -->
-    <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:8px;">PesquisAI</div>
-    
+    <!-- Logo SVG -->
+    <div style="margin-bottom:12px;display:flex;justify-content:center;">
+      <img src="https://raw.githubusercontent.com/gustavobraga-byte/PesquisAI/refs/heads/main/assets/logo.svg" alt="PesquisAI" style="width:260px;height:auto;max-width:80vw;border-radius:8px;" />
+    </div>
+
     <!-- Descrição concisa -->
     <div style="font-size:12.5px;line-height:1.65;color:var(--ink-muted);margin-bottom:8px;">
       Agente de IA para pesquisa científica.
@@ -2745,9 +2902,23 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "dashboard.title": "Dashboard de Saúde",
             "providers.title": "Conectar Provedor de IA",
             "providers.select": "Selecione o provedor para configurar a API key:",
+            "providers.saved_keys": "Chaves salvas no Drive:",
+            "providers.add_new": "Novo provedor",
+            "providers.search": "Buscar provedor…",
             "providers.api_key": "API KEY", "providers.back": "← Voltar",
             "providers.save_connect": "Salvar e Conectar",
             "providers.var": "Variável",
+            "providers.key_required": "Insira a API key.",
+            "providers.select_required": "Selecione um provedor.",
+            "providers.saving": "Salvando…",
+            "providers.connected": "conectado",
+            "providers.updated": "atualizado",
+            "providers.no_saved_keys": "Nenhuma chave salva ainda.",
+            "providers.edit": "Editar",
+            "providers.delete": "Excluir",
+            "providers.confirm_delete": "Excluir chave de",
+            "providers.deleted": "excluído",
+            "sessions.refresh": "↻ Atualizar",
             "sessions.title": "Histórico de Sessões",
             "sessions.search_placeholder": "🔍 Buscar por id ou conteúdo…",
             "shortcuts.title": "Atalhos de Teclado",
@@ -2817,9 +2988,23 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "dashboard.title": "Health Dashboard",
             "providers.title": "Connect AI Provider",
             "providers.select": "Select the provider to configure the API key:",
+            "providers.saved_keys": "Keys saved on Drive:",
+            "providers.add_new": "New provider",
+            "providers.search": "Search provider…",
             "providers.api_key": "API KEY", "providers.back": "← Back",
             "providers.save_connect": "Save and Connect",
             "providers.var": "Variable",
+            "providers.key_required": "Enter the API key.",
+            "providers.select_required": "Select a provider.",
+            "providers.saving": "Saving…",
+            "providers.connected": "connected",
+            "providers.updated": "updated",
+            "providers.no_saved_keys": "No saved keys yet.",
+            "providers.edit": "Edit",
+            "providers.delete": "Delete",
+            "providers.confirm_delete": "Delete key for",
+            "providers.deleted": "deleted",
+            "sessions.refresh": "↻ Refresh",
             "sessions.title": "Session History",
             "sessions.search_placeholder": "🔍 Search by id or content…",
             "shortcuts.title": "Keyboard Shortcuts",
@@ -2889,9 +3074,23 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "dashboard.title": "Panel de Salud",
             "providers.title": "Conectar Proveedor de IA",
             "providers.select": "Seleccione el proveedor para configurar la API key:",
+            "providers.saved_keys": "Claves guardadas en Drive:",
+            "providers.add_new": "Nuevo proveedor",
+            "providers.search": "Buscar proveedor…",
             "providers.api_key": "API KEY", "providers.back": "← Volver",
             "providers.save_connect": "Guardar y Conectar",
             "providers.var": "Variable",
+            "providers.key_required": "Ingrese la API key.",
+            "providers.select_required": "Seleccione un proveedor.",
+            "providers.saving": "Guardando…",
+            "providers.connected": "conectado",
+            "providers.updated": "actualizado",
+            "providers.no_saved_keys": "Aún no hay claves guardadas.",
+            "providers.edit": "Editar",
+            "providers.delete": "Eliminar",
+            "providers.confirm_delete": "Eliminar clave de",
+            "providers.deleted": "eliminado",
+            "sessions.refresh": "↻ Actualizar",
             "sessions.title": "Historial de Sesiones",
             "sessions.search_placeholder": "🔍 Buscar por id o contenido…",
             "shortcuts.title": "Atajos de Teclado",
@@ -2961,9 +3160,23 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "dashboard.title": "Tableau de bord de santé",
             "providers.title": "Connecter un fournisseur d'IA",
             "providers.select": "Sélectionnez le fournisseur pour configurer la clé API:",
+            "providers.saved_keys": "Clés enregistrées sur Drive:",
+            "providers.add_new": "Nouveau fournisseur",
+            "providers.search": "Rechercher un fournisseur…",
             "providers.api_key": "CLÉ API", "providers.back": "← Retour",
             "providers.save_connect": "Enregistrer et connecter",
             "providers.var": "Variable",
+            "providers.key_required": "Entrez la clé API.",
+            "providers.select_required": "Sélectionnez un fournisseur.",
+            "providers.saving": "Enregistrement…",
+            "providers.connected": "connecté",
+            "providers.updated": "mis à jour",
+            "providers.no_saved_keys": "Aucune clé enregistrée pour l'instant.",
+            "providers.edit": "Modifier",
+            "providers.delete": "Supprimer",
+            "providers.confirm_delete": "Supprimer la clé de",
+            "providers.deleted": "supprimé",
+            "sessions.refresh": "↻ Actualiser",
             "sessions.title": "Historique des sessions",
             "sessions.search_placeholder": "🔍 Rechercher par id ou contenu…",
             "shortcuts.title": "Raccourcis clavier",
