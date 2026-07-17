@@ -131,6 +131,20 @@ A memória reside na pasta PesquisAI no Google Drive do usuário.
 
 #### 2.2.4 Estrutura da memória
 
+Estrutura total
+```markdown
+PesquisAI/
+├── vault/       # memória: notas, hipóteses, referências, assets internos
+└── outputs - <nome-do-projeto>/     # entregáveis finais: artigos, PDFs, DOCX, slides (uma pasta por projeto)
+    ├── artigos/                   # Artigos em .md, .docx ou .tex
+    ├── pdfs/                       # Versões finais em PDF
+    ├── slides/                     # Apresentações (PPT, PDF, Reveal.js)
+    ├── figuras/                    # Figuras e infográficos
+    ├── Outros/                     # outros arquivos relevantes para o usuário
+    └── datasets/                   # Datasets processados e limpos (prontos para publicação)
+```
+Estrutura do vault (memória)
+
 ```markdown
 vault/
 ├── .obsidian/                  # config
