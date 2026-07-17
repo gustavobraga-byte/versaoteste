@@ -120,6 +120,25 @@ PesquisAI/
     ├── figuras/                  # Figuras e infográficos finais
     └── datasets/                 # Datasets processados
 ```
+##### 2.4.4.1 Estrutura recomendada do vault
+
+```
+vault/
+├── .obsidian/                  # config do Obsidian
+├── .backups/                   # backups automáticos
+├── .trash/                     # lixeira do agente
+├── .pesquisai-audit.log        # log de auditoria
+├── daily/                      # notas diárias (YYYY-MM-DD.md)
+├── research/                   # projetos de pesquisa
+├── literature/                 # revisões de literatura
+├── methodology/                # métodos analíticos
+├── hypothesis/                 # hipóteses (H<n>-slug.md)
+├── reference/                  # citações (citekey.md)
+├── sessions/                   # logs de sessão
+├── moc/                        # Maps of Content (inclui index.md)
+├── inbox/                      # capturas rápidas
+└── datasource/                 # fontes de dados
+```
 
 #### 2.2.5 Tags oficiais
 
@@ -127,7 +146,6 @@ PesquisAI/
 |---|---|
 | `pesquisai/ibge`, `pesquisai/datasus`, `pesquisai/agrobr` | Dados BR específicos |
 | `pesquisai/dados-brasil` | Outros dados BR |
-| `pesquisai/capes`, `pesquisai/sucupira` | **RESERVADO (uso futuro — não aplicar até skill existir)** |
 | `pesquisai/daily`, `pesquisai/session` | Temporais |
 | `pesquisai/research`, `pesquisai/literature` | Projetos e revisões |
 | `pesquisai/methodology`, `pesquisai/hypothesis` | Métodos e hipóteses |
