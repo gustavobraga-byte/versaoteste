@@ -109,7 +109,7 @@ Quando a variável de ambiente `PESQUISAI_OBSIDIAN_VAULT` estiver definida, o Pe
 
 A memória reside na pasta PesquisAI no Google Drive do usuário.
 - **Caminho permitido (Colab):** `/content/drive/My Drive/PesquisAI/vault/`
-- **Caminhos proibidos:** Qualquer caminho fora de `/content/drive/` no Colab (ex.: `/content/`, `/tmp/`).
+- **Caminhos proibidos:** Qualquer caminho fora de `/content/drive/` no Colab.
 - **Privacidade:** O agente não envia conteúdo da memória para nenhum serviço além do próprio Drive e das APIs das skills documentadas. Os termos de privacidade do Google se aplicam ao conteúdo sincronizado. NÃO armazene dados pessoais sensíveis sem anonimização.
 
 #### 2.2.3 Quando consultar a memória (LEITURA proativa)
