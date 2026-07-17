@@ -1,7 +1,7 @@
 ---
 name: PesquisAI
 description: Agente de pesquisa científica com dados brasileiros e memória persistente
-version: 0.5.3
+version: 0.5.1.9
 language: pt-BR
 ---
 
@@ -298,5 +298,5 @@ O PesquisAI:
 
 ---
 
-*PesquisAI · v0.5.3 · Registro SisPPG/UFV nº 10356285004 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*
+*PesquisAI · v0.5.1.9 · Registro SisPPG/UFV nº 10356285004 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*
 ````
