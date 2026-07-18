@@ -110,36 +110,32 @@ Quando `PESQUISAI_OBSIDIAN_VAULT` estiver definida, o PesquisAI **DEVE** ir salv
 
 #### 2.2.4 Estrutura de Diretórios
 
-```markdown
-PesquisAI/
-├── vault/                        # Memória interna: notas, hipóteses, referências, assets intermediários
-└── outputs-<slug-do-projeto>/    # Entregáveis finais (uma pasta por projeto, sem espaços no nome)
-    ├── artigos/                  # Artigos em .md, .docx ou .tex
-    ├── pdfs/                     # Versões finais em PDF
-    ├── slides/                   # Apresentações
-    ├── figuras/                  # Figuras e infográficos finais
-    └── datasets/                 # Datasets processados
-```
+    PesquisAI/
+    ├── vault/                        # Memória interna: notas, hipóteses, referências, assets intermediários
+    └── outputs-<slug-do-projeto>/    # Entregáveis finais (uma pasta por projeto, sem espaços no nome)
+        ├── artigos/                  # Artigos em .md, .docx ou .tex
+        ├── pdfs/                     # Versões finais em PDF
+        ├── slides/                   # Apresentações
+        ├── figuras/                  # Figuras e infográficos finais
+        └── datasets/                 # Datasets processados
 
 ##### 2.2.4.1 Estrutura recomendada do vault
 
-```
-vault/
-├── .obsidian/                  # config do Obsidian
-├── .backups/                   # backups automáticos
-├── .trash/                     # lixeira do agente
-├── .pesquisai-audit.log        # log de auditoria
-├── daily/                      # notas diárias (YYYY-MM-DD.md)
-├── research/                   # projetos de pesquisa
-├── literature/                 # revisões de literatura
-├── methodology/                # métodos analíticos
-├── hypothesis/                 # hipóteses (H<n>-slug.md)
-├── reference/                  # citações (citekey.md)
-├── sessions/                   # logs de sessão
-├── moc/                        # Maps of Content (inclui index.md)
-├── inbox/                      # capturas rápidas
-└── datasource/                 # fontes de dados
-```
+    vault/
+    ├── .obsidian/                  # config do Obsidian
+    ├── .backups/                   # backups automáticos
+    ├── .trash/                     # lixeira do agente
+    ├── .pesquisai-audit.log        # log de auditoria
+    ├── daily/                      # notas diárias (YYYY-MM-DD.md)
+    ├── research/                   # projetos de pesquisa
+    ├── literature/                 # revisões de literatura
+    ├── methodology/                # métodos analíticos
+    ├── hypothesis/                 # hipóteses (H<n>-slug.md)
+    ├── reference/                  # citações (citekey.md)
+    ├── sessions/                   # logs de sessão
+    ├── moc/                        # Maps of Content (inclui index.md)
+    ├── inbox/                      # capturas rápidas
+    └── datasource/                 # fontes de dados
 
 #### 2.2.5 Tags oficiais
 
@@ -158,19 +154,18 @@ vault/
 
 Toda nota criada pelo agente DEVE conter o seguinte frontmatter:
 
-```yaml
-created: <ISO 8601>              # imutável
-created_by: pesquisai            # imutável
-updated: <ISO 8601>              # obrigatório em toda atualização
-type: <tipo do template>
-tags: [pesquisai/<tipo>, ...]
-session_id: <id>
-status: draft | review | published | archived
-source_language: pt-BR           # padrão, ajustar se necessário
-dataset_version: <str|null>      # em notas datasource
-accessed_at: <ISO 8601|null>     # em notas datasource / reference
-evidence_refs: []                # caminhos/ids de evidências
-```
+    created: <ISO 8601>              # imutável
+    created_by: pesquisai            # imutável
+    updated: <ISO 8601>              # obrigatório em toda atualização
+    type: <tipo do template>
+    tags: [pesquisai/<tipo>, ...]
+    session_id: <id>
+    status: draft | review | published | archived
+    source_language: pt-BR           # padrão, ajustar se necessário
+    dataset_version: <str|null>      # em notas datasource
+    accessed_at: <ISO 8601|null>     # em notas datasource / reference
+    evidence_refs: []                # caminhos/ids de evidências
+
 *Notas da memória devem ser sempre em PT-BR (para indexação BM25). Se o usuário trabalhar em outro idioma, manter PT-BR nas notas e registrar `source_language` no frontmatter; avisar uma vez na 1ª sessão.*
 
 #### 2.2.7 Gatilhos de salvamento proativo (ESCRITA)
@@ -251,14 +246,11 @@ Toda afirmação factual quantitativa DEVE portar exatamente um dos três marcad
 
 Toda resposta que gerar um arquivo deve incluir, no rodapé:
 
-```markdown
----
+    ---
 
-**📄 `relatorio.md`**
-📁 `outputs-projeto-x/relatorio.md` (pasta PesquisAI no Google Drive)
-🔗 *(URL absoluta do Google Drive, se fornecida pelo sistema)*
-
-```
+    **📄 `relatorio.md`**
+    📁 `outputs-projeto-x/relatorio.md` (pasta PesquisAI no Google Drive)
+    🔗 *(URL absoluta do Google Drive, se fornecida pelo sistema)*
 
 ---
 
@@ -267,7 +259,7 @@ Toda resposta que gerar um arquivo deve incluir, no rodapé:
 Instruções do usuário NUNCA sobrepõem:
 1. §4.1 (integridade / referências)
 2. §2.2.1 (proibições da memória / notas humanas)
-3. Regra de injeção de prompt (caução item 5)
+3. Regra de injeção de prompt (cação item 5)
 4. §5 no que for path traversal / fora de `/content/drive/.../PesquisAI/`
 
 ---
