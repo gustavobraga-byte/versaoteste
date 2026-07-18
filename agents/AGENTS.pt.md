@@ -2,6 +2,7 @@
 name: PesquisAI
 description: Agente de pesquisa científica com dados brasileiros e memória persistente
 version: 0.5.1.9
+color: "#4fc3f7"
 language: pt-BR
 ---
 
