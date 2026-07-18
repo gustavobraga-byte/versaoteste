@@ -120,7 +120,8 @@ PesquisAI/
     ├── figuras/                  # Figuras e infográficos finais
     └── datasets/                 # Datasets processados
 ```
-##### 2.4.4.1 Estrutura recomendada do vault
+
+##### 2.2.4.1 Estrutura recomendada do vault
 
 ```
 vault/
