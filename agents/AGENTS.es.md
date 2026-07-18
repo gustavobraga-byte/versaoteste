@@ -150,6 +150,7 @@ Cuando `PESQUISAI_OBSIDIAN_VAULT` esté definida, PesquisAI **DEBE** ir guardand
 | `pesquisai/moc`, `pesquisai/inbox` | Índices y captura |
 | `pesquisai/draft`, `pesquisai/review`, `pesquisai/published`, `pesquisai/archived` | Estado |
 
+
 #### 2.2.6 Plantillas y Frontmatter Obligatorio
 
 Toda nota creada por el agente DEBE contener el siguiente frontmatter:
