@@ -1,141 +1,30 @@
 """
-__version__.py — Fonte única de versão do PesquisAI v0.4.2.2.
+__version__.py — Fonte única de versão do PesquisAI v0.6.0 (WEBCLI Mode).
 
-Este repositório contém o **PesquisAI release v0.4.2.2** + sandbox pessoal:
+v0.6.0 WEBCLI: ttyd removido, substituído pelo `opencode web` (webcli oficial).
+O wrapper Python customizado (FastAPI, React, WebSocket) foi eliminado.
+O `opencode web` serve a interface web completa nativamente.
 
-Estrutura do repositório:
-  /                       # PesquisAI release v0.4.2.2 (raiz)
+Estrutura do repositório (v0.6.0 WEBCLI):
+  /                       # PesquisAI v0.6.0 WEBCLI
   ├── agents/             # AGENTS.md multilíngues (4 idiomas)
+  ├── assets/             # Logo e ícones
   ├── docs/               # Documentação (CHANGELOG, PATCH, etc.)
-  ├── grant_finder/       # Skill de busca de fomento
   ├── i18n/               # Módulo multilíngue
-  ├── pesquisai/          # Módulo PesquisAI (v0.4.2.2)
-  │   ├── __version__.py  # ⭐ Fonte única da versão (v0.4.2.2)
-  │   ├── launch_app.py
-  │   ├── launch_app_responsive.py
-  │   └── launch_app_responsive_v041.py
-  ├── releases/v0.4.0/    # Release isolada completa
-  ├── sandbox/            # 🏖️ Arquivos não-PesquisAI
-  ├── sessions/           # Logs de sessão
-  └── skills/             # Skills adicionais (grant-finder, meta-search-br)
-
-Compatível com o PesquisAI principal (v0.2.1+).
-
-═════════════════════════════════════════════════════════════════════════
-Histórico de versões:
-════════════════════════════════════════════════════════════════════════
-  v0.5.1.8 — 🐛 3 bugfixes: provider buttons, session restore, backup confirm
-            • BUG 1 (provider): JSON.stringify em onclick gerava SyntaxError
-              em Python string tripla — trocado por data-provider +
-              this.dataset.provider
-            • BUG 2 (session history): "opencode session restore <id>"
-              restaurava dados mas iniciava opencode do zero
-              (linha 1600: ; {_opencode_bin}). Trocado para
-              "opencode -s <id>" com no_fallback=true, + location.reload()
-              para reconectar ao ttyd com a sessão correta.
-            • FEATURE 3 (backup restore): pesquisaiConfirm() adicionado
-              em doRestore(file) para confirmar antes de importar backup.
-  v0.5.1.4 — 🧠 Editor de Memória Obsidian no botão 🧠
-    v0.5.1.5 — 🔧 Botões não funcionavam (SyntaxError JS em string multilinha)
-            • NOVO split view no overlay de Memória: lista de notas
-              à esquerda + editor markdown com tabs Edit/Preview/Split
-              à direita
-            • 4 endpoints REST novos:
-              GET  /api/obsidian/note?path=...     — ler nota crua
-              GET  /api/obsidian/tree?subdir=...  — árvore agrupada
-              GET  /api/obsidian/search?q=...     — busca BM25
-              GET  /api/obsidian/tags             — tags com contagem
-            • POST /api/obsidian/note (3 actions):
-              action=save   — sobrescrever nota (force=true para humanas)
-              action=create — criar nova nota de template
-              action=delete — mover para .trash/ (force=true para humanas)
-            • Buscar (debounce 150ms), editar com dirty indicator, salvar
-              com confirmação, criar com diálogo de template, excluir
-              com confirmação
-            • Preview markdown via marked.js com destaque de [[wikilinks]]
-              e #tags; estilo obsidian-like
-            • 20 novas chaves i18n (memory.editor.*) em pt_BR, en_US,
-              es_ES, fr_FR
-            • Bugfix: from pathlib import Path (faltava — quebrava tree)
-  v0.5.1.3 — 🔌 Conectores de Provedor de IA não salvavam (confirmProvider)
-            • Bugfix: confirmProvider() crashava com TypeError antes de
-              salvar a API key
-            • Captura local de _selProv.id/env/name antes de closeProvider()
-            • Verifica r.ok e d.ok no fetch (antes: sempre "✅ Salvo!")
-            • closeProvider() movido para após sucesso
-            • Não altera o array PROVIDERS (opencode_go/zen compartilham
-              OPENCODE_API_KEY por design)
-  v0.5.1.2 — 🧠 Botão Memória Obsidian no topbar
-            • Overlay de Memória mostra status (ready/disabled/...) +
-              stats (notas, tags, links) + notas recentes + daily notes
-            • Endpoints: GET /api/obsidian (status)
-  v0.5.1  — 🤖 Obsidian Autopilot (salvamento autônomo)
-            • Módulo pesquisai.obsidian.autopilot (API de alto nível)
-            • run_fast.py chama auto_init() na inicialização
-            • Vault é CRIADO AUTOMATICAMENTE no Google Drive
-            • Daily note e MOC raiz criados automaticamente
-            • Sessão de log iniciada automaticamente
-            • AGENTS.md injetado com instruções de salvamento autônomo
-            • O agente SALVA SOZINHO — não espera o usuário pedir
-            • API: recall(), save(), save_finding(), end_session()
-  v0.5.0  — 🧠 Obsidian Second Brain (Long-Term Memory)
-            • Módulo pesquisai.obsidian (8 arquivos, ~1.500 linhas)
-            • Skill obsidian-memory (repositório git separado)
-            • 10 templates Obsidian (daily, research, literature, ...)
-            • Memória persistente entre sessões via vault no Google Drive
-            • Busca BM25 offline + backlinks + wikilinks + tags
-            • REGRA: vault SEMPRE no Google Drive (rejeita fora no Colab)
-            • 71 testes pytest (100% passing) + teste e2e validado
-            • Bugs corrigidos: update_note frozen + write_from_template dedup
-  v0.4.0  — Release inicial com agente de pesquisa
-  v0.4.1  — UI Fixes (Responsive + Theme + Language)
-            • 6 media queries + hamburger menu
-            • toggleTheme() recarrega iframe ttyd
-            • Dropdown 4 idiomas (pt_BR, en_US, es_ES, fr_FR)
-  v0.4.2  — Footer Responsive + Multilingual AGENTS.md
-            • Rodapé 100% responsivo (flex-wrap + 2 linhas)
-            • Modal de Diretrizes com AGENTS.md multilíngue
-            • Endpoint GET /api/agents?lang=xx_XX
-  v0.4.2.1 — Ses_10a4: 3 correções da sessão do usuário
-            • Tema CLARO: contraste corrigido nos 6 modais
-              (background:#181b1e fixo → variável CSS .modal-shell)
-            • Dashboard de Saúde: openHealth() faz fetch em /api/health
-              e popula a lista com badges de status
-            • Modal de Diretrizes renderiza markdown (marked.js +
-              github-markdown-css) ao invés de mostrar o .md como texto cru
-  v0.4.2.3 — Ses_106b: 🔥 BUGFIX CRÍTICO — botões do wrapper não funcionavam
-            • 🐛 JS BROKEN: a string tripla do launch_app_responsive_v041.py
-              continha escapes de aspas que Python removia durante a compilação,
-              gerando JavaScript com sintaxe inválida → TODOS os botões do HTML
-              paravam de funcionar (erro SyntaxError no <script>)
-            • ✅ renderSessions: trocado onclick inline (com escapes frágeis)
-              por atributo data-session-id + event delegation (sem aspas dinâmicas)
-            • ✅ restoreSession: trocado confirm com aspas escapadas por
-              confirm(...chr(34)...) (concat JS, sem aspas escapadas)
-            • ✅ escapeHtml: trocado object literal com aspas por if/else chain
-              (evita conflito de aspas dentro do mapeamento)
-            • ✅ Validado: Node.js --check passa, 79/79 testes pytest OK,
-              10/10 funções JS verificadas
-  v0.4.2.2 — Ses_10a4+: 6 correções adicionais (sessão do usuário)
-            • 🖥️ FOOTER PC: botão provedor + "Powered by OpenCode"
-              alinhados à direita no desktop (margin-left:auto)
-            • 🧩 SKILLS: grant-finder e meta-search-br adicionados em
-              skills/ com links para clonar do GitHub
-            • 📜 SESSÕES: openSessions() agora faz fetch em /api/sessions
-              e popula a lista (estava apenas abrindo o modal)
-            • 🌍 LANG: ao trocar idioma, o ttyd é reiniciado com
-              saudação no idioma + "(a partir de agora responda em X)"
-              ao invés de "--prompt 'oi'" genérico
-            • 📦 __version__.py movido para pesquisai/__version__.py
-            • 🧹 AGENTS.md: removido "- [link/lien/enlace]" das 4 variantes
+  ├── pesquisai/          # Módulo PesquisAI (v0.6.0)
+  │   ├── __version__.py  # ⭐ Fonte única da versão
+  │   ├── setup.py        # Setup (substitui run_fast.py)
+  │   └── obsidian/       # Memória persistente
+  ├── scripts/            # Scripts de instalação e vault
+  └── tests/              # Testes pytest
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.5.1.8"
+__version__: str = "0.6.0"
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-07-10"
-__codename__: str = "🐛 3 bugfixes: provider buttons, session restore, backup confirm"
+__release_date__: str = "2026-07-20"
+__codename__: str = "WEBCLI Mode (opencode web)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
@@ -146,39 +35,28 @@ __repo_url__: str = "https://github.com/gustavobraga-byte/PesquisAI"
 __license__: str = "MIT"
 
 # ── Compatibilidade ────────────────────────────────────────────
-__pesquisai_min_version__: str = "0.2.1"
-__pesquisai_max_version__: str = "0.3.x"  # até próximo major
+__pesquisai_min_version__: str = "0.6.0"
+__pesquisai_max_version__: str = "0.6.x"
 
 # ── Tema padrão ────────────────────────────────────────────────
-__default_theme__: str = "pesquisai"  # 🌙 ESCURO (anti-flash CSS ativo)
+__default_theme__: str = "pesquisai"
 __supported_themes__: list[str] = ["pesquisai", "pesquisai-light"]
 
 # ── Componentes incluídos neste release ─────────────────────────
 __components__: dict[str, str] = {
+    "webcli": "0.6.0",
+    "obsidian_memory": "0.5.0",
+    "obsidian_autopilot": "0.5.1",
     "grant_finder": "0.1.0",
-    "grant_finder_skill": "0.1.0",       # NOVO v0.4.2.2: link clonar
     "i18n": "0.2.0",
-    "launch_app_responsive": "0.2.0",     # base responsiva
-    "launch_app_responsive_v041": "0.1.0",  # drop-in patch v0.4.1
-    "launch_app_responsive_v0421": "0.1.0",  # v0.4.2.1: 3 correções ses_10a4
-    "launch_app_responsive_v0422": "0.1.0",  # NOVO v0.4.2.2: 6 correções ses_10a4+
-    "launch_app_responsive_v0423": "0.1.0",  # NOVO v0.4.2.3: hotfix escapes JS
     "agents_multilingual": "0.1.0",
-    "agents_modal": "0.1.0",              # modal de Diretrizes com markdown
-    "footer_responsive": "0.1.0",         # footer com flex-wrap + 2 linhas
-    "footer_pc_align": "0.1.0",           # NOVO v0.4.2.2: provedor + OpenCode à direita
-    "sessions_loader": "0.1.0",           # NOVO v0.4.2.2: openSessions faz fetch
-    "lang_aware_greeting": "0.1.0",       # NOVO v0.4.2.2: saudação no idioma
 }
 
 # ── Idiomas suportados ─────────────────────────────────────────
 __supported_languages__: list[str] = ["pt_BR", "en_US", "es_ES", "fr_FR"]
 
-# ── Saudações iniciais por idioma (v0.4.2.2) ───────────────────
-# Usadas pelo ttyd ao iniciar o terminal e ao trocar de idioma.
-# Cada tupla = (saudação_curta, instrução_persistente, palavra "dica" no idioma)
-# v0.4.2.2 (ajuste pós-ses_10a4+): removida a frase "Eu sou o PesquisAI" —
-# a saudação agora é apenas a saudação curta + dica entre parênteses.
+# ── Saudações iniciais por idioma ──────────────────────────────
+# Usadas pelo setup e pelo agente para mensagem de boas-vindas.
 __language_greetings__: dict[str, tuple[str, str, str]] = {
     "pt_BR": (
         "Olá!",
@@ -210,7 +88,7 @@ __supported_grant_agencies__: list[str] = [
     "NIH", "NSF", "ERC", "Wellcome", "Horizon_Europe",
 ]
 
-# ── Skills extras (v0.4.2.2) ────────────────────────────────────
+# ── Skills extras ───────────────────────────────────────────────
 __extra_skills__: list[dict[str, str]] = [
     {
         "id": "grant-finder",
@@ -228,33 +106,6 @@ __extra_skills__: list[dict[str, str]] = [
     },
 ]
 
-# ── Endpoints REST disponíveis ─────────────────────────────────
-__api_endpoints__: list[str] = [
-    "GET  /",                       # Wrapper HTML
-    "GET  /api/sessions",           # Lista sessões
-    "GET  /api/backups",            # Lista backups do Drive
-    "GET  /api/health",             # Diagnóstico do sistema
-    "GET  /api/theme",              # Tema atual
-    "POST /api/theme",              # Persiste tema
-    "GET  /api/diagnose",           # Diagnóstico completo
-    "GET  /api/debug",              # Debug de chaves
-    "GET  /api/apikey",             # Lista/máscara chaves
-    "POST /api/apikey",             # Salva chave criptografada
-    "POST /api/apikey/apply",       # Aplica chaves no env
-    "POST /api/run_terminal",       # Executa comando no ttyd
-    "POST /api/backup",             # Exporta sessão para Drive
-    "POST /api/restore",            # Importa sessão do Drive
-    "GET  /api/agents?lang=xx_XX",  # v0.4.2: serve AGENTS.md no idioma
-    "POST /api/lang",               # NOVO v0.4.2.2: persiste idioma
-    "GET  /api/lang",               # NOVO v0.4.2.2: lê idioma atual
-    "GET  /api/obsidian",           # v0.5.1.2: status da memória
-    "GET  /api/obsidian/note",      # NOVO v0.5.1.4: ler nota
-    "GET  /api/obsidian/tree",      # NOVO v0.5.1.4: árvore de pastas
-    "GET  /api/obsidian/search",    # NOVO v0.5.1.4: busca BM25
-    "GET  /api/obsidian/tags",      # NOVO v0.5.1.4: lista de tags
-    "POST /api/obsidian/note",      # NOVO v0.5.1.4: save/create/delete
-]
-
 
 def get_version() -> str:
     """Retorna a versão formatada para exibição."""
@@ -267,13 +118,10 @@ def get_version_short() -> str:
 
 
 def get_greeting(lang: str = "pt_BR") -> str:
-    """Retorna a saudação inicial do ttyd para o idioma solicitado.
+    """Retorna a saudação para o idioma solicitado.
 
     Formato: "{saudação_curta} ({dica}: {instrução_persistente})"
     Exemplo pt_BR: "Olá! (Dica: A partir de agora responda em português brasileiro.)"
-
-    v0.4.2.2 (pós-ses_10a4+): a frase "Eu sou o PesquisAI" foi removida;
-    agora a saudação é apenas a saudação curta + dica entre parênteses.
     """
     lang = (lang or "pt_BR").split("_")[0]
     full_lang = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}.get(lang, "pt_BR")
@@ -297,5 +145,4 @@ def get_full_metadata() -> dict[str, str]:
         "languages": ", ".join(__supported_languages__),
         "agencies": ", ".join(__supported_grant_agencies__),
         "extra_skills": ", ".join(s["id"] for s in __extra_skills__),
-        "endpoints_count": len(__api_endpoints__),
     }
