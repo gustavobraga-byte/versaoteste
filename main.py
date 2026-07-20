@@ -212,8 +212,13 @@ def run():
 
     Executa setup + opencode web em modo compatível com Colab,
     sem passar por argparse (que consumiria sys.argv do notebook).
+
+    Segue o mesmo padrão do v0.5.1.9:
+      1. Setup (Drive, deps, skills, vault)
+      2. Inicia servidor web em background
+      3. Exibe "PesquisAI pronto!" + botão azul clicável
     """
-    # 1. Setup
+    # ── 1. Setup ──────────────────────────────────────────────
     from pesquisai.setup import setup
     try:
         setup()
@@ -221,15 +226,164 @@ def run():
         print("\n⚠️  Setup interrompido.")
         return
 
-    # 2. Inicia opencode web
     port = WEBCLI_PORT
-    if is_colab():
-        print("📓 Ambiente: Google Colab")
-        print(f"   Use output.serve_kernel_port_as_window({port}) para abrir a UI.")
-        print(f"   Ou use localtunnel/ngrok para expor publicamente.")
-        print()
 
+    # ── 2. Inicia opencode web em background ──────────────────
     run_webcli(port=port, hostname="0.0.0.0", background=True)
+
+    # ── 3. URL de acesso (Colab proxy ou localhost) ───────────
+    try:
+        from google.colab import output as _colab_output  # type: ignore
+        _in_colab = True
+    except ImportError:
+        _in_colab = False
+        _colab_output = None
+
+    if _in_colab and _colab_output:
+        try:
+            banner_url = _colab_output.eval_js(
+                f"google.colab.kernel.proxyPort({port})"
+            )
+        except Exception:
+            banner_url = f"http://127.0.0.1:{port}/"
+    else:
+        banner_url = f"http://127.0.0.1:{port}/"
+
+    # ── 4. Mensagem de pronto (idêntica ao v0.5.1.9) ─────────
+    try:
+        from IPython.display import display, HTML  # type: ignore
+        _has_display = True
+    except ImportError:
+        _has_display = False
+
+    if _has_display:
+        # "✨ PesquisAI pronto!" com glow verde
+        display(HTML("""
+<style>
+@keyframes glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(93, 186, 126, 0.3); }
+    50% { box-shadow: 0 0 40px rgba(93, 186, 126, 0.6); }
+}
+.ready-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 20px 0px 20px;
+}
+.ready-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 32px;
+    background: rgba(93, 186, 126, 0.12);
+    border: 2px solid rgba(93, 186, 126, 0.4);
+    border-radius: 12px;
+    animation: glow 2s ease-in-out infinite;
+}
+.ready-icon { font-size: 28px; }
+.ready-text {
+    font-family: 'DM Mono', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    color: #5dba7e;
+}
+</style>
+<div class="ready-container">
+    <div class="ready-badge">
+        <span class="ready-icon">✨</span>
+        <span class="ready-text">PesquisAI pronto!</span>
+    </div>
+</div>
+"""))
+
+        # Botão azul "ABRIR O PESQUISAI" (idêntico ao v0.5.1.9)
+        display(HTML(f"""
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500;700&family=Syne:wght@700;800&display=swap');
+  @keyframes pulse-glow {{
+    0%, 100% {{ box-shadow: 0 0 20px rgba(79,195,247,0.3), 0 4px 12px rgba(0,0,0,0.3); }}
+    50% {{ box-shadow: 0 0 40px rgba(79,195,247,0.6), 0 6px 20px rgba(0,0,0,0.4); }}
+  }}
+  .btn-container {{
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+    margin-top: 10px;
+  }}
+  .pesquisai-launch {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 24px 56px;
+    font-family: "Syne", sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #0d0f10;
+    background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 50%, #03a9f4 100%);
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    animation: pulse-glow 2.5s ease-in-out infinite;
+    position: relative;
+    overflow: hidden;
+  }}
+  .pesquisai-launch::before {{
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    transition: left 0.5s;
+  }}
+  .pesquisai-launch:hover::before {{ left: 100%; }}
+  .pesquisai-launch:hover {{
+    transform: translateY(-4px) scale(1.02);
+    filter: brightness(1.1);
+    box-shadow: 0 12px 40px rgba(79,195,247,0.5), 0 8px 24px rgba(0,0,0,0.4);
+  }}
+  .pesquisai-launch:active {{ transform: translateY(-1px) scale(0.99); }}
+  .btn-icon {{ font-size: 28px; }}
+  .btn-text {{
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }}
+  .btn-main {{ font-size: 22px; font-weight: 800; }}
+  .btn-sub {{
+    font-family: "DM Mono", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.8;
+    letter-spacing: 0.1em;
+  }}
+  .pesquisai-launch .arrow {{
+    font-size: 28px;
+    font-weight: 500;
+    transition: transform 0.2s ease;
+  }}
+  .pesquisai-launch:hover .arrow {{ transform: translateX(8px); }}
+</style>
+<div class="btn-container">
+  <a href="{banner_url}" target="_blank" class="pesquisai-launch">
+    <span class="btn-icon">🚀</span>
+    <span class="btn-text">
+      <span class="btn-main">ABRIR O PESQUISAI</span>
+      <span class="btn-sub">clique para começar</span>
+    </span>
+    <span class="arrow">→</span>
+  </a>
+</div>
+"""))
+    else:
+        print(f"🌐 Acesse: {banner_url}")
 
 
 if __name__ == "__main__":
