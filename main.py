@@ -207,5 +207,30 @@ Ambientes:
     run_webcli(port=args.port, hostname=args.hostname, background=args.background)
 
 
+def run():
+    """Ponto de entrada chamável por notebooks (from main import run; run()).
+
+    Executa setup + opencode web em modo compatível com Colab,
+    sem passar por argparse (que consumiria sys.argv do notebook).
+    """
+    # 1. Setup
+    from pesquisai.setup import setup
+    try:
+        setup()
+    except KeyboardInterrupt:
+        print("\n⚠️  Setup interrompido.")
+        return
+
+    # 2. Inicia opencode web
+    port = WEBCLI_PORT
+    if is_colab():
+        print("📓 Ambiente: Google Colab")
+        print(f"   Use output.serve_kernel_port_as_window({port}) para abrir a UI.")
+        print(f"   Ou use localtunnel/ngrok para expor publicamente.")
+        print()
+
+    run_webcli(port=port, hostname="0.0.0.0", background=True)
+
+
 if __name__ == "__main__":
     main()
