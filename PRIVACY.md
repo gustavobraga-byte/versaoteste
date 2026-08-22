@@ -24,12 +24,13 @@ LLMs em nuvem e não é controlado pelo UFVAI.
 
 | Dado | Destino | Quando | Como desligar |
 |---|---|---|---|
-| Contadores anônimos de uso (eventos sem conteúdo) | Google Analytics 4 | **Somente se você aceitar** o opt-in na tela de Termos **e** o mantenedor tiver configurado as credenciais GA4 | `UFVAI_TELEMETRY=0` · ver `TELEMETRY.md` |
+| Contadores anônimos de uso +, se consentido, cookie `_ga` do navegador (gtag.js, `anonymize_ip`) | Google Analytics 4 (dois canais: página + eventos do app, mesmo ID) | **Somente se você aceitar** o opt-in na tela de Termos | `UFVAI_TELEMETRY=0` · revogar consentimento · ver `TELEMETRY.md` |
 | Requisições a APIs públicas de dados (IBGE/SIDRA, NASA POWER, etc.) | Órgãos/fonte correspondentes | Quando uma skill consulta dados | Inerente à funcionalidade |
 | Chamadas ao LLM do provedor escolhido | Provedor configurado por você | A cada interação com o agente | Não usar o provedor |
 
 A telemetria **não inclui**: prompts, respostas, nomes de arquivos/projetos, conteúdo de notas,
-endereços de e-mail, identificadores de conta. Detalhamento completo: [`TELEMETRY.md`](TELEMETRY.md).
+endereços de e-mail, identificadores de conta. O cookie `_ga` (gtag.js client-side) só é criado
+após o seu consentimento explícito na tela de Termos. Detalhamento completo: [`TELEMETRY.md`](TELEMETRY.md).
 
 ## Termos de Uso
 
@@ -39,6 +40,26 @@ se você autorizar, também.
 
 ## Seus direitos (LGPD)
 
-Como não coletamos dados pessoais identificáveis, não há base que exija acesso/eliminação junto
-ao projeto. Dados que permanecem 100% no seu Drive estão sob seu controle direto (exclusão,
-exportação) a qualquer momento. Dúvidas: gustavo.braga@ufv.br.
+A telemetria, quando ativa, trata dados pessoais em sentido amplo (o `client_id` aleatório pode,
+em tese, ser reidentificado quando combinado a outros dados — por isso tratamos como dado pessoal
+e usamos consentimento como base legal). Você tem, nos termos do **art. 18 da LGPD**:
+
+1. Confirmação da existência de tratamento;
+2. Acesso aos dados transmitidos (visível no próprio GA4/administração);
+3. Correção de dados incompletos ou inexatos;
+4. Anonimização, bloqueio ou eliminação de dados desnecessários;
+5. Portabilidade;
+6. Informação sobre compartilhamento (Google Analytics — transferência internacional, arts. 33–36);
+7. Informação sobre a possibilidade de **não consentir** e suas consequências (nenhuma: o app
+   funciona integralmente sem telemetria);
+8. **Revogação do consentimento** a qualquer momento (`UFVAI_TELEMETRY=0` ou apagar
+   `~/.config/ufvai_consent.json` e `~/.config/ufvai_cid`);
+9. Oposição ao tratamento.
+
+**Como exercer:** escreva para gustavo.braga@ufv.br (resposta imediata em formato simplificado; 
+completa em até 15 dias, art. 19) ou acione o Encarregado institucional da UFV:
+https://dgi.ufv.br/privacidade/. Dados que permanecem 100% no seu Drive estão sob seu controle
+direto (exclusão, exportação) a qualquer momento.
+
+**Registro das operações:** o mantenedor mantém registro simples das operações de telemetria
+(eventos enviados, finalidade estatística, prazo de retenção do GA4), conforme art. 37 da LGPD.

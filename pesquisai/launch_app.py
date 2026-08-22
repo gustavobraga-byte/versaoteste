@@ -27,9 +27,16 @@ from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
 try:
     from .telemetry import event as _tel_event, set_consent as _tel_set_consent
+    from .telemetry import masked_state as _tel_masked_state, save_admin_config as _tel_save_admin
 except Exception:  # pragma: no cover
     def _tel_event(*a, **k): pass
     def _tel_set_consent(*a, **k): pass
+    def _tel_masked_state(*a, **k):
+        return {"configured": False, "measurement_id": "", "api_secret_set": False,
+                "source": "none", "consent_accepted": False, "consent_analytics": False,
+                "kill_switch": False, "enabled": False}
+    def _tel_save_admin(*a, **k):
+        return False, "Telemetria indisponível."
 # v0.4.2.2: __version__ foi MOVIDO para pesquisai/__version__.py
 # (estava em /__version__.py). Mantemos fallback para robustez.
 try:
@@ -890,6 +897,49 @@ def start_wrapper_server():
                     self.send_error(404)
                 return
 
+            if p.startswith("/assets/"):
+                # v0.6.4: assets locais (logomarca UFVAI etc.) — offline-safe.
+                # Whitelist estrita + traversal guard (resolve() deve cair dentro
+                # de um dos diretórios de assets conhecidos).
+                _ASSET_TYPES = {
+                    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                    ".png": "image/png", ".svg": "image/svg+xml",
+                    ".ico": "image/x-icon",
+                }
+                _name = os.path.basename(urlparse(self.path).path)  # sem subdirs
+                if _name in (
+                    "logo-oficial-288.jpg", "logo.svg", "ico.svg",
+                    "icon.png", "ufvai-256.png", "ufvai-128.png", "ufvai-64.png",
+                ):
+                    _roots = [
+                        Path(__file__).resolve().parent.parent / "assets",
+                        Path(__file__).resolve().parent / "assets",
+                        Path("/opt/pesquisai/assets"),
+                        Path.home() / "PesquisAI" / "assets",
+                    ]
+                    _content = None; _mime = _ASSET_TYPES.get(Path(_name).suffix.lower())
+                    for _root in _roots:
+                        try:
+                            _cand = (_root / _name).resolve()
+                            if _root.resolve() not in _cand.parents and _cand.parent != _root.resolve():
+                                continue  # traversal guard
+                            if _cand.is_file():
+                                _content = _cand.read_bytes()
+                                break
+                        except Exception:
+                            continue
+                    if _content and _mime:
+                        self.send_response(200)
+                        self.send_header("Content-Type", _mime)
+                        self.send_header("X-Content-Type-Options", "nosniff")
+                        self.send_header("Cache-Control", "max-age=86400")
+                        self.send_header("Content-Length", str(len(_content)))
+                        self.end_headers()
+                        self.wfile.write(_content)
+                        return
+                self.send_error(404)
+                return
+
             if p in ("/", "/index.html"):
                 idx = os.path.join(WRAPPER_DIR, "index.html")
                 content = open(idx, "rb").read()
@@ -998,6 +1048,11 @@ def start_wrapper_server():
                 except Exception:
                     current = "pesquisai"
                 self._json(200, {"theme": current})
+                return
+
+            if p == "/api/admin/telemetry":
+                # v0.6.4: estado da telemetria para o painel Admin (nunca expõe o secret)
+                self._json(200, _tel_masked_state())
                 return
             
             if p == "/api/diagnose":
@@ -2190,6 +2245,23 @@ def start_wrapper_server():
                     })
                 return
 
+            if p == "/api/admin/telemetry":
+                # v0.6.4: salva credenciais GA4 configuradas pelo painel Admin da UI.
+                # Grava em ~/.config/ufvai_telemetry.json (chmod 600) e aplica no
+                # processo imediatamente. O secret NUNCA é devolvido pela API.
+                ok, msg = _tel_save_admin(
+                    str(body.get("measurement_id", "")),
+                    str(body.get("api_secret", "")),
+                )
+                try:
+                    if ok:
+                        _tel_event("admin_telemetry_configured", {})
+                except Exception:
+                    pass
+                self._json(200 if ok else 400, {"ok": ok, "message": msg,
+                                                "state": _tel_masked_state()})
+                return
+
             if p == "/api/consent":
                 # v0.6.0: grava aceite dos Termos + opt-in de telemetria
                 accepted = bool(body.get("accepted", False))
@@ -2366,8 +2438,8 @@ def show_launch_button(banner_url):
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500;700&family=Syne:wght@700;800&display=swap');
   @keyframes pulse-glow {{
-    0%, 100% {{ box-shadow: 0 0 20px rgba(79,195,247,0.3), 0 4px 12px rgba(0,0,0,0.3); }}
-    50% {{ box-shadow: 0 0 40px rgba(79,195,247,0.6), 0 6px 20px rgba(0,0,0,0.4); }}
+    0%, 100% {{ box-shadow: 0 0 20px rgba(178,145,73,0.35), 0 4px 12px rgba(0,0,0,0.3); }}
+    50% {{ box-shadow: 0 0 40px rgba(178,145,73,0.6), 0 6px 20px rgba(0,0,0,0.4); }}
   }}
   .btn-container {{
     display: flex;
@@ -2386,7 +2458,7 @@ def show_launch_button(banner_url):
     font-weight: 800; 
     letter-spacing: 0.08em;
     color: #0d0f10; 
-    background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 50%, #03a9f4 100%);
+    background: linear-gradient(135deg, #d4b56a 0%, #b29149 55%, #8a6d33 100%);
     border: none; 
     border-radius: 14px; 
     cursor: pointer;
@@ -2412,7 +2484,7 @@ def show_launch_button(banner_url):
   .pesquisai-launch:hover {{
     transform: translateY(-4px) scale(1.02);
     filter: brightness(1.1);
-    box-shadow: 0 12px 40px rgba(79,195,247,0.5), 0 8px 24px rgba(0,0,0,0.4);
+    box-shadow: 0 12px 40px rgba(178,145,73,0.5), 0 8px 24px rgba(0,0,0,0.4);
   }}
   .pesquisai-launch:active {{
     transform: translateY(-1px) scale(0.99);

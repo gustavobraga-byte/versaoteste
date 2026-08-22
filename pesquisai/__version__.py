@@ -24,6 +24,32 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ════════════════════════════════════════════════════════════════════════
+  v0.6.4 — 🪪 Marca UFVAI completa · 🎨 Temas UFVAI no terminal · 🖼️ Logo oficial
+            • AGENTS.md + agents/*.md (5 idiomas): agente agora se apresenta
+              como UFVAI (IDs técnicos preservados: PESQUISAI_OBSIDIAN_VAULT,
+              ~/PesquisAI, pacote pesquisai, tags pesquisai/*).
+            • TEMAS DO TERMINAL (TUI): paleta harmonizada com a identidade
+              UFVAI — escuro: fundos azul-noite #141c24/#1f2831, acento dourado
+              #d4b56a/#b29149, amarelo UFV #D1A705; claro: papel quente + texto
+              azul-escuro. Azul antigo #4fc3f7 eliminado.
+            • Wrapper: fallback JS do applyWrapperTheme() alinhado ao CSS
+              canônico (antes sobrescrevia com teal #157a73/#46a39b); tema
+              claro dourado sobre papel; anti-flash #141c24; banner Colab em
+              gradiente dourado.
+            • LOGO OFICIAL na tela de Termos (assets/logo-oficial-288.jpg,
+              servida por nova rota /assets/* offline-safe com whitelist e
+              traversal guard). Modal de onboarding antigo do PesquisAI
+              (welcome-hint) REMOVIDO — Termos é a única abertura.
+            • Termos de Uso v2.0 (LGPD art. 7ºI/18, Portaria CNPq 2.664/2026,
+              POSIC-UFV Res. Consu 12/2024, foro Viçosa/MG) + PRIVACY.md
+              (direitos art. 18, DPO UFV, transferência internacional) +
+              LICENSE com NOTICE de marca. Re-consentimento forçado
+              (ufvai_terms_version=2).
+            • TELEMETRY.md: guia do administrador em 8 passos (GA4 MP:
+              propriedade → ID de medição → api_secret → ufvai.env/Colab →
+              DebugView) + o que o admin vê × nunca vê + LGPD operacional.
+            • install-offline.sh reescrito v0.6.4 (marca, portas 8001/8000,
+              modelo config/ufvai.env, atalho ufvai).
   v0.6.3 — 🔌 Servidor persistente (offline) + 🎨 ícone UFVAI no dock
             • BUG CRÍTICO (offline): o wrapper HTTP roda em thread daemon —
               quando run() retornava, o interpretador encerrava e a porta
@@ -169,13 +195,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.3"
+__version__: str = "0.6.4"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-08-22"
-__codename__: str = "Servidor persistente offline + ícone UFVAI no dock"
+__codename__: str = "UFVAI completo: marca, temas, logo oficial e Termos v2"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

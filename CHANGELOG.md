@@ -1,6 +1,40 @@
 # Changelog — PesquisAI
 
 
+## [0.6.4] — 2026-08-22 — 🪪 Marca UFVAI completa · 🎨 Temas UFVAI no terminal · 🖼️ Logo oficial · 📜 Termos v2
+
+### Marca (PesquisAI → UFVAI)
+- **AGENTS.md + `agents/AGENTS.{pt,en,es,fr,zh}.md`**: o agente agora se apresenta como **UFVAI** — frontmatter (`name`, versão 0.6.4, cor dourada `#b29149`), título, identidade (§1), capacidades, memória, limitações e rodapé. IDs técnicos preservados: `PESQUISAI_OBSIDIAN_VAULT`, caminhos `~/PesquisAI` e `/content/drive/My Drive/PesquisAI/`, tags `pesquisai/*`, pacote Python `pesquisai`.
+- Agente gerado pelo OpenCode (`run_fast._setup_theme_and_agent()`): `name: UFVAI` + cor dourada.
+- Strings de UI do wrapper (i18n inline em 5 idiomas): "Memória/Memory/Mémoire UFVAI", "Regras e princípios do UFVAI".
+
+### Terminal — temas harmonizados com a identidade UFVAI
+- **Temas do TUI regenerados** (`pesquisai.json` / `pesquisai-light.json`): escuro com fundos azul-noite `#141c24/#1f2831` (rail da marca), acento primário **dourado** `#d4b56a/#b29149`, amarelo UFV `#D1A705`, secundário azul-aço dessaturado; claro com papel quente e texto azul-escuro `#1f2831`. Azul antigo do PesquisAI (`#4fc3f7`) eliminado de todos os pontos.
+- **Wrapper HTML**: o fallback JS do `applyWrapperTheme()` sobrescrevia o CSS canônico com teal antigo (`#157a73`/`#46a39b`) — agora reflete a paleta UFVAI; tema claro dourado sobre papel quente (antes teal/laranja); anti-flash e `theme-color` em `#141c24`; banner Colab ("ABRIR O UFVAI") em gradiente dourado.
+
+### Abertura — logo oficial + fim do modal antigo
+- **REMOVIDO o onboarding antigo do PesquisAI** (`welcome-hint`: logo do GitHub + botão "Começar") que empilhava com a tela de Termos. A tela de **Termos de Uso é a única abertura**.
+- **Logomarca oficial** (`logo_8x8cm_300dpi.jpg`, otimizada p/ 288 px / 6,9 KB) exibida na tela de Termos via nova rota **`/assets/*` offline-safe** (whitelist estrita + traversal guard; procura no diretório do código → `/opt/pesquisai/assets` → `~/PesquisAI/assets`; `onerror` esconde graciosamente). Resolve o bug do logo que dependia de `raw.githubusercontent.com`.
+
+### Legal
+- **Termos de Uso v2.0** (`docs/TERMS_OF_USE.md`): definições, distinção licença×termos, integridade acadêmica alinhada à **Portaria CNPq nº 2.664/2026** e normas UFV (**POSIC — Resolução Consu/UFV nº 12/2024**, Código de Ética — Res. Consu nº 04/2024), LGPD completa (consentimento art. 7º I, direitos art. 18, transferência internacional arts. 33–36), foro Viçosa/MG, cessação e contato/DPO.
+- **PRIVACY.md**: seção "Seus direitos" reescrita com os 9 direitos do art. 18, canal do titular e DPO UFV (`dgi.ufv.br/privacidade`), nota sobre pseudonimização do `client_id` e registro das operações (art. 37).
+- **LICENSE**: titular atualizado para "Gustavo Bastos Braga — Universidade Federal de Viçosa (DER/UFV)" + bloco **NOTICE** (marca UFVAI, Termos v2.0, integridade científica).
+- **Overlay de Termos** atualizado (menção à Portaria CNPq e LGPD) e **re-consentimento forçado** (`ufvai_terms_version = 2`).
+
+### Telemetria — canal duplo + painel Admin na UI
+- **Google tag (gtag.js) client-side** com o ID de medição do admin (`G-CMVTFP2M6F` embutido como default; override por `UFVAI_GA_MEASUREMENT_ID`): rastreia sessões no Colab/local (`page_view`, `ufvai_session` com versão/ambiente/idioma, `anonymize_ip`). **Consent-gate**: só carrega após aceite dos Termos com estatísticas marcadas — sem consentimento não há requisição ao googletagmanager nem cookie `_ga`.
+- **Painel 📊 Telemetria (Admin)** na barra superior: estado em tempo real (ativa/inativa/motivo), campos ID de medição + API Secret salvos em `~/.config/ufvai_telemetry.json` (chmod 600, aplicados imediatamente no processo; secret nunca é devolvido pela API). Novos endpoints `GET/POST /api/admin/telemetry` (mesmo token da sessão). Strings i18n nos 5 idiomas.
+- `telemetry.py`: `_ga_config()` agora lê env → arquivo local; novas funções `save_admin_config()` e `masked_state()`.
+- **TELEMETRY.md §0 — Guia do administrador em 8 passos**: criar propriedade GA4 → fluxo Web → Measurement ID → segredo MP → `~/PesquisAI/config/ufvai.env` (offline) ou `os.environ` (Colab) → validação via DebugView → o que o admin vê × nunca vê → conformidade LGPD operacional.
+
+### Offline
+- **install-offline.sh reescrito (v0.6.4)**: marca UFVAI, portas corretas (UI 8001 · terminal 8000), atalho `ufvai` (+ alias `pesquisa` mantido por compatibilidade), modelo comentado de `config/ufvai.env`, verificação de requisitos robusta.
+
+### Validação
+- `py_compile` OK · **pytest 202/202** · smoke do wrapper (12 verificações) e dos temas (9) aprovados.
+
+
 ## [0.6.3] — 2026-08-22 — 🔌 Servidor persistente offline · 🎨 Ícone UFVAI no dock
 
 ### Correções

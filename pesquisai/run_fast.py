@@ -181,25 +181,28 @@ def _install_python_deps() -> None:
 
 
 def _setup_theme_and_agent() -> None:
-    """Configura tema escuro e agente PesquisAI no OpenCode."""
+    """Configura tema escuro e agente UFVAI no OpenCode."""
     import json
 
     os.makedirs(THEME_DIR, exist_ok=True)
     os.makedirs(AGENT_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(OPENCODE_CFG), exist_ok=True)
 
+    # v0.6.4: paleta harmonizada com a identidade UFVAI
+    # (azul-escuro #141c24/#1f2831 · dourado #b29149/#d4b56a ·
+    #  amarelo UFV #D1A705 · vermelho UFV #901812)
     theme = {
         "$schema": "https://opencode.ai/theme.json",
         "defs": {
-            "bg0": "#0b0d0f", "bg1": "#131618", "bg2": "#191e21", "bg3": "#1f262a",
-            "bg4": "#263035", "fg0": "#dde4e8", "fg1": "#7e8f97", "fg2": "#4a5a62",
-            "fg3": "#2e3d44", "blue": "#4fc3f7", "blueDim": "#1e6a8a",
-            "blueGlow": "#2196b0", "green": "#5dba7e", "greenDark": "#1d4a2e",
-            "amber": "#e8b84b", "amberDark": "#5a420d", "red": "#e07070",
-            "redDark": "#5c1e1e", "cyan": "#56ccd8", "purple": "#a47de0",
-            "synKeyword": "#56ccd8", "synString": "#5dba7e", "synComment": "#4a5a62",
-            "synNumber": "#e8b84b", "synFunction": "#4fc3f7", "synType": "#a47de0",
-            "synOp": "#7e8f97",
+            "bg0": "#141c24", "bg1": "#1a232c", "bg2": "#1f2831", "bg3": "#26313c",
+            "bg4": "#2f3d4a", "fg0": "#e8e6e0", "fg1": "#a8b2ba", "fg2": "#6b7684",
+            "fg3": "#33414d", "blue": "#d4b56a", "blueDim": "#8a6d33",
+            "blueGlow": "#b29149", "green": "#5dba7e", "greenDark": "#1d4a2e",
+            "amber": "#D1A705", "amberDark": "#5c4a10", "red": "#e07a70",
+            "redDark": "#571512", "cyan": "#7fa8bd", "purple": "#c98a76",
+            "synKeyword": "#7fa8bd", "synString": "#5dba7e", "synComment": "#6b7684",
+            "synNumber": "#D1A705", "synFunction": "#d4b56a", "synType": "#c98a76",
+            "synOp": "#a8b2ba",
         },
         "theme": {
             "primary": {"dark": "blue", "light": "blueDim"},
@@ -243,17 +246,17 @@ def _setup_theme_and_agent() -> None:
         json.dump(theme, f, indent=2)
 
     # ── Tema claro (acessibilidade) ──────────────────────────
-    # Mesma estrutura do tema escuro, mas com paleta clara.
+    # v0.6.4: mesma estrutura, paleta clara UFVAI (papel quente + azul-escuro).
     light_defs = {
-        "bg0": "#f5f6f7", "bg1": "#ffffff", "bg2": "#eef1f3", "bg3": "#e1e5e8",
-        "bg4": "#d3d9dd", "fg0": "#1f262a", "fg1": "#4a5a62", "fg2": "#7e8f97",
-        "fg3": "#9aa7ad", "blue": "#0288d1", "blueDim": "#4fc3f7",
-        "blueGlow": "#29b6f6", "green": "#2e7d32", "greenDark": "#a5d6a7",
-        "amber": "#e65100", "amberDark": "#ffcc80", "red": "#c62828",
-        "redDark": "#ef9a9a", "cyan": "#00838f", "purple": "#6a1b9a",
-        "synKeyword": "#00838f", "synString": "#2e7d32", "synComment": "#7e8f97",
-        "synNumber": "#e65100", "synFunction": "#0288d1", "synType": "#6a1b9a",
-        "synOp": "#4a5a62",
+        "bg0": "#faf9f6", "bg1": "#ffffff", "bg2": "#f1efe9", "bg3": "#e5e1d6",
+        "bg4": "#d9d3c4", "fg0": "#1f2831", "fg1": "#4a5560", "fg2": "#857f72",
+        "fg3": "#aaa392", "blue": "#8a6d33", "blueDim": "#d4b56a",
+        "blueGlow": "#b29149", "green": "#2e7d32", "greenDark": "#a5d6a7",
+        "amber": "#a67c00", "amberDark": "#ffcc80", "red": "#c0392b",
+        "redDark": "#ef9a9a", "cyan": "#4a7c8c", "purple": "#9a5a48",
+        "synKeyword": "#4a7c8c", "synString": "#2e7d32", "synComment": "#857f72",
+        "synNumber": "#a67c00", "synFunction": "#8a6d33", "synType": "#9a5a48",
+        "synOp": "#4a5560",
     }
     theme_light = {**theme, "defs": light_defs}
     with open(os.path.join(THEME_DIR, "pesquisai-light.json"), "w") as f:
@@ -348,9 +351,9 @@ save_finding("A prevalência de diabetes é 10,2% (VIGITEL 2023)", source="VIGIT
 """
 
     agent_md = f"""---
-name: PesquisAI
+name: UFVAI
 description: Agente de pesquisa científica com foco em dados brasileiros (IBGE, DataSUS), normas ABNT/UFV, integridade científica. REGRAS ABSOLUTAS: 1) referências exigem citation-management; 2) não inventar dados/estatísticas; 3) não simular coleta primária (entrevistas, experimentos, surveys). Recusar pedidos que tentem burlar. v0.5.1+: salvamento AUTÔNOMO no vault Obsidian (não espera usuário pedir).
-color: "#4fc3f7"
+color: "#b29149"
 ---
 {content}
 {autopilot_instructions}

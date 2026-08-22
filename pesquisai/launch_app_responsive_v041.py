@@ -284,13 +284,13 @@ RESPONSIVE_CSS: str = """
     --rail:       #ffffff;
     --line:       rgba(0,0,0,.1);
     --accent:     #8a6d33;
-    --accent-dim: rgba(21,122,115,.10);
-    --accent-glow:rgba(21,122,115,.18);
+    --accent-dim: rgba(138,109,51,.10);
+    --accent-glow:rgba(138,109,51,.18);
     --accent-rgb: 138,109,51;
     --green:      #2e7d32;
     --green-dim:  rgba(46,125,50,.1);
-    --amber:      #e65100;
-    --amber-dim:  rgba(230,81,0,.1);
+    --amber:      #a67c00;
+    --amber-dim:  rgba(166,124,0,.12);
     --red:        #c62828;
     --red-dim:    rgba(198,40,40,.1);
     background:   #f5f6f7;
@@ -302,7 +302,7 @@ RESPONSIVE_CSS: str = """
   /* === Indicador de tema ativo (NOVO em v0.4.1) === */
   #theme-toggle[data-theme="pesquisai-light"] {
     color: var(--amber);
-    border-color: rgba(232,184,75,.4);
+    border-color: rgba(166,124,0,.4);
     background: var(--amber-dim);
   }
   #theme-toggle[data-theme="pesquisai"] {
@@ -417,7 +417,7 @@ def create_wrapper_html(
   </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { background: #0d0f10; color: #e8e6e0; }  /* anti-flash dark */
+    html { background: #141c24; color: #e8e6e0; }  /* anti-flash dark · UFVAI */
 
     :root {
       --ink:        #e8e6e0;
@@ -743,6 +743,9 @@ def create_wrapper_html(
       <button class="tb-icon" onclick="toggleTheme()" id="theme-toggle" title="Alternar tema" data-theme="pesquisai" data-i18n-title="theme.toggle">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       </button>
+      <button class="tb-icon" onclick="openTelemetry()" id="telemetry-btn" title="Telemetria (Admin)" data-i18n-title="telemetry.title">
+        <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="4" width="3" height="14"/></svg>
+      </button>
       <button class="lang-btn" id="lang-btn" onclick="toggleLangMenu()" aria-haspopup="true" aria-expanded="false" title="Idioma / Language">
         <span class="lang-flag" id="lang-flag">🇧🇷</span>
         <span class="lang-code" id="lang-code">PT</span>
@@ -1029,6 +1032,28 @@ def create_wrapper_html(
   </div>
 
   <!-- Sub-modal: criar nova nota (v0.5.1.4) -->
+  <!-- v0.6.4: Painel Admin de Telemetria -->
+  <div id="telemetry-overlay" onclick="if(event.target===this)closeTelemetry()" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:22px;width:460px;max-width:92vw;max-height:86vh;overflow:auto;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+      <div class="modal-title" data-i18n="telemetry.title">📊 Telemetria (Admin)</div>
+      <div id="tel-status" style="font-size:11.5px;line-height:1.6;color:var(--ink-muted);margin-bottom:14px;">…</div>
+      <label style="display:block;font-size:11px;color:var(--ink-muted);margin-bottom:4px;" data-i18n="telemetry.mid">ID de medição (G-XXXXXXXXXX)</label>
+      <input id="tel-mid" type="text" placeholder="G-CMVTFP2M6F" style="width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:7px 9px;font-size:12px;font-family:var(--font-mono);outline:none;margin-bottom:10px;" />
+      <label style="display:block;font-size:11px;color:var(--ink-muted);margin-bottom:4px;" data-i18n="telemetry.secret">API Secret (Measurement Protocol)</label>
+      <input id="tel-secret" type="password" placeholder="••••••••••••" autocomplete="off" style="width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:7px 9px;font-size:12px;font-family:var(--font-mono);outline:none;margin-bottom:6px;" />
+      <div style="font-size:10.5px;line-height:1.5;color:var(--ink-muted);margin-bottom:14px;">
+        GA4 → Admin → Fluxos de dados → Eventos de Measurement Protocol → Configurar.
+        O secret é gravado localmente (<code>~/.config/ufvai_telemetry.json</code>, permissão 600)
+        e nunca é exibido novamente. Guia completo: TELEMETRY.md §0.
+      </div>
+      <div id="tel-msg" style="font-size:11.5px;margin-bottom:10px;display:none;"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="closeTelemetry()" style="padding:9px 16px;">Fechar</button>
+        <button class="btn-ghost" onclick="saveTelemetry()" id="tel-save-btn" style="padding:9px 16px;background:var(--accent);color:#000;border-color:var(--accent);font-weight:600;">Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="memory-new-overlay" onclick="if(event.target===this)closeCreateNoteDialog()" style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .15s;">
     <div style="background:#181b1e;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:18px;width:420px;max-width:92vw;box-shadow:0 16px 40px rgba(0,0,0,.6);">
       <div style="font-size:13px;font-weight:600;margin-bottom:14px;" data-i18n="memory.new_note_dialog_title">📝 Nova nota</div>
@@ -1876,6 +1901,46 @@ def create_wrapper_html(
     function closeShortcuts() {
       const o = document.getElementById("shortcuts-overlay");
       o.style.opacity = "0"; o.style.pointerEvents = "none";
+    }
+
+    // ── Painel Admin de Telemetria (v0.6.4) ─────────────────────
+    function openTelemetry() {
+      const o = document.getElementById("telemetry-overlay");
+      o.style.opacity = "1"; o.style.pointerEvents = "all";
+      fetch(BASE + "/api/admin/telemetry").then(r=>r.json()).then(s=>{
+        const st = document.getElementById("tel-status");
+        if(!s.configured){
+          st.innerHTML = "<span style='color:var(--amber)'>● Não configurada</span> — preencha os campos abaixo para ativar a coleta.";
+        } else if(s.enabled){
+          st.innerHTML = "<span style='color:var(--green)'>● Ativa</span> · ID <code>" + s.measurement_id + "</code> (" + s.source + ") · consentimento do usuário: " + (s.consent_analytics ? "sim" : "aguardando opt-in");
+        } else {
+          let why = [];
+          if(s.kill_switch) why.push("kill-switch UFVAI_TELEMETRY=0");
+          if(!s.consent_accepted) why.push("Termos não aceitos");
+          else if(!s.consent_analytics) why.push("usuário não autorizou estatísticas");
+          st.innerHTML = "<span style='color:var(--red)'>● Inativa</span> · ID <code>" + s.measurement_id + "</code> · motivo: " + why.join("; ");
+        }
+      }).catch(()=>{ document.getElementById("tel-status").textContent = "Falha ao consultar estado."; });
+    }
+    function closeTelemetry() {
+      const o = document.getElementById("telemetry-overlay");
+      o.style.opacity = "0"; o.style.pointerEvents = "none";
+    }
+    async function saveTelemetry() {
+      const mid = document.getElementById("tel-mid").value.trim();
+      const sec = document.getElementById("tel-secret").value.trim();
+      const msg = document.getElementById("tel-msg");
+      msg.style.display = "block";
+      msg.textContent = "Salvando…"; msg.style.color = "var(--ink-muted)";
+      try{
+        const r = await fetch(BASE + "/api/admin/telemetry", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({measurement_id:mid, api_secret:sec})});
+        const j = await r.json();
+        msg.textContent = j.message || (j.ok ? "Salvo." : "Erro.");
+        msg.style.color = j.ok ? "var(--green)" : "var(--red)";
+        if(j.ok && j.state){ document.getElementById("tel-secret").value=""; openTelemetry(); }
+      }catch(e){ msg.textContent = "Falha de rede."; msg.style.color = "var(--red)"; }
     }
 
     // ── Diretrizes do Agente (HOTFIX v0.5.1.2) ──────────────────
@@ -2798,7 +2863,7 @@ def create_wrapper_html(
         root.classList.remove("theme-light");
         root.setAttribute("data-theme", "pesquisai");
         // Garante que o body está com fundo escuro (anti-flash)
-        root.style.backgroundColor = "#0d0f10";
+        root.style.backgroundColor = "#141c24";
       }
       if (theme === "pesquisai-light") {
         root.style.setProperty("--ink", "#1f262a");
@@ -2806,32 +2871,34 @@ def create_wrapper_html(
         root.style.setProperty("--surface", "#f5f6f7");
         root.style.setProperty("--rail", "#ffffff");
         root.style.setProperty("--line", "rgba(0,0,0,.1)");
-        root.style.setProperty("--accent", "#157a73");
-        root.style.setProperty("--accent-dim", "rgba(21,122,115,.10)");
-        root.style.setProperty("--accent-glow", "rgba(21,122,115,.18)");
+        // v0.6.4: paleta UFVAI (dourado sobre papel quente; antes: teal #157a73)
+        root.style.setProperty("--accent", "#8a6d33");
+        root.style.setProperty("--accent-dim", "rgba(138,109,51,.10)");
+        root.style.setProperty("--accent-glow", "rgba(138,109,51,.18)");
         root.style.setProperty("--green", "#2e7d32");
         root.style.setProperty("--green-dim", "rgba(46,125,50,.1)");
-        root.style.setProperty("--amber", "#e65100");
-        root.style.setProperty("--amber-dim", "rgba(230,81,0,.1)");
+        root.style.setProperty("--amber", "#a67c00");
+        root.style.setProperty("--amber-dim", "rgba(166,124,0,.12)");
         root.style.setProperty("--red", "#c62828");
         root.style.setProperty("--red-dim", "rgba(198,40,40,.1)");
         document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f5f6f7");
       } else {
         root.style.setProperty("--ink", "#e8e6e0");
         root.style.setProperty("--ink-muted", "#9a9790");
-        root.style.setProperty("--surface", "#0d0f10");
-        root.style.setProperty("--rail", "#151819");
+        // v0.6.4: alinhado ao :root UFVAI (antes: surface #0d0f10/rail #151819/accent teal #46a39b)
+        root.style.setProperty("--surface", "#141c24");
+        root.style.setProperty("--rail", "#1f2831");
         root.style.setProperty("--line", "rgba(255,255,255,.07)");
-        root.style.setProperty("--accent", "#46a39b");
+        root.style.setProperty("--accent", "#b29149");
         root.style.setProperty("--accent-dim", "rgba(var(--accent-rgb),.12)");
         root.style.setProperty("--accent-glow", "rgba(var(--accent-rgb),.22)");
         root.style.setProperty("--green", "#5dba7e");
         root.style.setProperty("--green-dim", "rgba(93,186,126,.12)");
-        root.style.setProperty("--amber", "#e8b84b");
-        root.style.setProperty("--amber-dim", "rgba(232,184,75,.12)");
+        root.style.setProperty("--amber", "#D1A705");
+        root.style.setProperty("--amber-dim", "rgba(209,167,5,.14)");
         root.style.setProperty("--red", "#e07070");
         root.style.setProperty("--red-dim", "rgba(224,112,112,.12)");
-        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#0d0f10");
+        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#141c24");
       }
     }
 
@@ -2901,53 +2968,15 @@ def create_wrapper_html(
       loadInitialTheme();
       // 3. Aplica keys no ambiente
       fetch(BASE + "/api/apikey/apply", { method: "POST" }).catch(() => {});
-      // 4. First-run welcome hint
-      var _welcomeEl = document.getElementById("welcome-hint");
-      if (_welcomeEl && !localStorage.getItem("pesquisai_onboarded")) {
-        _welcomeEl.style.opacity = "1";
-        _welcomeEl.style.pointerEvents = "all";
-      }
+      // 4. v0.6.4: welcome-hint antigo REMOVIDO — a tela de Termos de Uso
+      //    (terms-overlay, com a logomarca oficial UFVAI) é a única abertura.
     });
     window.addEventListener("beforeunload", () => { _stopSessionsPoll(); });
   </script>
   <!-- marked.js: renderizador de markdown para o modal de Diretrizes do Agente e preview do editor -->
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-  <!-- Welcome hint (first-run onboarding) -->
-<div id="welcome-hint" onclick="document.getElementById('welcome-hint').style.opacity='0';document.getElementById('welcome-hint').style.pointerEvents='none';try{localStorage.setItem('pesquisai_onboarded','1')}catch(e){}" style="position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .25s;">
-  <div style="background:#1c1f22;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:28px 32px;width:420px;max-width:90vw;box-shadow:0 28px 72px rgba(0,0,0,.7);text-align:center;">
-    
-    <!-- Logo SVG -->
-    <div style="margin-bottom:12px;display:flex;justify-content:center;">
-      <img src="https://raw.githubusercontent.com/gustavobraga-byte/PesquisAI/refs/heads/main/assets/logo.svg" alt="PesquisAI" style="width:260px;height:auto;max-width:80vw;border-radius:8px;" />
-    </div>
-
-    <!-- Descrição concisa -->
-    <div style="font-size:12.5px;line-height:1.65;color:var(--ink-muted);margin-bottom:8px;">
-      Agente de IA para pesquisa científica.
-    </div>
-    
-    <!-- Linha 1: Links principais -->
-    <div style="font-size:12px;line-height:1.6;color:var(--ink-muted);margin-bottom:4px;">
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Manual</a>
-      &middot;
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/AGENTS.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Arquitetura</a>
-      &middot;
-      <a href="https://github.com/gustavobraga-byte/PesquisAI" target="_blank" style="color:var(--accent);text-decoration:underline;">Repositório</a>
-    </div>
-    
-    <!-- Linha 2: Links legais/éticos -->
-    <div style="font-size:12px;line-height:1.6;color:var(--ink-muted);margin-bottom:20px;">
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/disclaimer_pesquisai.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Disclaimer</a>
-      &middot;
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md#citação-do-pesquisai" target="_blank" style="color:var(--accent);text-decoration:underline;">Como citar</a>
-      &middot;
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/declaracao_uso_ia.md" target="_blank" style="color:var(--accent);text-decoration:underline;">Uso de IA</a>
-    </div>
-    
-    <!-- Botão -->
-    <button onclick="document.getElementById('welcome-hint').style.opacity='0';document.getElementById('welcome-hint').style.pointerEvents='none';try{localStorage.setItem('pesquisai_onboarded','1')}catch(e){}" class="btn-ghost" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:600;padding:10px 28px;cursor:pointer;border-radius:6px;border:1px solid transparent;font-size:13px;">Começar</button>
-  </div>
-</div>
+  <!-- v0.6.4: welcome-hint (onboarding antigo PesquisAI) REMOVIDO.
+       A logomarca oficial UFVAI agora abre na tela de Termos de Uso (terms-overlay). -->
   </div>
   <!-- Confirm dialog overlay (replaces native confirm()) -->
   <div id="confirm-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100001;opacity:0;pointer-events:none;transition:opacity .18s;">
@@ -2989,25 +3018,34 @@ def create_wrapper_html(
 </style>
 <div id="terms-overlay" role="dialog" aria-modal="true" aria-label="Termos de Uso">
   <div class="t-card">
+    <!-- v0.6.4: logomarca oficial UFVAI (asset local, offline-safe; some graciosamente se ausente) -->
+    <div style="display:flex;justify-content:center;margin-bottom:10px;">
+      <img src="/assets/logo-oficial-288.jpg" alt="UFVAI — Universidade Federal de Viçosa"
+           onerror="this.style.display='none'"
+           style="width:96px;height:96px;border-radius:50%;border:2px solid rgba(178,145,73,.55);box-shadow:0 4px 18px rgba(0,0,0,.45);background:#fff;object-fit:cover;" />
+    </div>
     <div class="t-brand"><b>UFV</b><em>AI</em></div>
     <div class="t-sub">Pesquisa científica com integridade · UFV/DER · v__UFV_VERSION__</div>
     <div class="t-scroll">
       <h4>🇧🇷 Português</h4>
-      <p>O UFVAI é fornecido sob a <b>licença MIT</b>, sem garantias. Use com responsabilidade:
-      você é responsável pelas suas chaves de API (armazenadas cifradas no seu Google Drive),
-      pelo conteúdo gerado e pelo cumprimento das políticas dos provedores de IA. Nenhum conteúdo
-      do seu vault é enviado a terceiros pela telemetria — ela é <b>anônima, opcional e desligável</b>.</p>
+      <p>O UFVAI é fornecido sob a <b>licença MIT</b>, sem garantias, e apoia pesquisa científica
+      com <b>integridade</b>: valide as saídas da IA e declare o uso de IA conforme a Portaria CNPq
+      nº 2.664/2026. Você é responsável pelas suas chaves de API (armazenadas cifradas no seu Google
+      Drive), pelo conteúdo gerado e pelas políticas dos provedores de IA. Nenhum conteúdo do seu
+      vault é enviado a terceiros pela telemetria — ela é <b>anônima, opcional (LGPD art. 7º I) e
+      desligável</b> (UFVAI_TELEMETRY=0). Termos completos v2.0 no link abaixo.</p>
       <h4>🇺🇸 English</h4>
-      <p>UFVAI is provided under the <b>MIT license</b>, without warranty. You are responsible for your API keys,
+      <p>UFVAI is provided under the <b>MIT license</b>, without warranty. Validate AI outputs and
+      disclose AI use per CNPq Ordinance 2.664/2026. You are responsible for your API keys,
       generated content and provider policies. Telemetry is anonymous, optional and can be disabled.</p>
       <p style="opacity:.75">Español: licencia MIT, sin garantías; telemetría anónima y opcional.
       · Français : licence MIT, sans garantie ; télémétrie anonyme et facultative.
       · 中文：MIT 许可证，不提供担保；遥测为匿名且可选。</p>
     </div>
     <div class="t-links">
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/LICENSE" target="_blank" rel="noopener">📜 Licença MIT / License</a>
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/TERMS_OF_USE.md" target="_blank" rel="noopener">📄 Termos completos / Full terms</a>
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/PRIVACY.md" target="_blank" rel="noopener">🔒 Privacidade / Privacy</a>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/LICENSE" target="_blank" rel="noopener">📜 Licença MIT + Notice / License</a>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/TERMS_OF_USE.md" target="_blank" rel="noopener">📄 Termos completos v2.0 / Full terms</a>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/PRIVACY.md" target="_blank" rel="noopener">🔒 Privacidade · LGPD / Privacy</a>
     </div>
     <label class="t-check"><input type="checkbox" id="t-accept">
       <span>Li e aceito os Termos de Uso e a Licença MIT &nbsp;<span style="opacity:.7">(I have read and accept the Terms of Use and the MIT License)</span></span></label>
@@ -3022,7 +3060,7 @@ def create_wrapper_html(
 <script>
 (function(){
   try{
-    if(localStorage.getItem("ufvai_terms_version")==="1") return;
+    if(localStorage.getItem("ufvai_terms_version")==="2") return; // v0.6.4: termos v2.0 → re-consentimento
     var ov=document.getElementById("terms-overlay");
     if(!ov) return;
     ov.style.display="flex";
@@ -3038,10 +3076,12 @@ def create_wrapper_html(
       }catch(e){}
     }
     btn.addEventListener("click",function(){
-      localStorage.setItem("ufvai_terms_version","1");
+      localStorage.setItem("ufvai_terms_version","2");
       localStorage.setItem("ufvai_analytics", an.checked?"1":"0");
       _post(true, an.checked);
       ov.style.display="none";
+      // v0.6.4: se o usuário autorizou estatísticas, liga o GA client-side na hora
+      if(an.checked && typeof window._ufvaiGaStart==="function"){ try{ window._ufvaiGaStart(); }catch(e){} }
     });
     document.getElementById("t-decline-btn").addEventListener("click",function(){
       _post(false,false);
@@ -3050,6 +3090,42 @@ def create_wrapper_html(
         'A interface permanecerá bloqueada. Feche esta aba para encerrar.<br><br>'+
         '<span style="opacity:.75">You declined the Terms of Use — the UI stays locked. Close this tab to exit.</span></p></div>';
     });
+  }catch(e){}
+})();
+</script>
+
+<!-- ═══ Google tag (gtag.js) — GA4 client-side · v0.6.4 ═══
+     ID: {__GA_MEASUREMENT_ID__} · Carregado APENAS após aceite dos Termos com
+     opt-in de estatísticas (LGPD art. 7º I). Sem consentimento: nada é carregado,
+     nenhum cookie _ga é criado, nenhuma requisição ao googletagmanager sai. -->
+<script>
+(function(){
+  var MID="{__GA_MEASUREMENT_ID__}", IS_COLAB={__IS_COLAB__};
+  if(!MID) return;
+  var loaded=false;
+  function _start(){
+    if(loaded) return; loaded=true;
+    try{
+      window.dataLayer=window.dataLayer||[];
+      window.gtag=function(){window.dataLayer.push(arguments);};
+      var s=document.createElement("script");s.async=true;
+      s.src="https://www.googletagmanager.com/gtag/js?id="+MID;
+      document.head.appendChild(s);
+      gtag('js',new Date());
+      gtag('config',MID,{send_page_view:true,anonymize_ip:true});
+      gtag('event','ufvai_session',{
+        app_version:'{__VERSION__}',
+        environment:IS_COLAB?'colab':'local',
+        lang:(localStorage.getItem("pesquisai_lang")||'pt_BR')
+      });
+    }catch(e){}
+  }
+  window._ufvaiGaStart=_start;
+  try{
+    if(localStorage.getItem("ufvai_terms_version")==="2" &&
+       localStorage.getItem("ufvai_analytics")==="1"){
+      setTimeout(_start,1200); // deixa a UI carregar primeiro
+    }
   }catch(e){}
 })();
 </script>
@@ -3066,6 +3142,11 @@ def create_wrapper_html(
     html = html.replace("{__VERSION__}", VERSION)
     html = html.replace("__UFVAI_TOKEN__", session_token or "")
     html = html.replace("{RESPONSIVE_CSS}", RESPONSIVE_CSS)
+    # v0.6.4: GA4 client-side (gtag.js) — ID do admin (env > default embutido);
+    # vazio desliga o canal client-side (fica só o Measurement Protocol).
+    _ga_id = os.environ.get("UFVAI_GA_MEASUREMENT_ID", "G-CMVTFP2M6F").strip()
+    html = html.replace("{__GA_MEASUREMENT_ID__}", _ga_id)
+    html = html.replace("{__IS_COLAB__}", "true" if os.path.isdir("/content") else "false")
 
     i18n_inline: dict[str, dict[str, str]] = {
         "pt_BR": {
@@ -3107,6 +3188,7 @@ def create_wrapper_html(
             "success_messages.backup_saved": "Backup salvo",
             # v0.5.1.2 — Memória UFVAI
             "memory.title": "Memória UFVAI",
+            "telemetry.title": "Telemetria (Admin)",
             "memory.subtitle": "Camada de memória persistente do agente",
             "memory.tooltip": "Memória UFVAI (segundo cérebro)",
             "memory.status_ready": "🟢 Ativa",
@@ -3192,9 +3274,10 @@ def create_wrapper_html(
             "languages.label": "Language", "languages.switched_to": "Language switched to",
             "success_messages.backup_saved": "Backup saved",
             # v0.5.1.2 — PesquisAI Memory
-            "memory.title": "PesquisAI Memory",
+            "memory.title": "UFVAI Memory",
+            "telemetry.title": "Telemetry (Admin)",
             "memory.subtitle": "Agent's persistent memory layer",
-            "memory.tooltip": "PesquisAI Memory (second brain)",
+            "memory.tooltip": "UFVAI Memory (second brain)",
             "memory.status_ready": "🟢 Active",
             "memory.status_disabled": "⚪ Disabled",
             "memory.status_no_vault": "🟡 No vault",
@@ -3233,7 +3316,7 @@ def create_wrapper_html(
             "memory.no_results": "No results for the search.",
             # v0.5.1.2 hotfix — Agent Guidelines
             "agents.title": "Agent Guidelines",
-            "agents.subtitle": "PesquisAI rules and principles (AGENTS.md)",
+            "agents.subtitle": "UFVAI rules and principles (AGENTS.md)",
             "agents.loading": "Loading guidelines…",
             "agents.error": "Error loading agent guidelines.",
             "agents.copy_ok": "Guidelines copied!",
@@ -3278,9 +3361,10 @@ def create_wrapper_html(
             "languages.label": "Idioma", "languages.switched_to": "Idioma cambiado a",
             "success_messages.backup_saved": "Copia guardada",
             # v0.5.1.2 — Memoria PesquisAI
-            "memory.title": "Memoria PesquisAI",
+            "memory.title": "Memoria UFVAI",
+            "telemetry.title": "Telemetría (Admin)",
             "memory.subtitle": "Capa de memoria persistente del agente",
-            "memory.tooltip": "Memoria PesquisAI (segundo cerebro)",
+            "memory.tooltip": "Memoria UFVAI (segundo cerebro)",
             "memory.status_ready": "🟢 Activa",
             "memory.status_disabled": "⚪ Desactivada",
             "memory.status_no_vault": "🟡 Sin vault",
@@ -3319,7 +3403,7 @@ def create_wrapper_html(
             "memory.no_results": "Sin resultados para la búsqueda.",
             # v0.5.1.2 hotfix — Directrices del Agente
             "agents.title": "Directrices del Agente",
-            "agents.subtitle": "Reglas y principios del PesquisAI (AGENTS.md)",
+            "agents.subtitle": "Reglas y principios del UFVAI (AGENTS.md)",
             "agents.loading": "Cargando directrices…",
             "agents.error": "Error al cargar las directrices del agente.",
             "agents.copy_ok": "¡Directrices copiadas!",
@@ -3364,9 +3448,10 @@ def create_wrapper_html(
             "languages.label": "Langue", "languages.switched_to": "Langue changée en",
             "success_messages.backup_saved": "Sauvegarde enregistrée",
             # v0.5.1.2 — Mémoire PesquisAI
-            "memory.title": "Mémoire PesquisAI",
+            "memory.title": "Mémoire UFVAI",
+            "telemetry.title": "Télémétrie (Admin)",
             "memory.subtitle": "Couche de mémoire persistante de l'agent",
-            "memory.tooltip": "Mémoire PesquisAI (deuxième cerveau)",
+            "memory.tooltip": "Mémoire UFVAI (deuxième cerveau)",
             "memory.status_ready": "🟢 Active",
             "memory.status_disabled": "⚪ Désactivée",
             "memory.status_no_vault": "🟡 Pas de vault",
@@ -3405,7 +3490,7 @@ def create_wrapper_html(
             "memory.no_results": "Aucun résultat pour la recherche.",
             # v0.5.1.2 hotfix — Directives de l'Agent
             "agents.title": "Directives de l'Agent",
-            "agents.subtitle": "Règles et principes du PesquisAI (AGENTS.md)",
+            "agents.subtitle": "Règles et principes du UFVAI (AGENTS.md)",
             "agents.loading": "Chargement des directives…",
             "agents.error": "Erreur lors du chargement des directives de l'agent.",
             "agents.copy_ok": "Directives copiées !",
@@ -3450,6 +3535,7 @@ def create_wrapper_html(
             "languages.label": "语言", "languages.switched_to": "语言已切换为",
             "success_messages.backup_saved": "备份已保存",
             "memory.title": "UFVAI 记忆库",
+            "telemetry.title": "遥测（管理员）",
             "memory.subtitle": "智能体的持久记忆层（第二大脑）",
             "memory.tooltip": "UFVAI 记忆库（第二大脑）",
             "memory.status_ready": "🟢 运行中",

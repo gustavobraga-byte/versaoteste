@@ -4,11 +4,86 @@
 
 ---
 
+## 0. Guia do ADMINISTRADOR — ativar a telemetria passo a passo (v0.6.4)
+
+> **Para quem é esta seção:** você (admin/produtor do UFVAI) quer saber **quantas instalações estão
+> em uso, quais versões/idiomas e quais funcionalidades são mais usadas** — sem identificar pessoas
+> (LGPD-safe). Siga os 8 passos abaixo.
+
+### Passo 1 — Criar a propriedade GA4
+1. Acesse <https://analytics.google.com> com sua conta Google;
+2. **Admin (⚙️) → Criar → Propriedade**; nome sugerido: `UFVAI Telemetria`;
+   fuso horário `Brasília`, moeda `Real (R$)`;
+3. Em "Detalhes da empresa", setor `Educação`, tamanho qualquer → **Criar**.
+
+### Passo 2 — Criar o fluxo de dados Measurement Protocol
+1. Na propriedade: **Admin → Fluxos de dados → Adicionar fluxo → Web**;
+2. URL: `https://localhost` (é apenas um rótulo — o envio é server-side, sem site);
+3. Anote o **ID de medição** (`G-XXXXXXXXXX`) exibido no fluxo criado.
+
+### Passo 3 — Gerar o segredo do Measurement Protocol
+1. No mesmo fluxo: **Eventos de Measurement Protocol → Configurar → Criar**;
+2. Apelido: `ufvai-mp`;
+3. Copie o **segredo** (`api_secret`). Guarde os dois valores.
+
+### Passo 4 — Configurar no modo OFFLINE (.deb)
+Crie o arquivo que o launcher carrega antes de iniciar:
+```bash
+mkdir -p ~/PesquisAI/config
+cat > ~/PesquisAI/config/ufvai.env <<'EOF'
+export UFVAI_GA_MEASUREMENT_ID=G-XXXXXXXXXX
+export UFVAI_GA_API_SECRET=SEU_SEGREDO_AQUI
+EOF
+chmod 600 ~/PesquisAI/config/ufvai.env
+```
+Reinicie o UFVAI (`pesquisai` ou `~/PesquisAI/start.sh`).
+
+### Passo 5 — Configurar no COLAB
+Defina as variáveis no kernel ANTES de executar `launch()`:
+```python
+import os
+os.environ["UFVAI_GA_MEASUREMENT_ID"] = "G-XXXXXXXXXX"
+os.environ["UFVAI_GA_API_SECRET"] = "SEU_SEGREDO_AQUI"
+```
+
+### Passo 6 — Validar em tempo real (DebugView)
+1. No GA4 deixe aberto: **Admin → DebugView**;
+2. Rode o UFVAI com `export UFVAI_TELEMETRY_DEBUG=1` e aceite os Termos marcando o opt-in;
+3. Os eventos (`terms_accepted`, `app_started`, `lang_changed`…) aparecem ao vivo.
+Sem a flag DEBUG, os eventos vão para **Relatórios → Tempo real** (até alguns minutos de atraso).
+
+### Passo 7 — O que o admin vê (e o que NÃO vê)
+
+| O admin VÊ | O admin NUNCA vê |
+|---|---|
+| **Quantas instalações ativas** (1 UUID anônimo ≈ 1 máquina/sessão) | Nome, e-mail ou conta Google |
+| Versão, idioma, Colab × offline | Conteúdo de prompts/notas/vault |
+| Funcionalidades usadas (backup, provedores, temas…) | Arquivos, projetos ou caminhos |
+| Contagem de eventos por dia/evento | IP completo vinculado à identidade |
+
+### Passo 8 — Conformidade LGPD (resumo operacional)
+- **Base legal:** consentimento (art. 7º, I) — opt-in granular na tela de Termos, revogável a qualquer momento;
+- **Identificador:** UUID aleatório gerado localmente (`~/.config/ufvai_cid`), sem tabela de ligação
+  a identidades — tratado como dado pessoal por cautela (pseudonimização não afasta a LGPD);
+- **Transferência internacional:** Google Analytics (arts. 33–36) — declarada nos Termos v2.0 §5
+  e PRIVACY.md; sujeita aos termos do Google;
+- **Direitos do titular:** art. 18 atendido via gustavo.braga@ufv.br / DPO UFV (ver PRIVACY.md);
+- **Registro das operações:** mantenha este documento + changelog como registro simples (art. 37);
+- **Minimização:** só contadores categóricos — nada de conteúdo, caminhos ou identificadores reais.
+
+> 💡 **Dica de leitura dos relatórios:** em *Explorar → Exploração de forma livre*, use o dimensão
+> `client_id` (como "ID do usuário") para contar instalações distintas e cruzar com eventos —
+> cada `app_started` novo de um client_id ainda não visto = nova instalação ativa.
+
+---
+
 ## 1. Visão geral
 
 | Aspecto | Como é |
 |---|---|
 | **Padrão** | ❌ **Desligada por padrão** — nada é enviado sem consentimento |
+| **Canais (v0.6.4)** | 🖥️ **gtag.js client-side** (página, cookie `_ga`, só após aceite) + 📡 **Measurement Protocol server-side** (eventos do app) — ambos sob o MESMO opt-in |
+| **Configuração pela UI** | Painel **📊 Telemetria (Admin)** na barra superior — cola ID + Secret sem editar arquivos (grava `~/.config/ufvai_telemetry.json`, chmod 600) |
 | **Consentimento** | Checkbox opcional na tela de Termos de Uso (1ª entrada) |
 | **Tecnologia** | GA4 **Measurement Protocol** (envio *server-side*, sem cookies no navegador) |
 | **Conteúdo enviado** | Nome do evento + parâmetros não-pessoais (tabela §3) |
@@ -113,7 +188,24 @@ def enabled() -> bool:
 
 ---
 
-## 5. Por que Measurement Protocol (server-side) e não o snippet gtag?
+## 5. Dois canais, um único consentimento (v0.6.4)
+
+Desde a v0.6.4 o UFVAI usa **canal duplo**, ambos condicionados ao mesmo opt-in da tela de Termos:
+
+| Canal | O que envia | Quando dispara |
+|---|---|---|
+| 🖥️ **gtag.js client-side** (`G-CMVTFP2M6F`) | `page_view`, sessão, idioma, `ufvai_session` (versão + colab/local), cookie `_ga` no navegador | Só após aceite dos Termos **com** estatísticas marcadas; recarregar a página mantém se consentimento salvo |
+| 📡 **MP server-side** (mesmo ID) | Eventos de aplicação (`app_started`, backups, provedores…) via Python | A cada evento, se `enabled()` |
+
+O gtag usa `anonymize_ip:true`. Sem consentimento, **nenhum script do googletagmanager é
+carregado** — não há requisição, nem cookie, nem ping.
+
+---
+
+## 6. Histórico — por que também existe Measurement Protocol (server-side)?
+
+> A v0.6.0 usava apenas MP (sem cookies no navegador). Com o painel Admin da v0.6.4 o projeto
+> passou a operar os dois canais; a comparação abaixo permanece válida para entender as escolhas:
 
 | Critério | MP server-side (escolhido) | gtag client-side |
 |---|---|---|
