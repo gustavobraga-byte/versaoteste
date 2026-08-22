@@ -24,6 +24,23 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ════════════════════════════════════════════════════════════════════════
+  v0.6.5 — 🔐 Terminal à prova de travamentos + splash de carregamento
+            • KILL CIRÚRGICO: o ttyd é LÍDER do próprio grupo de processos
+              (start_new_session=True) e fica rastreado em _TTYD_PROC —
+              _stop_terminal() mata a árvore inteira (ttyd + bash + opencode)
+              com um único killpg, sem o antigo pkill -f opencode global que
+              matava o agente hospedeiro. Fallback determinístico:
+              pkill -9 -x ttyd (COMM exato, nunca -f).
+            • /api/ttyd_ready: o frontend faz polling antes de apontar o
+              iframe — fim do ERR_CONNECTION_REFUSED exibido no boot, na
+              troca de idioma e na restauração de sessão.
+            • SPLASH DE CARREGAMENTO (boot-splash) na UI: logo UFVAI +
+              status "Iniciando terminal…" e botão Recarregar nos 5 idiomas;
+              timeout/falha com retorno honesto (sem reload às cegas).
+            • _build_ttyd_cmd() extraído para retry determinístico;
+              restart por idioma e restauração usam _ensure_terminal_ready()
+              com retorno REAL (antes respondiam "ok" mesmo com a porta
+              travada — causa do ERR_CONNECTION_REFUSED persistente).
   v0.6.4 — 🪪 Marca UFVAI completa · 🎨 Temas UFVAI no terminal · 🖼️ Logo oficial
             • AGENTS.md + agents/*.md (5 idiomas): agente agora se apresenta
               como UFVAI (IDs técnicos preservados: PESQUISAI_OBSIDIAN_VAULT,
@@ -195,13 +212,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.4"
+__version__: str = "0.6.6"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-08-22"
-__codename__: str = "UFVAI completo: marca, temas, logo oficial e Termos v2"
+__codename__: str = "Terminal estável: kill por árvore, /api/ttyd_ready e splash i18n"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

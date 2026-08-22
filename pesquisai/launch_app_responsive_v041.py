@@ -293,6 +293,7 @@ RESPONSIVE_CSS: str = """
     --amber-dim:  rgba(166,124,0,.12);
     --red:        #c62828;
     --red-dim:    rgba(198,40,40,.1);
+    --ov-dim:     rgba(30,42,52,.38);   /* v0.6.5: backdrop de modais no claro */
     background:   #f5f6f7;
     color:        #1f262a;
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
@@ -315,7 +316,41 @@ RESPONSIVE_CSS: str = """
     #toast { bottom: 36px; right: 8px; }
   }
 
-    @media (prefers-reduced-motion: reduce) {
+    /* === v0.6.5: Splash de carregamento do terminal (boot) === */
+  #boot-splash {
+    position: fixed; inset: 0; z-index: 200000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    background: var(--surface, #141c24);
+    transition: opacity .45s ease;
+  }
+  #boot-splash.hide { opacity: 0; pointer-events: none; }
+  .boot-logo { width: 128px; height: auto; border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+  .boot-spinner { width: 32px; height: 32px; border-radius: 50%;
+    border: 3px solid rgba(var(--accent-rgb), .18);
+    border-top-color: var(--accent);
+    animation: bootspin .8s linear infinite; }
+  @keyframes bootspin { to { transform: rotate(360deg); } }
+  .boot-status { font-size: 13px; color: var(--ink-muted);
+    font-family: var(--font-sans); letter-spacing: .02em; }
+  .boot-bar { width: min(320px, 60vw); height: 4px; border-radius: 2px;
+    overflow: hidden; background: rgba(var(--accent-rgb), .15);
+    position: relative; }
+  .boot-bar::after { content: ""; position: absolute; left: -40%;
+    top: 0; bottom: 0; width: 40%; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: bootslide 1.4s ease-in-out infinite; }
+  @keyframes bootslide { to { left: 100%; } }
+  .boot-error { color: var(--red); font-size: 12.5px;
+    max-width: 70vw; text-align: center; line-height: 1.5; }
+  .boot-retry { margin-top: 4px; padding: 8px 16px;
+    background: var(--accent-dim); color: var(--accent);
+    border: 1px solid rgba(var(--accent-rgb), .35);
+    border-radius: var(--radius); cursor: pointer;
+    font-size: 12px; font-family: var(--font-sans); }
+
+  @media (prefers-reduced-motion: reduce) {
       * { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
           transition-duration: .001ms !important; scroll-behavior: auto !important; }
     }
@@ -369,6 +404,23 @@ def create_wrapper_html(
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0d0f10">
   <title>UFVAI</title>
+  <!-- v0.6.6: favicon UFVAI (SVG + PNG fallback + apple-touch) -->
+  <link rel="icon" type="image/svg+xml" href="/assets/ico.svg">
+  <link rel="alternate icon" type="image/png" sizes="64x64" href="/assets/ufvai-64.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="/assets/icon.png">
+  <script>
+    // v0.6.6: no Colab a UI é servida via /proxy/8001/ — links absolutos "/assets/…"
+    // quebram; reescreve os favicons com o prefixo do pathname atual.
+    (function(){try{
+      var p=location.pathname.replace(/[^/]*$/,"");
+      if(p==="/"||p==="") return; // raiz local: links absolutos já funcionam
+      var h=document.head;
+      var mk=function(rel,type,sizes,href){var l=document.createElement("link");l.rel=rel;if(type)l.type=type;if(sizes)l.sizes=sizes;l.href=p+href.replace(/^\\//,"");h.appendChild(l);};
+      mk("icon","image/svg+xml",null,"/assets/ico.svg");
+      mk("alternate icon","image/png","64x64","/assets/ufvai-64.png");
+      mk("apple-touch-icon",null,"256x256","/assets/icon.png");
+    }catch(e){}})();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Montserrat:wght@600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
@@ -435,6 +487,7 @@ def create_wrapper_html(
       --amber-dim:  rgba(209,167,5,.14);
       --red:        #e07070;
       --red-dim:    rgba(224,112,112,.12);
+      --ov-dim:     rgba(4,7,11,.8);      /* v0.6.5: backdrop de modais no escuro */
       --radius:     5px;
       --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
       --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -521,14 +574,14 @@ def create_wrapper_html(
 
     #modal-overlay {
       position: fixed; inset: 0;
-      background: rgba(0,0,0,.72);
+      background: var(--ov-dim);
       display: flex; align-items: center; justify-content: center;
       z-index: 99999; opacity: 0; pointer-events: none;
       transition: opacity .2s;
     }
     #modal-overlay.open { opacity: 1; pointer-events: all; }
     #modal {
-      background: #181b1e; border: 1px solid rgba(255,255,255,.1);
+      background: var(--rail); border: 1px solid var(--line);
       border-radius: 8px; padding: 24px; width: 400px; max-width: 90vw;
       box-shadow: 0 24px 64px rgba(0,0,0,.6);
     }
@@ -808,12 +861,26 @@ def create_wrapper_html(
     <!-- Preenchido dinamicamente por buildLangMenu() -->
   </div>
 
+  <!-- v0.6.5: Splash de carregamento — polling /api/ttyd_ready antes de
+       apontar o iframe; elimina ERR_CONNECTION_REFUSED visível e dá
+       feedback imediato no boot, troca de idioma e restauração. -->
+  <div id="boot-splash" role="status" aria-live="polite">
+    <img class="boot-logo" src="/assets/logo-oficial-288.jpg" alt="UFVAI"
+         onerror="this.style.display='none'">
+    <div class="boot-spinner" aria-hidden="true"></div>
+    <div class="boot-status" id="boot-status" data-i18n="boot.starting">Iniciando terminal…</div>
+    <div class="boot-bar" aria-hidden="true"></div>
+    <div class="boot-error" id="boot-error" style="display:none;"></div>
+    <button class="boot-retry" id="boot-retry" style="display:none;"
+            onclick="location.reload()" data-i18n="boot.retry">↻ Recarregar</button>
+  </div>
+
  <iframe
   id="terminal-frame"
-  src="{__TERMINAL_URL__}"
+  src="about:blank"
+  data-terminal-url="{__TERMINAL_URL__}"
   allow="clipboard-read; clipboard-write"
   tabindex="0"
-  autofocus
   style="width:100%; height:calc(100% - 90px); border:none; outline:none;">
 </iframe>
 
@@ -857,8 +924,8 @@ def create_wrapper_html(
     </div>
   </div>
 
-  <div id="provider-overlay" onclick="if(event.target===this)closeProvider()" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:520px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+  <div id="provider-overlay" onclick="if(event.target===this)closeProvider()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:24px;width:520px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div id="prov-step0">
         <div class="modal-title">🔌 <span data-i18n="providers.title">Conectar Provedor de IA</span></div>
         <p style="font-size:11.5px;color:var(--ink-muted);margin-bottom:14px;line-height:1.6;" data-i18n="providers.saved_keys">Chaves salvas no Drive:</p>
@@ -894,8 +961,8 @@ def create_wrapper_html(
     </div>
   </div>
 
-  <div id="health-overlay" onclick="if(event.target===this)closeHealth()" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:440px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+  <div id="health-overlay" onclick="if(event.target===this)closeHealth()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:24px;width:440px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></div>
       <div id="health-list" style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
         <div class="modal-empty" data-i18n="ui.loading">Carregando diagnóstico…</div>
@@ -904,8 +971,8 @@ def create_wrapper_html(
     </div>
   </div>
 
-  <div id="sessions-overlay" onclick="if(event.target===this)closeSessions()" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:520px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+  <div id="sessions-overlay" onclick="if(event.target===this)closeSessions()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:24px;width:520px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></div>
       <input id="session-search" class="session-search" placeholder="🔍 Buscar por id ou conteúdo…" oninput="filterSessions()" data-i18n-placeholder="sessions.search_placeholder">
       <div id="session-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
@@ -918,8 +985,8 @@ def create_wrapper_html(
     </div>
   </div>
 
-  <div id="shortcuts-overlay" onclick="if(event.target===this)closeShortcuts()" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:24px;width:420px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+  <div id="shortcuts-overlay" onclick="if(event.target===this)closeShortcuts()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:24px;width:420px;max-width:94vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></div>
       <div style="border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
         <div class="shortcut-row"><span data-i18n="shortcuts.copy">Copiar seleção</span><span class="shortcut-key" data-i18n="shortcuts.copy_hint">Segure o Shift e selecione</span></div>
@@ -935,8 +1002,8 @@ def create_wrapper_html(
   </div>
 
   <!-- Modal de Diretrizes do Agente (v0.4.2 + markdown render v0.4.2.1) — HOTFIX v0.5.1.2 -->
-  <div id="agents-overlay" onclick="if(event.target===this)closeAgents()" style="position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div id="agents-modal" class="modal-shell" style="border-radius:10px;padding:0;width:680px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
+  <div id="agents-overlay" onclick="if(event.target===this)closeAgents()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div id="agents-modal" class="modal-shell" style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:0;width:680px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
       <div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
         <span style="font-size:18px;">📋</span>
         <div style="flex:1;min-width:0;">
@@ -957,8 +1024,8 @@ def create_wrapper_html(
   </div>
 
   <!-- Modal de Memória UFVAI (v0.5.1.4 — navegar + editar) -->
-  <div id="memory-overlay" onclick="if(event.target===this)closeMemory()" style="position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:0;width:980px;max-width:96vw;max-height:92vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
+  <div id="memory-overlay" onclick="if(event.target===this)closeMemory()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:0;width:980px;max-width:96vw;max-height:92vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
       <!-- Header -->
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
         <span style="font-size:18px;">🧠</span>
@@ -1033,8 +1100,8 @@ def create_wrapper_html(
 
   <!-- Sub-modal: criar nova nota (v0.5.1.4) -->
   <!-- v0.6.4: Painel Admin de Telemetria -->
-  <div id="telemetry-overlay" onclick="if(event.target===this)closeTelemetry()" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .2s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:22px;width:460px;max-width:92vw;max-height:86vh;overflow:auto;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+  <div id="telemetry-overlay" onclick="if(event.target===this)closeTelemetry()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:22px;width:460px;max-width:92vw;max-height:86vh;overflow:auto;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div class="modal-title" data-i18n="telemetry.title">📊 Telemetria (Admin)</div>
       <div id="tel-status" style="font-size:11.5px;line-height:1.6;color:var(--ink-muted);margin-bottom:14px;">…</div>
       <label style="display:block;font-size:11px;color:var(--ink-muted);margin-bottom:4px;" data-i18n="telemetry.mid">ID de medição (G-XXXXXXXXXX)</label>
@@ -1054,8 +1121,8 @@ def create_wrapper_html(
     </div>
   </div>
 
-  <div id="memory-new-overlay" onclick="if(event.target===this)closeCreateNoteDialog()" style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .15s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:18px;width:420px;max-width:92vw;box-shadow:0 16px 40px rgba(0,0,0,.6);">
+  <div id="memory-new-overlay" onclick="if(event.target===this)closeCreateNoteDialog()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:100000;opacity:0;pointer-events:none;transition:opacity .15s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:8px;padding:18px;width:420px;max-width:92vw;box-shadow:0 16px 40px rgba(0,0,0,.6);">
       <div style="font-size:13px;font-weight:600;margin-bottom:14px;" data-i18n="memory.new_note_dialog_title">📝 Nova nota</div>
       <label style="display:block;font-size:11px;color:var(--ink-muted);margin-bottom:4px;" data-i18n="memory.field_path">Caminho (ex: research/minha-nota.md)</label>
       <input id="memory-new-path" type="text" placeholder="research/minha-nota.md" style="width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:7px 9px;font-size:12px;font-family:var(--font-mono);outline:none;margin-bottom:10px;" />
@@ -1239,15 +1306,19 @@ def create_wrapper_html(
       // v0.6.1: AGUARDA o backend reiniciar o ttyd (saudação no novo idioma)
       // ANTES de recarregar a página — antes, o reload em 700ms interrompia
       // o restart (~3-4s) e o iframe reconectava num terminal morto/antigo.
+      // v0.6.5: splash imediato ("Reiniciando terminal…") durante o restart;
+      // se falhar, splash some + toast de erro (sem reload às cegas).
       setCookie(LANG_COOKIE, lang);
       const dict = I18N[lang] || I18N["pt_BR"];
       toast("🌐 " + (dict["languages.switched_to"] || lang), "info");
       closeLangMenu();
       applyLang(lang);
+      showBootSplash(dict["boot.restarting"] || "Reiniciando terminal…");
       let ok = false;
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 15000); // segurança
+        // v0.6.5: backend espera a porta abrir com retry (~worst 22s); 35s de folga
+        const timer = setTimeout(() => ctrl.abort(), 35000);
         const resp = await fetch(BASE + "/api/lang", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1257,9 +1328,15 @@ def create_wrapper_html(
         clearTimeout(timer);
         ok = resp.ok;
       } catch (e) { ok = false; }
+      if (!ok) {
+        hideBootSplash();
+        toast("❌ " + ((I18N[_currentLang] || I18N["pt_BR"])["boot.failed"] ||
+              "Falha ao reiniciar o terminal. Tente novamente."), "err");
+        return;
+      }
       // Recarrega para aplicar traduções do backend (toasts, modais completos).
       // O backend só responde depois que a porta do ttyd já aceita conexões.
-      setTimeout(() => location.reload(), ok ? 400 : 1500);
+      setTimeout(() => location.reload(), 400);
     }
 
     function buildLangMenu() {
@@ -1548,17 +1625,25 @@ def create_wrapper_html(
     }
 
     // Recarrega o iframe do ttyd (usado após salvar key/trocar tema/restaurar sessão)
-    function reloadTerminalFrame() {
+    async function reloadTerminalFrame() {
       const fr = document.getElementById("terminal-frame");
       if (!fr) return;
       const theme = document.documentElement.getAttribute("data-theme") || "pesquisai";
-      const origSrc = (fr.src || "{__TERMINAL_URL__}").split("?")[0];
+      // v0.6.5: fonte da verdade agora é data-terminal-url (src pode ser
+      // about:blank enquanto o splash aguarda /api/ttyd_ready).
+      let origSrc = "";
+      try { origSrc = (fr.dataset && fr.dataset.terminalUrl) || ""; } catch (e) {}
+      if (!origSrc && fr.src && fr.src.indexOf("about:") !== 0) origSrc = fr.src;
+      origSrc = (origSrc || "{__TERMINAL_URL__}").split("?")[0];
+      if (!origSrc || origSrc === "about:blank") return;
       fr.src = "about:blank";
       // Uma nova sessão pode ter sido criada — invalida cache de histórico.
       _sessionsCache = { data: null, ts: 0 };
-      setTimeout(() => {
-        fr.src = origSrc + "?theme=" + theme + "&t=" + Date.now();
-      }, 3500);
+      // v0.6.5: reconecta somente com a porta respondendo (evita erro do
+      // Chrome dentro do iframe); se morto, delega ao boot com splash.
+      const quick = await waitTerminalReady(3000);
+      if (!quick) { bootTerminal(25000); return; }
+      fr.src = origSrc + "?theme=" + theme + "&t=" + Date.now();
     }
 
     // ── Gestão de chaves salvas ─────────────────────────────────
@@ -1869,6 +1954,11 @@ def create_wrapper_html(
         // (que restaura dados mas depois inicia opencode do zero — linha 1600 do launch_app.py).
         // Em vez disso, usa "opencode -s <id>" com no_fallback=true para iniciar o opencode
         // diretamente na sessão desejada, mesmo padrão do /api/restore (doRestore()).
+        // v0.6.5: splash imediato — o backend só responde quando a porta do
+        // terminal novo já aceita conexões (ou erro).
+        showBootSplash((I18N[_currentLang] || I18N["pt_BR"])["boot.restoring"] ||
+                       "Restaurando sessão…");
+        closeSessions();
         const r = await fetch(BASE + "/api/run_terminal", {
           method: "POST",
           headers: {"Content-Type":"application/json"},
@@ -1879,16 +1969,15 @@ def create_wrapper_html(
           // Invalida cache para que a próxima abertura mostre a sessão atual
           _sessionsCache = { data: null, ts: 0 };
           toast("✅ Sessão " + sessionId + " restaurada! Recarregando página…", "ok");
-          closeSessions();
-          // 🐛 CORREÇÃO v0.5.1.8: usa location.reload() com delay igual a doRestore()
-          // para recarregar a página inteira e reconectar ao ttyd aberto com
-          // opencode -s <sessionId>.
-          setTimeout(() => location.reload(), 2500);
+          // Splash permanece cobrindo a tela; reload reconecta ao terminal pronto.
+          setTimeout(() => location.reload(), 600);
         } else {
+          hideBootSplash();
           toast("❌ Erro ao restaurar: " + (d.error || r.status), "err");
           loadSessions(true);
         }
       } catch(e) {
+        hideBootSplash();
         toast("❌ " + e.message, "err");
         loadSessions(true);
       }
@@ -2881,6 +2970,8 @@ def create_wrapper_html(
         root.style.setProperty("--amber-dim", "rgba(166,124,0,.12)");
         root.style.setProperty("--red", "#c62828");
         root.style.setProperty("--red-dim", "rgba(198,40,40,.1)");
+        // v0.6.5: backdrop de modais acompanha o tema claro
+        root.style.setProperty("--ov-dim", "rgba(30,42,52,.38)");
         document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f5f6f7");
       } else {
         root.style.setProperty("--ink", "#e8e6e0");
@@ -2898,6 +2989,8 @@ def create_wrapper_html(
         root.style.setProperty("--amber-dim", "rgba(209,167,5,.14)");
         root.style.setProperty("--red", "#e07070");
         root.style.setProperty("--red-dim", "rgba(224,112,112,.12)");
+        // v0.6.5: backdrop de modais acompanha o tema escuro
+        root.style.setProperty("--ov-dim", "rgba(4,7,11,.8)");
         document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#141c24");
       }
     }
@@ -2932,6 +3025,86 @@ def create_wrapper_html(
           try { localStorage.setItem(THEME_COOKIE, d.theme); } catch (e) {}
         }
       } catch(e) {}
+    }
+
+    // ── v0.6.5: Splash de carregamento do terminal ─────────────
+    // Polling em /api/ttyd_ready ANTES de apontar o iframe: o usuário vê
+    // uma tela de espera com a marca em vez do ERR_CONNECTION_REFUSED do
+    // Chrome dentro do retângulo do terminal.
+    const TERMINAL_URL = (document.getElementById("terminal-frame") || {}).dataset
+      ? (document.getElementById("terminal-frame").dataset.terminalUrl || "")
+      : "";
+
+    function _bootEls() {
+      return {
+        splash: document.getElementById("boot-splash"),
+        status: document.getElementById("boot-status"),
+        err: document.getElementById("boot-error"),
+        retry: document.getElementById("boot-retry"),
+        frame: document.getElementById("terminal-frame"),
+      };
+    }
+
+    function _bootDict() { return I18N[_currentLang] || I18N["pt_BR"]; }
+
+    function showBootSplash(msg) {
+      const el = _bootEls();
+      if (!el.splash) return;
+      el.splash.style.display = "";
+      el.splash.classList.remove("hide");
+      const sp = el.splash.querySelector(".boot-spinner");
+      const bar = el.splash.querySelector(".boot-bar");
+      if (sp) sp.style.display = "";
+      if (bar) bar.style.display = "";
+      if (el.status) { el.status.style.display = ""; if (msg) el.status.textContent = msg; }
+      if (el.err) el.err.style.display = "none";
+      if (el.retry) el.retry.style.display = "none";
+    }
+
+    function hideBootSplash() {
+      const el = _bootEls();
+      if (!el.splash) return;
+      el.splash.classList.add("hide");
+      setTimeout(() => { el.splash.style.display = "none"; }, 500);
+    }
+
+    async function waitTerminalReady(maxMs) {
+      const t0 = Date.now();
+      maxMs = maxMs || 30000;
+      while (Date.now() - t0 < maxMs) {
+        try {
+          const r = await fetch(BASE + "/api/ttyd_ready", { cache: "no-store" });
+          if (r.ok) { const d = await r.json(); if (d.ready) return true; }
+        } catch (e) {}
+        await new Promise(z => setTimeout(z, 600));
+      }
+      return false;
+    }
+
+    async function bootTerminal(maxMs) {
+      const el = _bootEls();
+      if (!el.frame || !TERMINAL_URL) { hideBootSplash(); return; }
+      showBootSplash(_bootDict()["boot.starting"] || "Iniciando terminal…");
+      const ok = await waitTerminalReady(maxMs);
+      if (!ok) {
+        const dict = _bootDict();
+        const sp = el.splash.querySelector(".boot-spinner");
+        const bar = el.splash.querySelector(".boot-bar");
+        if (sp) sp.style.display = "none";
+        if (bar) bar.style.display = "none";
+        if (el.status) el.status.style.display = "none";
+        if (el.err) {
+          el.err.textContent = (dict["boot.timeout"] ||
+            "O terminal não respondeu. Verifique ~/PesquisAI/logs/ttyd.log.");
+          el.err.style.display = "block";
+        }
+        if (el.retry) el.retry.style.display = "inline-block";
+        return;
+      }
+      let loaded = false;
+      el.frame.onload = () => { loaded = true; hideBootSplash(); };
+      el.frame.src = TERMINAL_URL;
+      setTimeout(() => { if (!loaded) hideBootSplash(); }, 8000); // fallback visual
     }
 
     // ── Listeners globais ─────────────────────────────────────
@@ -2970,6 +3143,8 @@ def create_wrapper_html(
       fetch(BASE + "/api/apikey/apply", { method: "POST" }).catch(() => {});
       // 4. v0.6.4: welcome-hint antigo REMOVIDO — a tela de Termos de Uso
       //    (terms-overlay, com a logomarca oficial UFVAI) é a única abertura.
+      // 5. v0.6.5: conecta o terminal (com splash) só quando /api/ttyd_ready
+      bootTerminal();
     });
     window.addEventListener("beforeunload", () => { _stopSessionsPoll(); });
   </script>
@@ -2979,8 +3154,8 @@ def create_wrapper_html(
        A logomarca oficial UFVAI agora abre na tela de Termos de Uso (terms-overlay). -->
   </div>
   <!-- Confirm dialog overlay (replaces native confirm()) -->
-  <div id="confirm-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100001;opacity:0;pointer-events:none;transition:opacity .18s;">
-    <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:22px;width:400px;max-width:92vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
+  <div id="confirm-overlay" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:100001;opacity:0;pointer-events:none;transition:opacity .18s;">
+    <div style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:22px;width:400px;max-width:92vw;box-shadow:0 28px 72px rgba(0,0,0,.7);">
       <div id="confirm-msg" style="font-size:13px;line-height:1.55;color:var(--ink);margin-bottom:18px;"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button id="confirm-no" class="btn-ghost" style="padding:9px 16px;" data-i18n="ui.cancel">Cancelar</button>
@@ -3020,7 +3195,7 @@ def create_wrapper_html(
   <div class="t-card">
     <!-- v0.6.4: logomarca oficial UFVAI (asset local, offline-safe; some graciosamente se ausente) -->
     <div style="display:flex;justify-content:center;margin-bottom:10px;">
-      <img src="/assets/logo-oficial-288.jpg" alt="UFVAI — Universidade Federal de Viçosa"
+      <img src="assets/logo-oficial-288.jpg" alt="UFVAI — Universidade Federal de Viçosa"
            onerror="this.style.display='none'"
            style="width:96px;height:96px;border-radius:50%;border:2px solid rgba(178,145,73,.55);box-shadow:0 4px 18px rgba(0,0,0,.45);background:#fff;object-fit:cover;" />
     </div>
@@ -3051,6 +3226,18 @@ def create_wrapper_html(
       <span>Li e aceito os Termos de Uso e a Licença MIT &nbsp;<span style="opacity:.7">(I have read and accept the Terms of Use and the MIT License)</span></span></label>
     <label class="t-check"><input type="checkbox" id="t-analytics">
       <span>Opcional: permitir estatísticas anônimas de uso &nbsp;<span style="opacity:.7">(Optional: allow anonymous usage stats — GA Measurement Protocol, no content, opt-out anytime via UFVAI_TELEMETRY=0)</span></span></label>
+    <label class="t-check" style="display:block">
+      <span style="display:block;margin-bottom:4px">Opcional: deixar meu e-mail para contato/novidades do UFVAI
+        <span style="opacity:.7">(Optional: leave my e-mail for UFVAI news/contact)</span></span>
+      <input type="email" id="t-email" placeholder="nome@dominio.br (opcional / optional)"
+             autocomplete="email" spellcheck="false"
+             style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;font-size:13px;
+                    background:#0f151c;border:1px solid rgba(178,145,73,.35);color:#e8e6e0;outline:none;">
+      <span style="display:block;font-size:10.5px;opacity:.65;margin-top:5px;line-height:1.45">
+        🔒 LGPD art. 7º I — uso exclusivo para contato sobre o UFVAI, guardado localmente e cifrado em trânsito.
+        O Google Analytics <b>nunca</b> recebe seu endereço (apenas um contador anônimo). Você pode apagar a qualquer momento (art. 18).<br>
+        Used solely to contact you about UFVAI; stored locally and never sent to Google Analytics.</span>
+    </label>
     <div class="t-actions">
       <button class="t-no" id="t-decline-btn">Não aceitar / Decline</button>
       <button class="t-ok" id="t-accept-btn" disabled>Aceitar e começar / Accept</button>
@@ -3060,25 +3247,42 @@ def create_wrapper_html(
 <script>
 (function(){
   try{
-    if(localStorage.getItem("ufvai_terms_version")==="2") return; // v0.6.4: termos v2.0 → re-consentimento
+    // v0.6.6: termos v3 → re-consentimento (novo aviso de contato opcional)
+    if(localStorage.getItem("ufvai_terms_version")==="3") return;
     var ov=document.getElementById("terms-overlay");
     if(!ov) return;
     ov.style.display="flex";
     var chk=document.getElementById("t-accept"),
         btn=document.getElementById("t-accept-btn"),
-        an=document.getElementById("t-analytics");
+        an=document.getElementById("t-analytics"),
+        em=document.getElementById("t-email"),
+        err=null;
     chk.addEventListener("change",function(){btn.disabled=!chk.checked;});
-    function _post(accepted, analytics){
+    function _validMail(v){return !v || /^[^@\\s]{1,64}@[^@\\s]+\\.[^@\\s]{2,}$/.test(v);}
+    function _post(accepted, analytics, contactEmail){
       try{
+        var payload={accepted:accepted,analytics:analytics};
+        if(contactEmail!==undefined) payload.contact_email=contactEmail;
         fetch("/api/consent",{method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({accepted:accepted,analytics:analytics})}).catch(function(){});
+          body:JSON.stringify(payload)}).catch(function(){});
       }catch(e){}
     }
+    function _showErr(msg){
+      if(!err){
+        err=document.createElement("div");
+        err.style.cssText="font-size:11px;color:#e07b5f;margin-top:4px;";
+        em.parentNode.appendChild(err);
+      }
+      err.textContent=msg||"";
+    }
     btn.addEventListener("click",function(){
-      localStorage.setItem("ufvai_terms_version","2");
+      var v=(em&&em.value||"").trim();
+      if(!_validMail(v)){ _showErr("E-mail inválido — corrija ou apague o campo. / Invalid e-mail."); try{em.focus();}catch(e){} return; }
+      if(err) err.textContent="";
+      localStorage.setItem("ufvai_terms_version","3");
       localStorage.setItem("ufvai_analytics", an.checked?"1":"0");
-      _post(true, an.checked);
+      _post(true, an.checked, v);
       ov.style.display="none";
       // v0.6.4: se o usuário autorizou estatísticas, liga o GA client-side na hora
       if(an.checked && typeof window._ufvaiGaStart==="function"){ try{ window._ufvaiGaStart(); }catch(e){} }
@@ -3122,7 +3326,7 @@ def create_wrapper_html(
   }
   window._ufvaiGaStart=_start;
   try{
-    if(localStorage.getItem("ufvai_terms_version")==="2" &&
+    if(localStorage.getItem("ufvai_terms_version")==="3" &&
        localStorage.getItem("ufvai_analytics")==="1"){
       setTimeout(_start,1200); // deixa a UI carregar primeiro
     }
@@ -3184,6 +3388,13 @@ def create_wrapper_html(
             "theme.toggle": "Alternar tema", "theme.light": "Tema claro (UI + terminal)",
             "theme.dark": "Tema escuro (UI + terminal)",
             "theme.terminal_reloaded": "Terminal recarregado com novo tema",
+            # v0.6.5 — Splash de carregamento do terminal
+            "boot.starting": "Iniciando terminal…",
+            "boot.restarting": "Reiniciando terminal…",
+            "boot.restoring": "Restaurando sessão…",
+            "boot.timeout": "O terminal não respondeu. Verifique ~/PesquisAI/logs/ttyd.log e recarregue.",
+            "boot.failed": "Falha ao reiniciar o terminal. Tente novamente.",
+            "boot.retry": "↻ Recarregar",
             "languages.label": "Idioma", "languages.switched_to": "Idioma alterado para",
             "success_messages.backup_saved": "Backup salvo",
             # v0.5.1.2 — Memória UFVAI
@@ -3271,6 +3482,13 @@ def create_wrapper_html(
             "theme.toggle": "Toggle theme", "theme.light": "Light theme (UI + terminal)",
             "theme.dark": "Dark theme (UI + terminal)",
             "theme.terminal_reloaded": "Terminal reloaded with new theme",
+            # v0.6.5 — Terminal boot splash
+            "boot.starting": "Starting the terminal…",
+            "boot.restarting": "Restarting the terminal…",
+            "boot.restoring": "Restoring session…",
+            "boot.timeout": "The terminal did not respond. Check ~/PesquisAI/logs/ttyd.log and reload.",
+            "boot.failed": "Failed to restart the terminal. Please try again.",
+            "boot.retry": "↻ Reload",
             "languages.label": "Language", "languages.switched_to": "Language switched to",
             "success_messages.backup_saved": "Backup saved",
             # v0.5.1.2 — PesquisAI Memory
@@ -3358,6 +3576,13 @@ def create_wrapper_html(
             "theme.toggle": "Alternar tema", "theme.light": "Tema claro (UI + terminal)",
             "theme.dark": "Tema oscuro (UI + terminal)",
             "theme.terminal_reloaded": "Terminal recargado con nuevo tema",
+            # v0.6.5 — Splash de arranque del terminal
+            "boot.starting": "Iniciando el terminal…",
+            "boot.restarting": "Reiniciando el terminal…",
+            "boot.restoring": "Restaurando sesión…",
+            "boot.timeout": "El terminal no respondió. Revisa ~/PesquisAI/logs/ttyd.log y recarga.",
+            "boot.failed": "No se pudo reiniciar el terminal. Inténtalo de nuevo.",
+            "boot.retry": "↻ Recargar",
             "languages.label": "Idioma", "languages.switched_to": "Idioma cambiado a",
             "success_messages.backup_saved": "Copia guardada",
             # v0.5.1.2 — Memoria PesquisAI
@@ -3445,6 +3670,13 @@ def create_wrapper_html(
             "theme.toggle": "Basculer le thème", "theme.light": "Thème clair (UI + terminal)",
             "theme.dark": "Thème sombre (UI + terminal)",
             "theme.terminal_reloaded": "Terminal rechargé avec le nouveau thème",
+            # v0.6.5 — Écran de démarrage du terminal
+            "boot.starting": "Démarrage du terminal…",
+            "boot.restarting": "Redémarrage du terminal…",
+            "boot.restoring": "Restauration de la session…",
+            "boot.timeout": "Le terminal n'a pas répondu. Consultez ~/PesquisAI/logs/ttyd.log puis rechargez.",
+            "boot.failed": "Échec du redémarrage du terminal. Veuillez réessayer.",
+            "boot.retry": "↻ Recharger",
             "languages.label": "Langue", "languages.switched_to": "Langue changée en",
             "success_messages.backup_saved": "Sauvegarde enregistrée",
             # v0.5.1.2 — Mémoire PesquisAI
@@ -3532,6 +3764,13 @@ def create_wrapper_html(
             "theme.toggle": "切换主题", "theme.light": "浅色主题（界面+终端）",
             "theme.dark": "深色主题（界面+终端）",
             "theme.terminal_reloaded": "终端已应用新主题并重新加载",
+            # v0.6.5 — 终端启动画面
+            "boot.starting": "正在启动终端…",
+            "boot.restarting": "正在重启终端…",
+            "boot.restoring": "正在恢复会话…",
+            "boot.timeout": "终端无响应。请查看 ~/PesquisAI/logs/ttyd.log 后重新加载。",
+            "boot.failed": "重启终端失败，请重试。",
+            "boot.retry": "↻ 重新加载",
             "languages.label": "语言", "languages.switched_to": "语言已切换为",
             "success_messages.backup_saved": "备份已保存",
             "memory.title": "UFVAI 记忆库",

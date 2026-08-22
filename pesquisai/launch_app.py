@@ -28,6 +28,7 @@ from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
 try:
     from .telemetry import event as _tel_event, set_consent as _tel_set_consent
     from .telemetry import masked_state as _tel_masked_state, save_admin_config as _tel_save_admin
+    from .telemetry import save_contact as _tel_save_contact, clear_contact as _tel_clear_contact, contact_status as _tel_contact_status
 except Exception:  # pragma: no cover
     def _tel_event(*a, **k): pass
     def _tel_set_consent(*a, **k): pass
@@ -37,6 +38,11 @@ except Exception:  # pragma: no cover
                 "kill_switch": False, "enabled": False}
     def _tel_save_admin(*a, **k):
         return False, "Telemetria indisponível."
+    def _tel_save_contact(*a, **k):
+        return False, "Contato indisponível."
+    def _tel_clear_contact(*a, **k): pass
+    def _tel_contact_status(*a, **k):
+        return {"has_email": False, "email_masked": "", "contact_endpoint_set": False}
 # v0.4.2.2: __version__ foi MOVIDO para pesquisai/__version__.py
 # (estava em /__version__.py). Mantemos fallback para robustez.
 try:
@@ -57,6 +63,9 @@ _LANG_COOKIE_FILE: str = os.path.expanduser("~/.config/pesquisai_lang")
 # v0.6.0: token de sessão da UI + rate limit simples (segurança)
 _SESSION_TOKEN: str | None = None
 _RATE: dict[str, list[float]] = {}
+# v0.6.5: handle do ttyd atual — permite matar a ÁRVORE do terminal
+# (ttyd + bash + opencode) por grupo de processo, sem pkill -f global.
+_TTYD_PROC: "subprocess.Popen | None" = None
 
 
 
@@ -169,9 +178,14 @@ def install_ttyd() -> None:
 
 
 def kill_previous():
-    """Mata processos anteriores de ttyd e do wrapper."""
+    """Mata processos anteriores de ttyd e do wrapper.
+
+    v0.6.5: pkill -x (COMM exato) em vez de -f — não casa processos cuja
+    LINHA DE COMANDO meramente contém 'ttyd' (ex.: bash -i -c 'ttyd …',
+    agente hospedeiro, editores). Mesmo efeito, sem danos colaterais.
+    """
     subprocess.run(
-        ["pkill", "-f", "ttyd"],
+        ["pkill", "-9", "-x", "ttyd"],
         capture_output=True,
         timeout=5,
     )
@@ -456,10 +470,12 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
     import urllib.request as _urllib
 
     # 1. Iniciar ttyd temporário com comando dummy
+    #    v0.6.5: nova sessão de processos + log em arquivo
     print("📱 Preparando HTML do ttyd com touch handlers...")
     tmp_proc = subprocess.Popen(
         ["ttyd", "-p", str(TERMINAL_PORT), "echo", "pesquisai_touch_tmp"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
+        start_new_session=True,
     )
     time.sleep(2)
 
@@ -473,12 +489,22 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
         logger.warning("Falha ao buscar HTML do ttyd para touch handlers: %s", e)
 
     # 3. Matar ttyd temporário
+    #    v0.6.5: terminate/wait primeiro; fallback pkill -x (COMM exato) —
+    #    NUNCA pkill -f ttyd, que mataria também o ttyd real de outra thread.
     try:
         tmp_proc.terminate()
         tmp_proc.wait(timeout=3)
     except Exception:
-        subprocess.run(["pkill", "-f", "ttyd"], capture_output=True, timeout=5)
-    subprocess.run(["pkill", "-f", "ttyd"], capture_output=True, timeout=5)
+        pass
+    try:
+        import signal as _signal
+        try:
+            os.killpg(os.getpgid(tmp_proc.pid), _signal.SIGKILL)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    subprocess.run(["pkill", "-9", "-x", "ttyd"], capture_output=True, timeout=3)
     time.sleep(0.5)
 
     if not html_content:
@@ -599,19 +625,108 @@ def _wait_port_open(port: int, timeout_s: float = 10.0) -> bool:
     return False
 
 
-def start_ttyd(lang: str | None = None):
-    """Inicia o ttyd com saudação no idioma solicitado.
+def _ttyd_log_file():
+    """v0.6.5: arquivo de log do ttyd (antes: DEVNULL — falhas invisíveis).
 
-    Args:
-        lang: Código do idioma (pt_BR, en_US, es_ES, fr_FR). Se None, usa
-              o _current_lang global ou o env PESQUISAI_LANG.
-
-    v0.4.2.2: ao invés de `--prompt 'oi'` genérico, usa saudação no idioma
-              + instrução "(a partir de agora responda em X)".
-    v0.4.2.5: injeta touch handlers (scroll + pinch-zoom) no HTML do ttyd
-              via flag --index, habilitando rolagem e zoom em mobile.
+    Offline: ~/PesquisAI/logs/ttyd.log · Colab: <Drive>/PesquisAI/logs/ttyd.log.
+    Em caso de falha ao criar, retorna DEVNULL.
     """
-    print(f"\n{next_joke('economia')}")
+    try:
+        base = ("/content/drive/My Drive/PesquisAI"
+                if os.path.isdir("/content/drive/My Drive")
+                else os.path.expanduser("~/PesquisAI"))
+        log_dir = os.path.join(base, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        return open(os.path.join(log_dir, "ttyd.log"), "ab")
+    except Exception:
+        return subprocess.DEVNULL
+
+
+def _spawn_ttyd(ttyd_args: list, env: dict | None) -> "subprocess.Popen":
+    """v0.6.5: Popen rastreado em NOVA SESSÃO de processos.
+
+    start_new_session=True faz o ttyd ser líder do próprio grupo — assim
+    _stop_terminal() consegue matar ttyd + bash + opencode (a árvore toda)
+    com um único killpg, sem pkill -f global (que matava qualquer processo
+    com 'opencode' na cmdline, inclusive o agente hospedeiro).
+    """
+    global _TTYD_PROC
+    logf = _ttyd_log_file()
+    proc = subprocess.Popen(
+        ttyd_args,
+        stdout=logf,
+        stderr=subprocess.STDOUT,
+        env=env,
+        start_new_session=True,
+    )
+    _TTYD_PROC = proc
+    return proc
+
+
+def _stop_terminal(wait_s: float = 0.8) -> None:
+    """v0.6.5: encerra a ÁRVORE do terminal de forma cirúrgica.
+
+    1. killpg no grupo rastreado (_TTYD_PROC) — mata ttyd + bash + opencode;
+    2. Fallback determinístico: pkill -9 -x ttyd casa apenas o COMM exato
+       'ttyd' (NUNCA casa python/host/bash com 'opencode' na cmdline).
+    """
+    global _TTYD_PROC
+    import signal as _signal
+
+    proc, _TTYD_PROC = _TTYD_PROC, None
+    if proc is not None and proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(proc.pid), _signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            proc.wait(timeout=3)
+        except Exception:
+            pass
+    # Fallback: mata qualquer OUTRO ttyd remanescente pelo nome exato do binário
+    try:
+        subprocess.run(["pkill", "-9", "-x", "ttyd"], capture_output=True, timeout=3)
+    except Exception:
+        pass
+    # Órfãos típicos de versões antigas (bash -i -c … opencode …): mata só
+    # bash INTERATIVO cujo -c contém opencode (padrão ancorado, sem falso
+    # positivo com o agente hospedeiro, que não roda via 'bash -i -c').
+    try:
+        subprocess.run(["pkill", "-9", "-f", r"^-i -c .*opencode"],
+                       capture_output=True, timeout=3)
+    except Exception:
+        pass
+    time.sleep(wait_s)  # dá tempo do kernel liberar o socket da porta
+
+
+def _ensure_terminal_ready(spawn_fn, timeout_s: float = 20.0,
+                           retries: int = 1) -> bool:
+    """v0.6.5: spawn + ESPERA a porta do terminal aceitar conexões.
+
+    Retorna True somente se a TERMINAL_PORT estiver de fato atendendo.
+    Se não abrir, reinicia (retry) antes de desistir — cobre corridas de
+    rebind/TIME_WAIT que deixavam a porta morta (ERR_CONNECTION_REFUSED).
+    """
+    for attempt in range(1, retries + 2):
+        spawn_fn()
+        if _wait_port_open(TERMINAL_PORT, timeout_s=min(10.0, timeout_s)):
+            return True
+        print(f"⚠️  Terminal não abriu a porta {TERMINAL_PORT} "
+              f"(tentativa {attempt}/{retries + 1}) — reiniciando…")
+        if attempt <= retries:
+            _stop_terminal(0.6)
+    return False
+
+
+def _build_ttyd_cmd(lang: str | None = None):
+    """v0.6.5: constrói (args, env) do ttyd com saudação no idioma pedido.
+
+    Extraído de start_ttyd para permitir retry determinístico em
+    restart_ttyd_with_lang/_ensure_terminal_ready.
+    """
     opencode_bin, env = resolve_opencode()
 
     # Resolve idioma (param > env > _current_lang > detecção do sistema)
@@ -632,43 +747,60 @@ def start_ttyd(lang: str | None = None):
     # v0.4.2.5: construir args com --index (touch handlers)
     # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
     base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable", "bash", "-i", "-c", bash_cmd]
-    ttyd_args = _build_ttyd_args(base_args, env)
+    return _build_ttyd_args(base_args, env), env, full_lang
 
-    subprocess.Popen(
-        ttyd_args,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-    )
+
+def start_ttyd(lang: str | None = None):
+    """Inicia o ttyd com saudação no idioma solicitado.
+
+    Args:
+        lang: Código do idioma (pt_BR, en_US, es_ES, fr_FR). Se None, usa
+              o _current_lang global ou o env PESQUISAI_LANG.
+
+    v0.4.2.2: ao invés de `--prompt 'oi'` genérico, usa saudação no idioma
+              + instrução "(a partir de agora responda em X)".
+    v0.4.2.5: injeta touch handlers (scroll + pinch-zoom) no HTML do ttyd
+              via flag --index, habilitando rolagem e zoom em mobile.
+    v0.6.5: spawn rastreado (_spawn_ttyd) + logs em arquivo; espera curta.
+    """
+    print(f"\n{next_joke('economia')}")
+    ttyd_args, env, full_lang = _build_ttyd_cmd(lang)
+    _spawn_ttyd(ttyd_args, env)
     print(f"🚀 Terminal iniciado (idioma: {full_lang}, touch: {'ON' if '--index' in ttyd_args else 'OFF'}).")
-    time.sleep(2)
+    time.sleep(0.8)
 
 
 def restart_ttyd_with_lang(lang: str) -> bool:
     """Reinicia o ttyd com saudação no novo idioma.
 
     Usado pelo endpoint /api/lang quando o usuário troca o idioma.
-    Retorna True se reiniciou (e a porta já aceita conexões), False se falhou.
+    Retorna True APENAS se o terminal novo está de fato aceitando conexões.
 
     v0.6.1: além de persistir e reiniciar, AGUARDA a porta do ttyd abrir
     antes de responder — o frontend só recarrega a página quando o
     terminal novo está pronto, garantindo que a saudação inicial apareça
     no idioma selecionado.
+    v0.6.5: kill cirúrgico por árvore (_stop_terminal), retry automático e
+    retorno honesto (antes respondia ok mesmo se a porta nunca abrisse —
+    causa do ERR_CONNECTION_REFUSED no iframe após trocar idioma).
     """
     global _current_lang
     try:
-        # Mata ttyd + opencode existentes
-        subprocess.run(["pkill", "-9", "-f", "ttyd"], capture_output=True, timeout=5)
-        subprocess.run(["pkill", "-9", "-f", "opencode"], capture_output=True, timeout=5)
-        time.sleep(1.0)
+        # Encerra a árvore atual (ttyd + bash + opencode) sem pkill -f global
+        _stop_terminal()
         # Persiste o idioma
         _current_lang = lang
         _persist_lang(lang)
-        # Reinicia ttyd com a saudação no novo idioma
-        start_ttyd(lang=lang)
-        # v0.6.1: espera o terminal novo aceitar conexões (até ~12s)
-        _wait_port_open(TERMINAL_PORT, timeout_s=12.0)
-        return True
+
+        def _spawn():
+            ttyd_args, env, _full = _build_ttyd_cmd(lang)
+            _spawn_ttyd(ttyd_args, env)
+
+        ready = _ensure_terminal_ready(_spawn, timeout_s=18.0)
+        if not ready:
+            logger.error("ttyd não abriu a porta %s após troca de idioma "
+                         "(ver logs/ttyd.log).", TERMINAL_PORT)
+        return ready
     except Exception as e:
         logger.error("Falha ao reiniciar ttyd com lang=%s: %s", lang, e)
         return False
@@ -897,6 +1029,31 @@ def start_wrapper_server():
                     self.send_error(404)
                 return
 
+            if p == "/favicon.ico":
+                # v0.6.6: favicon direto (browsers pedem /favicon.ico por padrão).
+                # Serve o PNG 64 da marca via a mesma whitelist de assets.
+                for _root in (
+                    Path(__file__).resolve().parent.parent / "assets",
+                    Path(__file__).resolve().parent / "assets",
+                    Path("/opt/pesquisai/assets"),
+                    Path.home() / "PesquisAI" / "assets",
+                ):
+                    try:
+                        _cand = (_root / "ufvai-64.png").resolve()
+                        if _cand.is_file():
+                            _content = _cand.read_bytes()
+                            self.send_response(200)
+                            self.send_header("Content-Type", "image/png")
+                            self.send_header("Cache-Control", "max-age=86400")
+                            self.send_header("Content-Length", str(len(_content)))
+                            self.end_headers()
+                            self.wfile.write(_content)
+                            return
+                    except Exception:
+                        continue
+                self.send_error(404)
+                return
+
             if p.startswith("/assets/"):
                 # v0.6.4: assets locais (logomarca UFVAI etc.) — offline-safe.
                 # Whitelist estrita + traversal guard (resolve() deve cair dentro
@@ -966,6 +1123,17 @@ def start_wrapper_server():
             if p == "/api/lang":
                 # v0.4.2.2: retorna o idioma atual persistido
                 self._json(200, {"lang": _current_lang, "greeting": get_greeting(_current_lang)})
+                return
+
+            if p == "/api/ttyd_ready":
+                # v0.6.5: status do terminal para o splash de carregamento da UI.
+                # O frontend faz polling aqui antes de apontar o iframe — assim
+                # o usuário nunca vê ERR_CONNECTION_REFUSED dentro do terminal.
+                try:
+                    ready = _wait_port_open(TERMINAL_PORT, timeout_s=1.2)
+                except Exception:
+                    ready = False
+                self._json(200, {"ready": bool(ready), "port": TERMINAL_PORT})
                 return
             
             if p == "/api/backups":
@@ -1540,10 +1708,15 @@ def start_wrapper_server():
 
             if p == "/api/consent":
                 # v0.6.0: estado do consentimento (Termos de Uso/telemetria)
+                # v0.6.6: + estado do contato (e-mail mascarado, nunca exposto)
                 state = {"accepted": False, "analytics": False}
                 try:
                     with open(os.path.expanduser("~/.config/ufvai_consent.json"), encoding="utf-8") as fh:
                         state.update(json.load(fh))
+                except Exception:
+                    pass
+                try:
+                    state.update({"contact": _tel_contact_status()})
                 except Exception:
                     pass
                 self._json(200, {"ok": True, **state})
@@ -1854,19 +2027,11 @@ def start_wrapper_server():
                 cmd = cmd_or_error  # comando já sanitizado
                 load_keys_from_drive(DRIVE_BACKUP_DIR, _env, write_bashrc=False)
                 
-                # Hard kill ttyd + opencode (shell=True é seguro aqui pois o comando é fixo)
-                subprocess.run(
-                    ["pkill", "-9", "-f", "ttyd"],
-                    capture_output=True,
-                    timeout=5,
-                )
-                subprocess.run(
-                    ["pkill", "-9", "-f", "opencode"],
-                    capture_output=True,
-                    timeout=5,
-                )
-                time.sleep(1.5)
-                
+                # v0.6.5: encerra a árvore do terminal de forma cirúrgica
+                # (antes: pkill -9 -f opencode — matava qualquer processo com
+                # 'opencode' na cmdline e deixava porta morta sem verificação)
+                _stop_terminal()
+
                 # Build bash -c command string de forma segura
                 # O comando do usuario (cmd) ja foi sanitizado acima.
                 # O suffixo "; exec bash" e adicionado pelo codigo (nao pelo usuario),
@@ -1876,18 +2041,24 @@ def start_wrapper_server():
                     bash_cmd = f"{cmd}; exec bash"
                 else:
                     bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
-                
+
                 # v0.4.2.5: usar --index com touch handlers se disponível
                 base_ttyd = ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
                      "bash", "-i", "-c", bash_cmd]
                 ttyd_cmd = _build_ttyd_args(base_ttyd, _env)
 
-                subprocess.Popen(
-                    ttyd_cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    env=_env,
-                )
+                # v0.6.5: spawn rastreado + ESPERAR a porta abrir antes de
+                # responder (antes respondia ok na hora; o reload do frontend
+                # caía numa porta morta → ERR_CONNECTION_REFUSED).
+                ready = _ensure_terminal_ready(
+                    lambda: _spawn_ttyd(ttyd_cmd, _env), timeout_s=18.0)
+                if not ready:
+                    self._json(503, {
+                        "ok": False,
+                        "error": ("Terminal não respondeu após reinício "
+                                  "(veja logs/ttyd.log). Tente novamente."),
+                    })
+                    return
                 self._json(200, {"ok": True})
                 return
             
@@ -2146,28 +2317,30 @@ def start_wrapper_server():
                 # 3. v0.5.1.6 — REINICIAR ttyd com `opencode -s <session_id>`
                 # Bug antigo: importava a sessão mas o ttyd continuava com --prompt,
                 # então location.reload() mostrava a conversa ATUAL, não a importada.
+                # v0.6.5: kill por árvore + espera a porta abrir + status real
+                # (antes: respondia ok sem verificar → ERR_CONNECTION_REFUSED).
                 ttyd_restarted = False
                 ttyd_restart_error = ""
                 if session_id:
                     try:
-                        # Mata ttyd + opencode atuais
-                        subprocess.run(["pkill", "-9", "-f", "ttyd"], capture_output=True, timeout=5)
-                        subprocess.run(["pkill", "-9", "-f", "opencode"], capture_output=True, timeout=5)
-                        time.sleep(1.0)
-                        # Reinicia ttyd com a sessão importada
-                        opencode_bin, env = resolve_opencode()
-                        bash_cmd = f'{opencode_bin} -s "{session_id}" ; exec bash'
-                        # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
-                        base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable", "bash", "-i", "-c", bash_cmd]
-                        ttyd_args = _build_ttyd_args(base_args, env)
-                        subprocess.Popen(
-                            ttyd_args,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            env=env,
-                        )
-                        ttyd_restarted = True
-                        print(f"🔄 ttyd reiniciado com sessão {session_id}")
+                        _stop_terminal()
+
+                        def _spawn():
+                            opencode_bin, env = resolve_opencode()
+                            bash_cmd = f'{opencode_bin} -s "{session_id}" ; exec bash'
+                            # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
+                            base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable",
+                                         "bash", "-i", "-c", bash_cmd]
+                            _spawn_ttyd(_build_ttyd_args(base_args, env), env)
+
+                        ttyd_restarted = _ensure_terminal_ready(_spawn, timeout_s=18.0)
+                        if ttyd_restarted:
+                            print(f"🔄 ttyd reiniciado com sessão {session_id}")
+                        else:
+                            ttyd_restart_error = (
+                                f"Porta {TERMINAL_PORT} não respondeu após reinício "
+                                "(veja logs/ttyd.log).")
+                            logger.error(ttyd_restart_error)
                     except Exception as restart_err:
                         ttyd_restart_error = str(restart_err)[:200]
                         logger.error("Falha ao reiniciar ttyd com sessão %s: %s", session_id, restart_err)
@@ -2264,8 +2437,18 @@ def start_wrapper_server():
 
             if p == "/api/consent":
                 # v0.6.0: grava aceite dos Termos + opt-in de telemetria
+                # v0.6.6: e-mail de contato OPCIONAL (LGPD art. 7º I) — só
+                # gravado/enviado se o usuário digitou; GA4 recebe apenas
+                # contador anônimo ("contact_optin"), nunca o endereço.
                 accepted = bool(body.get("accepted", False))
                 analytics = bool(body.get("analytics", False))
+                contact_msg = ""
+                if "contact_email" in body:
+                    cemail = str(body.get("contact_email") or "").strip()
+                    if cemail:
+                        _ok, contact_msg = _tel_save_contact(cemail)
+                    else:
+                        _tel_clear_contact()  # campo esvaziado → eliminação (art. 18)
                 cpath = os.path.expanduser("~/.config/ufvai_consent.json")
                 try:
                     os.makedirs(os.path.dirname(cpath), exist_ok=True)
@@ -2283,7 +2466,22 @@ def start_wrapper_server():
                         _tel_event("terms_accepted", {"analytics": analytics})
                 except Exception:
                     pass
-                self._json(200, {"ok": True, "accepted": accepted, "analytics": analytics})
+                resp = {"ok": True, "accepted": accepted, "analytics": analytics}
+                if contact_msg:
+                    resp["contact_message"] = contact_msg
+                    if not contact_msg.lower().startswith(("contato registrado", "contact")):
+                        resp["ok"] = True  # aceite dos termos vale mesmo se o contato falhar
+                self._json(200, resp)
+                return
+
+            # v0.6.6: estado do contato (mascarado) / eliminação (art. 18 VI)
+            if p == "/api/contact":
+                self._json(200, {"ok": True, **_tel_contact_status()})
+                return
+
+            if p == "/api/contact/delete":
+                _tel_clear_contact()
+                self._json(200, {"ok": True, "deleted": True})
                 return
 
             self.send_error(404)
