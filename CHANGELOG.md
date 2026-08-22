@@ -1,6 +1,62 @@
 # Changelog — PesquisAI
 
 
+## [0.6.6] — 2026-08-22 — 🖼️ Favicon UFVAI (incl. Colab) · ✉️ Contato opt-in LGPD
+
+### Interface
+- **FAVICON na interface**: `<link rel="icon">` (ico.svg) + PNG 64 fallback + apple-touch-icon no
+  `<head>` do wrapper; nova rota `/favicon.ico` (mesma whitelist de assets, offline-safe). No Colab,
+  script injeta os favicons com o prefixo do pathname do proxy (`/proxy/8001/`) — links absolutos
+  `/assets/…` quebravam sob o proxy; o logo da tela de Termos migrou para caminho relativo (agora
+  também aparece no Colab).
+
+### Contato opt-in (e-mail) — para o desenvolvedor, com base legal LGPD
+- **Tela de Termos**: campo opcional de e-mail com finalidade declarada (contato/novidades),
+  validação client-side e aviso de privacidade inline. Termos v3 → re-consentimento dos usuários.
+- **LGPD art. 7º I**: consentimento livre/informado/inequívoco, campo em branco por padrão;
+  gravação local em `~/.config/ufvai_profile.json` (chmod 600) com SHA-256 e carimbo do consentimento.
+- **GA4 NUNCA recebe o e-mail** (Termos do Google proíbem PII, mesmo com hash): vai apenas o evento
+  contador `contact_optin`, sem conteúdo.
+- **NOVO `UFVAI_CONTACT_ENDPOINT`** (env/ufvai.env): se o desenvolvedor configurar endpoint próprio
+  HTTPS (ex.: Apps Script), o app faz POST `{product, email, email_sha256, environment, sent_at}` —
+  canal direto e separado do canal analítico.
+- **Direitos do titular**: eliminação via campo esvaziado, remoção do arquivo ou
+  `POST /api/contact/delete`; estado mascarado exposto em `GET /api/consent` (`contact.email_masked`)
+  e no painel Admin (`masked_state`).
+
+### Docs & versão
+- PRIVACY.md: seção "E-mail de contato (v0.6.6)" · TELEMETRY.md: Passo 9 (endpoint Apps Script de
+  exemplo, tabela admin vê/nunca vê atualizada) · bump 0.6.5 → 0.6.6 em `__version__.py`,
+  `pyproject.toml`, `Dockerfile`, `install-offline.sh`, AGENTS.md + agents (5 idiomas).
+
+### Validação
+- `py_compile` OK · pytest completo · smoke dos endpoints `/favicon.ico`, `/api/consent`
+  (com/sem contato), `/api/contact/delete` e validação de e-mail inválido.
+
+## [0.6.5] — 2026-08-22 — 🔐 Terminal à prova de travamentos · 🖥️ /api/ttyd_ready · 🚀 Splash de carregamento
+
+### Terminal — kill cirúrgico por árvore
+- **CRÍTICO corrigido**: o ttyd agora é o **líder do próprio grupo de processos** (`start_new_session=True`) e é rastreado em `_TTYD_PROC`. `_stop_terminal()` mata a árvore inteira (ttyd + bash + opencode) com **um único `killpg`** — acaba o antigo `pkill -f opencode` **global**, que matava qualquer processo com "opencode" na cmdline (inclusive o agente hospedeiro).
+- Fallback determinístico: `pkill -9 -x ttyd` (COMM **exato**; nunca `-f` — o `-f` casava `bash -i -c 'ttyd …'` e processos-host). Órfãos de versões antigas tratados com padrão ancorado (`^-i -c .*opencode`).
+- `kill_previous()` do boot migrado para `pkill -x`; o temporário do touch-handler (`--index`) também usa terminate/wait → killpg → `pkill -x`.
+- `_build_ttyd_cmd()` extraído de `start_ttyd()` para permitir retry determinístico.
+
+### UI — splash de carregamento + polling de prontidão
+- **NOVO endpoint `GET /api/ttyd_ready`** (`_wait_port_open` real, timeout 1,2 s): o frontend faz polling **antes de apontar o iframe** — fim do `ERR_CONNECTION_REFUSED` visível no boot, na troca de idioma e na restauração de sessão.
+- **NOVO splash de boot** (`#boot-splash`): logomarca UFVAI (asset local `/assets/logo-oficial-288.jpg`), spinner, status em 3 estados (`boot.starting`/`boot.restarting`/`boot.restoring`), erro com indicação do log (`boot.timeout`) e botão **Recarregar** (`boot.retry`) — **i18n completo nos 5 idiomas** (pt/en/es/fr/zh; antes só pt_BR, com fallback hardcoded).
+- Troca de idioma e restauração de sessão agora mostram splash imediato e **retorno honesto**: se a porta não abre, erro visível em vez de reload às cegas (causa do refresco em terminal morto).
+
+### Correções relacionadas
+- `launch_app_responsive_v041.py`: splash delay/retry para o iframe; delegação ao boot quando o ttyd está morto.
+
+### Docs & versão
+- Bump **0.6.4 → 0.6.5** em `__version__.py`, `pyproject.toml`, `Dockerfile`, `AGENTS.md` + `agents/AGENTS.*.md` (5 idiomas; `AGENTS.zh.md` resgatado do v0.6.0 — titre/rodapé agora v0.6.5), `install-offline.sh`.
+- `docs/RELEASE_NOTES_v0.6.5.md` nova.
+
+### Validação
+- `py_compile` OK · **pytest completo** (workaround `--override-ini="addopts="`) · smoke do wrapper (i18n do splash nos 5 idiomas + endpoints) · `md5 deb ↔ fonte` conferido.
+
+
 ## [0.6.4] — 2026-08-22 — 🪪 Marca UFVAI completa · 🎨 Temas UFVAI no terminal · 🖼️ Logo oficial · 📜 Termos v2
 
 ### Marca (PesquisAI → UFVAI)

@@ -31,12 +31,31 @@ LLMs em nuvem e não é controlado pelo UFVAI.
 A telemetria **não inclui**: prompts, respostas, nomes de arquivos/projetos, conteúdo de notas,
 endereços de e-mail, identificadores de conta. O cookie `_ga` (gtag.js client-side) só é criado
 após o seu consentimento explícito na tela de Termos. Detalhamento completo: [`TELEMETRY.md`](TELEMETRY.md).
+O e-mail de contato opcional (v0.6.6) segue regras próprias — ver seção abaixo; ele também
+**nunca** vai para o Google Analytics.
 
 ## Termos de Uso
 
 Na primeira abertura da interface é exibida a tela de aceite dos Termos de Uso (com link para a
 licença MIT). O aceite é registrado localmente (`~/.config/ufvai_consent.json`) e a telemetria,
 se você autorizar, também.
+
+## E-mail de contato (v0.6.6 — totalmente opcional)
+
+A tela de Termos oferece um campo **opcional** para você deixar seu e-mail. Regras:
+
+- **Base legal:** consentimento livre, informado e inequívoco (**LGPD art. 7º, I**) — campo em
+  branco por padrão; não preencher não afeta nenhuma funcionalidade;
+- **Finalidade:** exclusivamente contato sobre o UFVAI (novidades, avisos de segurança);
+- **Onde fica:** `~/.config/ufvai_profile.json` no SEU ambiente, permissão 600, com o hash SHA-256
+  e o carimbo do consentimento;
+- **Google Analytics NUNCA recebe** seu endereço — os Termos do Google proíbem dados pessoais
+  (mesmo com hash). Ao GA4 vai apenas um contador anônimo (`contact_optin`), sem conteúdo;
+- **Envio direto ao mantenedor:** só ocorre se ele configurar um endpoint próprio HTTPS
+  (`UFVAI_CONTACT_ENDPOINT`, ex.: Apps Script), e o endereço é transmitido cifrado para essa
+  finalidade declarada;
+- **Eliminação (art. 18, VI):** apague o campo na tela de Termos e salve, ou remova o arquivo
+  `~/.config/ufvai_profile.json`. Também é possível via `DELETE /api/contact/delete`.
 
 ## Seus direitos (LGPD)
 

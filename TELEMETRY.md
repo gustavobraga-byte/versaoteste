@@ -56,10 +56,11 @@ Sem a flag DEBUG, os eventos vão para **Relatórios → Tempo real** (até algu
 
 | O admin VÊ | O admin NUNCA vê |
 |---|---|
-| **Quantas instalações ativas** (1 UUID anônimo ≈ 1 máquina/sessão) | Nome, e-mail ou conta Google |
+| **Quantas instalações ativas** (1 UUID anônimo ≈ 1 máquina/sessão) | Nome ou conta Google |
 | Versão, idioma, Colab × offline | Conteúdo de prompts/notas/vault |
 | Funcionalidades usadas (backup, provedores, temas…) | Arquivos, projetos ou caminhos |
 | Contagem de eventos por dia/evento | IP completo vinculado à identidade |
+| E-mails **somente** via opt-in de contato (Passo 9) — nunca pelo GA4 | E-mail no GA4 (proibido pelos Termos do Google) |
 
 ### Passo 8 — Conformidade LGPD (resumo operacional)
 - **Base legal:** consentimento (art. 7º, I) — opt-in granular na tela de Termos, revogável a qualquer momento;
@@ -70,6 +71,36 @@ Sem a flag DEBUG, os eventos vão para **Relatórios → Tempo real** (até algu
 - **Direitos do titular:** art. 18 atendido via gustavo.braga@ufv.br / DPO UFV (ver PRIVACY.md);
 - **Registro das operações:** mantenha este documento + changelog como registro simples (art. 37);
 - **Minimização:** só contadores categóricos — nada de conteúdo, caminhos ou identificadores reais.
+
+### Passo 9 — E-mail de contato opt-in (v0.6.6) — para o DESENVOLVEDOR
+
+A telemetria existe para VOCÊ (desenvolvedor/mantenedor) acompanhar adoção — nunca para vigiar o
+usuário. Desde a v0.6.6, a tela de Termos oferece um campo **opcional** de e-mail:
+
+| O que acontece | Onde | Base |
+|---|---|---|
+| Usuário digita o e-mail e clica "Aceitar" | `~/.config/ufvai_profile.json` (chmod 600, com SHA-256 + carimbo) na máquina dele | Consentimento explícito — LGPD art. 7º I |
+| Evento `contact_optin` (contador SEM conteúdo) | GA4 — quantos usuários autorizaram contato | Termos do GA4 permitem; nenhum dado pessoal sai |
+| O endereço em si chega até você | SOMENTE se você definir `UFVAI_CONTACT_ENDPOINT` (URL HTTPS própria, ex.: Apps Script que grava numa planilha). POST JSON: `{product, email, email_sha256, environment, sent_at}` | Consentimento com finalidade declarada |
+
+⚠️ **Nunca** envie o e-mail (bruto ou com hash) para o Google Analytics — viola os Termos do
+Google e pode derrubar sua propriedade. O canal do e-mail é separado do canal analítico.
+
+Exemplo de endpoint (Apps Script):
+```javascript
+function doPost(e){
+  const d = JSON.parse(e.postData.contents);
+  SpreadsheetApp.openById('SUA_PLANILHA').getSheets()[0]
+    .appendRow([new Date(), d.email, d.environment]);
+  return ContentService.createTextOutput('{"ok":true}')
+    .setMimeType(ContentService.MimeType.JSON);
+}
+```
+Configuração: `export UFVAI_CONTACT_ENDPOINT="https://script.google.com/macros/s/…/exec"` no
+`~/PesquisAI/config/ufvai.env` (offline) ou nas variáveis do ambiente Colab.
+
+O usuário pode revogar a qualquer momento: apagando o campo na tela de Termos, removendo
+`~/.config/ufvai_profile.json` ou chamando `POST /api/contact/delete` (LGPD art. 18, VI).
 
 > 💡 **Dica de leitura dos relatórios:** em *Explorar → Exploração de forma livre*, use o dimensão
 > `client_id` (como "ID do usuário") para contar instalações distintas e cruzar com eventos —
