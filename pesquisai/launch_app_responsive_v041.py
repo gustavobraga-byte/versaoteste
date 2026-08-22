@@ -283,10 +283,10 @@ RESPONSIVE_CSS: str = """
     --surface:    #f5f6f7;
     --rail:       #ffffff;
     --line:       rgba(0,0,0,.1);
-    --accent:     #157a73;
+    --accent:     #8a6d33;
     --accent-dim: rgba(21,122,115,.10);
     --accent-glow:rgba(21,122,115,.18);
-    --accent-rgb: 21,122,115;
+    --accent-rgb: 138,109,51;
     --green:      #2e7d32;
     --green-dim:  rgba(46,125,50,.1);
     --amber:      #e65100;
@@ -333,10 +333,15 @@ SUPPORTED_LANGUAGES: list[dict[str, str]] = [
     {"code": "en_US", "name": "English (United States)", "flag": "🇺🇸", "short": "EN"},
     {"code": "es_ES", "name": "Español (España)",     "flag": "🇪🇸", "short": "ES"},
     {"code": "fr_FR", "name": "Français (France)",    "flag": "🇫🇷", "short": "FR"},
+    {"code": "zh_CN", "name": "中文（简体）",           "flag": "🇨🇳", "short": "ZH"},
 ]
 
 
-def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
+def create_wrapper_html(
+    terminal_url: str,
+    drive_url: str,
+    session_token: str | None = None,
+) -> str:
     """Cria a versão v0.4.1 do wrapper HTML do PesquisAI.
 
     Versão drop-in que substitui o HTML estático do launch_app.py por
@@ -363,16 +368,18 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0d0f10">
-  <title>PesquisAI</title>
+  <title>UFVAI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Montserrat:wght@600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
   <!-- github-markdown-css: estilização markdown para o modal de Diretrizes -->
   <link rel="preload" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.0/github-markdown-dark.min.css" as="style">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.0/github-markdown-dark.min.css">
   <!-- marked.js: preload para acelerar renderização de markdown -->
-  <link rel="preload" href="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" as="script">
+  <!-- v0.6.0: marked.js EMBUTIDO (offline-first) com fallback CDN -->
+  <script src="/vendor/marked.min.js"></script>
+  <script>if(typeof marked==="undefined"){document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></scr'+'ipt>');}</script>
   <script>
     // ═══════════════════════════════════════════════════════════
     // 🛡️ ANTI-FLASH: aplica tema ANTES de qualquer renderização
@@ -415,17 +422,17 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     :root {
       --ink:        #e8e6e0;
       --ink-muted:  #9a9790;
-      --surface:    #0d0f10;
-      --rail:       #151819;
+      --surface:    #141c24;
+      --rail:       #1f2831;
       --line:       rgba(255,255,255,.07);
-      --accent:     #46a39b;
+      --accent:     #b29149;
       --accent-dim: rgba(var(--accent-rgb),.12);
       --accent-glow:rgba(var(--accent-rgb),.22);
-      --accent-rgb: 70,163,155;
+      --accent-rgb: 178,145,73;
       --green:      #5dba7e;
       --green-dim:  rgba(93,186,126,.12);
-      --amber:      #e8b84b;
-      --amber-dim:  rgba(232,184,75,.12);
+      --amber:      #D1A705;
+      --amber-dim:  rgba(209,167,5,.14);
       --red:        #e07070;
       --red-dim:    rgba(224,112,112,.12);
       --radius:     5px;
@@ -456,8 +463,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     }
 
     .logo { display: flex; align-items: baseline; gap: 2px; }
-    .logo-p  { font-family:"Syne",sans-serif; font-weight:800; font-size:17px; color:var(--ink); letter-spacing:-.5px; }
-    .logo-ai { font-family:"Syne",sans-serif; font-weight:700; font-size:17px; color:var(--accent); letter-spacing:-.5px; }
+    .logo-p  { font-family:"Montserrat","Syne",sans-serif; font-weight:700; font-size:17px; color:var(--ink); letter-spacing:-0.02em; }
+    .logo-ai { font-family:"Montserrat","Syne",sans-serif; font-weight:600; font-size:17px; color:var(--accent); letter-spacing:-0.02em; margin-left:-0.02em; }
     .logo-tag {
       margin-left:9px; font-size:10px; color:var(--ink-muted);
       letter-spacing:.07em; padding:1px 6px;
@@ -683,10 +690,32 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   {RESPONSIVE_CSS}
 </head>
 <body>
+<script>
+/* v0.6.0 segurança — token de sessão em todo fetch /api/* (same-origin) */
+(function(){
+  var __T = "__UFVAI_TOKEN__";
+  if (!__T) return;
+  var _of = window.fetch;
+  window.fetch = function(input, init){
+    try {
+      var url = (typeof input === "string") ? input : (input && input.url) || "";
+      var u = new URL(url, location.href);
+      if (u.origin === location.origin && u.pathname.indexOf("/api/") === 0) {
+        init = init || {};
+        var h = new Headers((init && init.headers) || {});
+        h.set("X-UFVAI-Token", __T);
+        init.headers = h;
+        return _of.call(window, input, init);
+      }
+    } catch(e){}
+    try { return _of.apply(window, arguments); } catch(e2){ throw e2; }
+  };
+})();
+</script>
 
   <div id="topbar">
     <div class="logo">
-      <span class="logo-p">Pesquis</span><span class="logo-ai">AI</span>
+      <span class="logo-p">UFV</span><span class="logo-ai">AI</span>
       <span>  <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/CHANGELOG.md" target="_blank" class="logo-tag"> v{__VERSION__} </a> </span>
     </div>
 
@@ -708,7 +737,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <button class="tb-icon" onclick="openAgents()" title="Diretrizes do Agente" data-i18n-title="agents.title">
         <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/></svg>
       </button>
-      <button class="tb-icon" onclick="openMemory()" id="memory-btn" title="Memória PesquisAI" data-i18n-title="memory.tooltip">
+      <button class="tb-icon" onclick="openMemory()" id="memory-btn" title="Memória UFVAI" data-i18n-title="memory.tooltip">
         <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 7l1 1v3a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-3l1-1c1.5-2 3-4 3-7a7 7 0 0 0-7-7z"/><path d="M9 22h6"/><path d="M12 2v20"/></svg>
       </button>
       <button class="tb-icon" onclick="toggleTheme()" id="theme-toggle" title="Alternar tema" data-theme="pesquisai" data-i18n-title="theme.toggle">
@@ -766,7 +795,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
-    <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória PesquisAI</span></button>
+    <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória UFVAI</span></button>
     <button class="modal-close" onclick="toggleTheme(); toggleMobileMenu();">◑ <span data-i18n="theme.toggle">Alternar Tema</span></button>
     <button class="modal-close" onclick="toggleLangMenu();">🌐 <span data-i18n="languages.label">Idioma</span></button>
   </div>
@@ -786,7 +815,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
 </iframe>
 
   <div id="footer">
-    <span class="footer-brand">PesquisAI</span>
+    <span class="footer-brand">UFVAI</span>
     <span class="footer-sep"></span>
     <a href="mailto:gustavo.braga@ufv.br" class="footer-link">
       <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -909,7 +938,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         <span style="font-size:18px;">📋</span>
         <div style="flex:1;min-width:0;">
           <div class="modal-title" style="margin-bottom:2px;" data-i18n="agents.title">Diretrizes do Agente</div>
-          <div style="font-size:10.5px;color:var(--ink-muted);" data-i18n="agents.subtitle">Regras e princípios do PesquisAI (AGENTS.md)</div>
+          <div style="font-size:10.5px;color:var(--ink-muted);" data-i18n="agents.subtitle">Regras e princípios do UFVAI (AGENTS.md)</div>
         </div>
         <span id="agents-lang-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:var(--font-sans);">PT-BR</span>
         <button onclick="closeAgents()" class="modal-close" style="width:auto;padding:4px 10px;font-size:11px;" aria-label="Fechar">✕</button>
@@ -924,14 +953,14 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     </div>
   </div>
 
-  <!-- Modal de Memória PesquisAI (v0.5.1.4 — navegar + editar) -->
+  <!-- Modal de Memória UFVAI (v0.5.1.4 — navegar + editar) -->
   <div id="memory-overlay" onclick="if(event.target===this)closeMemory()" style="position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
     <div style="background:#181b1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:0;width:980px;max-width:96vw;max-height:92vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
       <!-- Header -->
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
         <span style="font-size:18px;">🧠</span>
         <div style="flex:1;min-width:0;">
-          <div class="modal-title" style="margin-bottom:2px;" data-i18n="memory.title">Memória PesquisAI</div>
+          <div class="modal-title" style="margin-bottom:2px;" data-i18n="memory.title">Memória UFVAI</div>
           <div id="memory-subtitle" style="font-size:10.5px;color:var(--ink-muted);" data-i18n="memory.subtitle">Camada de memória persistente do agente</div>
         </div>
         <span id="memory-status-badge" style="font-size:10px;padding:2px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink-muted);font-family:var(--font-sans);">…</span>
@@ -1090,7 +1119,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
   </style>
   <script>
     // ════════════════════════════════════════════════════════════
-    // PesquisAI v0.4.1 — Patch corretivo
+    // UFVAI v0.4.1 — Patch corretivo (marca v0.6.0)
     // (1) Responsividade, (2) Tema recarrega terminal, (3) Idioma UI
     // ════════════════════════════════════════════════════════════
 
@@ -1134,6 +1163,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       if (nav.startsWith("en")) return "en_US";
       if (nav.startsWith("es")) return "es_ES";
       if (nav.startsWith("fr")) return "fr_FR";
+      if (nav.startsWith("zh")) return "zh_CN";
       // 5. Padrão
       return "pt_BR";
     }
@@ -1180,26 +1210,31 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       try { localStorage.setItem(LANG_COOKIE, lang); } catch (e) {}
     }
 
-    function setLang(lang) {
-      // Persiste no backend (se disponível) + recarrega para aplicar
-      // traduções do backend também
+    async function setLang(lang) {
+      // v0.6.1: AGUARDA o backend reiniciar o ttyd (saudação no novo idioma)
+      // ANTES de recarregar a página — antes, o reload em 700ms interrompia
+      // o restart (~3-4s) e o iframe reconectava num terminal morto/antigo.
       setCookie(LANG_COOKIE, lang);
-      try {
-        fetch(BASE + "/api/lang", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lang: lang })
-        }).catch(() => {});
-      } catch (e) {}
-      // Aplica imediatamente o que dá (UI strings)
-      applyLang(lang);
-      // Toast feedback
       const dict = I18N[lang] || I18N["pt_BR"];
       toast("🌐 " + (dict["languages.switched_to"] || lang), "info");
-      // Fecha menu
       closeLangMenu();
-      // Recarrega para que backend traduza também (toasts, modais completos)
-      setTimeout(() => location.reload(), 700);
+      applyLang(lang);
+      let ok = false;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000); // segurança
+        const resp = await fetch(BASE + "/api/lang", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lang: lang }),
+          signal: ctrl.signal
+        });
+        clearTimeout(timer);
+        ok = resp.ok;
+      } catch (e) { ok = false; }
+      // Recarrega para aplicar traduções do backend (toasts, modais completos).
+      // O backend só responde depois que a porta do ttyd já aceita conexões.
+      setTimeout(() => location.reload(), ok ? 400 : 1500);
     }
 
     function buildLangMenu() {
@@ -1962,7 +1997,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       });
     }
 
-    // ── Memória PesquisAI (v0.5.1.4 — navegar + editar) ────────
+    // ── Memória UFVAI (v0.5.1.4 — navegar + editar) ────────
     // Estado:
     //   _memoryTree      — lista plana de notas carregada do /api/obsidian/tree
     //   _memoryStatus    — {status, root, writable, notes_count, ...}
@@ -2226,7 +2261,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       });
       for (const f of ordered) {
         const icon = folderIcons[f] || "📁";
-        const label = f ? f.replace(/\/$/, "") : "(raiz)";
+        const label = f ? f.replace(/\\/$/, "") : "(raiz)";
         const count = folderMap[f];
         const isDaily = f === "daily/";
         html += '<div class="mem-folder-card" data-folder="' + encodeURIComponent(f) + '" onclick="navigateToFolder(decodeURIComponent(this.dataset.folder))" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;display:flex;align-items:center;gap:10px;">';
@@ -2262,7 +2297,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         "hypothesis/": "💡", "datasource/": "🗄️", "moc/": "🗺️",
         "inbox/": "📥", "assets/": "🎨"
       };
-      html += '<span style="font-size:12px;font-weight:500;color:var(--ink-muted);">' + (iconMap[folderName] || "📁") + ' ' + escapeHtml(folderName.replace(/\/$/, "")) + '</span>';
+      html += '<span style="font-size:12px;font-weight:500;color:var(--ink-muted);">' + (iconMap[folderName] || "📁") + ' ' + escapeHtml(folderName.replace(/\\/$/, "")) + '</span>';
       html += '</div>';
 
       if (folderName === "daily/") {
@@ -2492,9 +2527,9 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         if (typeof marked !== "undefined" && marked.parse) {
           let html = marked.parse(src);
           // Destaque de wikilinks [[nota]] e tags #tag
-          html = html.replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g,
+          html = html.replace(/\\[\\[([^\\]|#]+)(?:#[^\\]|]+)?(?:\\|([^\\]]+))?\\]\\]/g,
             (m, target, alias) => '<span class="wikilink">[[' + escapeHtml(alias || target) + ']]</span>');
-          html = html.replace(/(^|[\s(])#([a-zA-Z0-9_\-/]+)/g,
+          html = html.replace(/(^|[\\s(])#([a-zA-Z0-9_\\-/]+)/g,
             (m, p, t) => p + '<span class="tag">#' + escapeHtml(t) + '</span>');
           prev.innerHTML = '<div class="mem-preview">' + html + '</div>';
         } else {
@@ -2924,6 +2959,100 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       </div>
     </div>
   </div>
+
+<!-- ═══ v0.6.0 — Termos de Uso (aceite obrigatório na 1ª entrada) ═══ -->
+<style>
+  #terms-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;
+    justify-content:center;background:rgba(10,13,17,.93);backdrop-filter:blur(6px);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;padding:16px;}
+  #terms-overlay .t-card{max-width:660px;width:100%;background:#141c24;border:1px solid #b29149;
+    border-radius:14px;padding:24px 26px;color:#e8e6e0;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  #terms-overlay .t-brand{font-family:"Montserrat","Syne",sans-serif;font-size:26px;
+    letter-spacing:-0.02em;margin-bottom:2px;}
+  #terms-overlay .t-brand b{font-weight:700}#terms-overlay .t-brand em{font-style:normal;font-weight:600;color:#b29149}
+  #terms-overlay .t-sub{font-size:11px;color:#9a9790;margin-bottom:14px;}
+  #terms-overlay .t-scroll{max-height:38vh;overflow:auto;border:1px solid rgba(178,145,73,.25);
+    border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.55;color:#cfcabf;margin-bottom:14px;}
+  #terms-overlay .t-scroll h4{margin:10px 0 4px;color:#b29149;font-size:12px;}
+  #terms-overlay .t-scroll p{margin:4px 0;}
+  #terms-overlay .t-links{font-size:11px;margin-bottom:14px;display:flex;gap:14px;flex-wrap:wrap;}
+  #terms-overlay .t-links a{color:#D1A705;text-decoration:none;border-bottom:1px dotted #D1A705;}
+  #terms-overlay label.t-check{display:flex;gap:9px;align-items:flex-start;font-size:12px;
+    margin-bottom:8px;cursor:pointer;line-height:1.45;}
+  #terms-overlay input[type=checkbox]{accent-color:#b29149;width:15px;height:15px;margin-top:1px;}
+  #terms-overlay .t-actions{display:flex;gap:10px;margin-top:14px;}
+  #terms-overlay button{flex:1;padding:11px 14px;border-radius:9px;font-size:13px;font-weight:600;
+    cursor:pointer;border:1px solid transparent;transition:.15s;}
+  #terms-overlay .t-ok{background:linear-gradient(135deg,#D1A705,#b29149);color:#141c24;border:none;}
+  #terms-overlay .t-ok:disabled{opacity:.35;cursor:not-allowed;}
+  #terms-overlay .t-no{background:transparent;color:#9a9790;border-color:rgba(154,151,144,.35);}
+</style>
+<div id="terms-overlay" role="dialog" aria-modal="true" aria-label="Termos de Uso">
+  <div class="t-card">
+    <div class="t-brand"><b>UFV</b><em>AI</em></div>
+    <div class="t-sub">Pesquisa científica com integridade · UFV/DER · v__UFV_VERSION__</div>
+    <div class="t-scroll">
+      <h4>🇧🇷 Português</h4>
+      <p>O UFVAI é fornecido sob a <b>licença MIT</b>, sem garantias. Use com responsabilidade:
+      você é responsável pelas suas chaves de API (armazenadas cifradas no seu Google Drive),
+      pelo conteúdo gerado e pelo cumprimento das políticas dos provedores de IA. Nenhum conteúdo
+      do seu vault é enviado a terceiros pela telemetria — ela é <b>anônima, opcional e desligável</b>.</p>
+      <h4>🇺🇸 English</h4>
+      <p>UFVAI is provided under the <b>MIT license</b>, without warranty. You are responsible for your API keys,
+      generated content and provider policies. Telemetry is anonymous, optional and can be disabled.</p>
+      <p style="opacity:.75">Español: licencia MIT, sin garantías; telemetría anónima y opcional.
+      · Français : licence MIT, sans garantie ; télémétrie anonyme et facultative.
+      · 中文：MIT 许可证，不提供担保；遥测为匿名且可选。</p>
+    </div>
+    <div class="t-links">
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/LICENSE" target="_blank" rel="noopener">📜 Licença MIT / License</a>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/TERMS_OF_USE.md" target="_blank" rel="noopener">📄 Termos completos / Full terms</a>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/PRIVACY.md" target="_blank" rel="noopener">🔒 Privacidade / Privacy</a>
+    </div>
+    <label class="t-check"><input type="checkbox" id="t-accept">
+      <span>Li e aceito os Termos de Uso e a Licença MIT &nbsp;<span style="opacity:.7">(I have read and accept the Terms of Use and the MIT License)</span></span></label>
+    <label class="t-check"><input type="checkbox" id="t-analytics">
+      <span>Opcional: permitir estatísticas anônimas de uso &nbsp;<span style="opacity:.7">(Optional: allow anonymous usage stats — GA Measurement Protocol, no content, opt-out anytime via UFVAI_TELEMETRY=0)</span></span></label>
+    <div class="t-actions">
+      <button class="t-no" id="t-decline-btn">Não aceitar / Decline</button>
+      <button class="t-ok" id="t-accept-btn" disabled>Aceitar e começar / Accept</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  try{
+    if(localStorage.getItem("ufvai_terms_version")==="1") return;
+    var ov=document.getElementById("terms-overlay");
+    if(!ov) return;
+    ov.style.display="flex";
+    var chk=document.getElementById("t-accept"),
+        btn=document.getElementById("t-accept-btn"),
+        an=document.getElementById("t-analytics");
+    chk.addEventListener("change",function(){btn.disabled=!chk.checked;});
+    function _post(accepted, analytics){
+      try{
+        fetch("/api/consent",{method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({accepted:accepted,analytics:analytics})}).catch(function(){});
+      }catch(e){}
+    }
+    btn.addEventListener("click",function(){
+      localStorage.setItem("ufvai_terms_version","1");
+      localStorage.setItem("ufvai_analytics", an.checked?"1":"0");
+      _post(true, an.checked);
+      ov.style.display="none";
+    });
+    document.getElementById("t-decline-btn").addEventListener("click",function(){
+      _post(false,false);
+      ov.innerHTML='<div class="t-card"><div class="t-brand"><b>UFV</b><em>AI</em></div>'+
+        '<p style="font-size:13px;line-height:1.6">Você optou por não aceitar os Termos de Uso.<br>'+
+        'A interface permanecerá bloqueada. Feche esta aba para encerrar.<br><br>'+
+        '<span style="opacity:.75">You declined the Terms of Use — the UI stays locked. Close this tab to exit.</span></p></div>';
+    });
+  }catch(e){}
+})();
+</script>
 </body>
 </html>"""
 
@@ -2935,6 +3064,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
     html = html.replace("{__TERMINAL_URL__}", terminal_url)
     html = html.replace("{__DRIVE_URL__}", drive_url)
     html = html.replace("{__VERSION__}", VERSION)
+    html = html.replace("__UFVAI_TOKEN__", session_token or "")
     html = html.replace("{RESPONSIVE_CSS}", RESPONSIVE_CSS)
 
     i18n_inline: dict[str, dict[str, str]] = {
@@ -2975,10 +3105,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "theme.terminal_reloaded": "Terminal recarregado com novo tema",
             "languages.label": "Idioma", "languages.switched_to": "Idioma alterado para",
             "success_messages.backup_saved": "Backup salvo",
-            # v0.5.1.2 — Memória PesquisAI
-            "memory.title": "Memória PesquisAI",
+            # v0.5.1.2 — Memória UFVAI
+            "memory.title": "Memória UFVAI",
             "memory.subtitle": "Camada de memória persistente do agente",
-            "memory.tooltip": "Memória PesquisAI (segundo cérebro)",
+            "memory.tooltip": "Memória UFVAI (segundo cérebro)",
             "memory.status_ready": "🟢 Ativa",
             "memory.status_disabled": "⚪ Desativada",
             "memory.status_no_vault": "🟡 Sem vault",
@@ -3017,7 +3147,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "memory.no_results": "Nenhum resultado para a busca.",
             # v0.5.1.2 hotfix — Diretrizes do Agente
             "agents.title": "Diretrizes do Agente",
-            "agents.subtitle": "Regras e princípios do PesquisAI (AGENTS.md)",
+            "agents.subtitle": "Regras e princípios do UFVAI (AGENTS.md)",
             "agents.loading": "Carregando diretrizes…",
             "agents.error": "Erro ao carregar diretrizes do agente.",
             "agents.copy_ok": "Diretrizes copiadas!",
@@ -3282,6 +3412,87 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
             "agents.copy": "Copier",
             "agents.open_source": "Voir la source",
         },
+        "zh_CN": {
+            "ui.backup": "保存备份", "ui.restore": "恢复",
+            "ui.drive": "云端硬盘", "ui.close": "关闭", "ui.cancel": "取消",
+            "ui.loading": "加载中…", "ui.status_active": "智能体运行中",
+            "ui.exporting": "正在导出会话…",
+            "dashboard.title": "健康状态面板",
+            "providers.title": "连接 AI 提供商",
+            "providers.select": "选择要配置 API key 的提供商：",
+            "providers.saved_keys": "已保存到云端硬盘的密钥：",
+            "providers.add_new": "新建提供商",
+            "providers.search": "搜索提供商…",
+            "providers.api_key": "API KEY", "providers.back": "← 返回",
+            "providers.save_connect": "保存并连接",
+            "providers.var": "变量",
+            "providers.key_required": "请输入 API key。",
+            "providers.select_required": "请选择一个提供商。",
+            "providers.saving": "保存中…",
+            "providers.connected": "已连接",
+            "providers.updated": "已更新",
+            "providers.no_saved_keys": "暂无已保存的密钥。",
+            "providers.edit": "编辑",
+            "providers.delete": "删除",
+            "providers.confirm_delete": "删除以下提供商的密钥：",
+            "providers.deleted": "已删除",
+            "sessions.refresh": "↻ 刷新",
+            "sessions.title": "会话历史",
+            "sessions.search_placeholder": "🔍 按 ID 或内容搜索…",
+            "shortcuts.title": "键盘快捷键",
+            "shortcuts.copy": "复制所选内容", "shortcuts.copy_hint": "按住 Shift 并选择",
+            "shortcuts.interrupt": "中断命令", "shortcuts.paste": "粘贴（Chrome）",
+            "shortcuts.menu": "菜单与选项", "shortcuts.model": "更改模型",
+            "shortcuts.history_prev": "上一条历史", "shortcuts.history_next": "下一条历史",
+            "theme.toggle": "切换主题", "theme.light": "浅色主题（界面+终端）",
+            "theme.dark": "深色主题（界面+终端）",
+            "theme.terminal_reloaded": "终端已应用新主题并重新加载",
+            "languages.label": "语言", "languages.switched_to": "语言已切换为",
+            "success_messages.backup_saved": "备份已保存",
+            "memory.title": "UFVAI 记忆库",
+            "memory.subtitle": "智能体的持久记忆层（第二大脑）",
+            "memory.tooltip": "UFVAI 记忆库（第二大脑）",
+            "memory.status_ready": "🟢 运行中",
+            "memory.status_disabled": "⚪ 未启用",
+            "memory.status_no_vault": "🟡 缺少 vault",
+            "memory.status_read_only": "🟡 只读",
+            "memory.status_error": "🔴 错误",
+            "memory.notes_count": "笔记",
+            "memory.notes_unit": "篇",
+            "memory.tags_count": "标签",
+            "memory.avg_len": "平均长度",
+            "memory.links_count": "链接",
+            "memory.recent_notes": "最近笔记",
+            "memory.recent_daily": "最近日志",
+            "memory.templates": "模板",
+            "memory.refresh": "刷新",
+            "memory.save": "保存",
+            "memory.new_note": "新建笔记",
+            "memory.new_note_dialog_title": "新建笔记",
+            "memory.new_note_title": "笔记标题",
+            "memory.field_title": "标题",
+            "memory.field_tags": "标签（逗号分隔）",
+            "memory.field_template": "模板",
+            "memory.field_path": "路径",
+            "memory.empty_editor": "选择或创建一条笔记",
+            "memory.body_placeholder": "在此编写 Markdown…",
+            "memory.dirty": "有未保存的更改",
+            "memory.delete": "删除",
+            "memory.tab_edit": "编辑",
+            "memory.tab_preview": "预览",
+            "memory.tab_split": "分栏",
+            "memory.no_notes": "暂无笔记",
+            "memory.no_results": "无结果",
+            "memory.note_title": "笔记标题",
+            "memory.open_vault": "在 Obsidian 中打开",
+            "agents.title": "智能体规则（AGENTS.md）",
+            "agents.subtitle": "UFVAI 的规则与原则（AGENTS.md）",
+            "agents.copy": "复制 AGENTS.md",
+            "agents.copy_ok": "已复制到剪贴板",
+            "agents.error": "无法加载 AGENTS.md",
+            "agents.loading": "正在加载 AGENTS.md…",
+            "agents.open_source": "查看源码"
+        }
     }
 
     html = html.replace("{__LANGS_JSON__}", _json.dumps(langs_dict, ensure_ascii=False))
@@ -3315,7 +3526,7 @@ def main() -> None:
     print(f"🌐 Contém seletor de idioma: {'lang-btn' in html}")
     print(f"🎨 Contém toggleTheme com reload: {'terminal_reloaded' in html}")
     print(f"📐 Media queries: {html.count('@media')}")
-    print(f"🗣️ Idiomas suportados: {len(SUPPORTED_LANGUAGES)} (pt_BR, en_US, es_ES, fr_FR)")
+    print(f"🗣️ Idiomas suportados: {len(SUPPORTED_LANGUAGES)} (pt_BR, en_US, es_ES, fr_FR, zh_CN)")
 
 
 if __name__ == "__main__":

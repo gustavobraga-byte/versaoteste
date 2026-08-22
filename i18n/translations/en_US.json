@@ -19,8 +19,7 @@
     "title": "Health Dashboard",
     "drive_mounted": "Google Drive mounted",
     "backup_dir": "Backup directory exists",
-    "ttyd_active": "webcli running",
-    "webcli_active": "webcli running",
+    "ttyd_active": "ttyd running",
     "opencode_found": "OpenCode found",
     "keys_loaded": "Keys loaded",
     "skills_installed": "Skills installed",
@@ -66,7 +65,8 @@
   "languages": {
     "pt_BR": "Portuguese (Brazil)",
     "en_US": "English (United States)",
-    "es_ES": "Spanish (Spain)"
+    "es_ES": "Spanish (Spain)",
+    "zh_CN": "English (US)"
   },
   "agents": {
     "rules_title": "Absolute Rules",
@@ -88,5 +88,18 @@
     "session_imported": "Session imported!",
     "session_opened": "Session opened!",
     "config_applied": "Configuration applied"
+  },
+  "terms": {
+    "title": "Terms of Use — UFVAI",
+    "accept_label": "I have read and accept the Terms of Use and the MIT License",
+    "analytics_label": "Optional: allow anonymous usage statistics",
+    "btn_accept": "Accept and start",
+    "btn_decline": "Decline",
+    "declined": "You declined the Terms of Use.",
+    "license_link": "MIT License (GitHub)"
+  },
+  "memory": {
+    "title": "UFVAI Memory",
+    "tooltip": "UFVAI Memory (second brain)"
   }
 }

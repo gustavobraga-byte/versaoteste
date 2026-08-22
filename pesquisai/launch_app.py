@@ -4,9 +4,12 @@ import time
 import threading
 import json
 import shutil
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+import secrets
+import re
+import base64 as _b64
 
 try:
     from google.colab import output
@@ -22,6 +25,11 @@ from .constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
 from .jokes import next_joke
 from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
+try:
+    from .telemetry import event as _tel_event, set_consent as _tel_set_consent
+except Exception:  # pragma: no cover
+    def _tel_event(*a, **k): pass
+    def _tel_set_consent(*a, **k): pass
 # v0.4.2.2: __version__ foi MOVIDO para pesquisai/__version__.py
 # (estava em /__version__.py). Mantemos fallback para robustez.
 try:
@@ -39,6 +47,10 @@ _folder_path: str = "/content"
 # v0.4.2.2: idioma atual persistido pelo backend (cookie + endpoint)
 _current_lang: str = "pt_BR"
 _LANG_COOKIE_FILE: str = os.path.expanduser("~/.config/pesquisai_lang")
+# v0.6.0: token de sessão da UI + rate limit simples (segurança)
+_SESSION_TOKEN: str | None = None
+_RATE: dict[str, list[float]] = {}
+
 
 
 def set_drive_info(folder_path: str, drive_url: str) -> None:
@@ -87,10 +99,12 @@ def load_keys_from_drive(
                     bashrc = os.path.expanduser("~/.bashrc")
                     marker = f"# opencode-key-{k}"
                     export_line = f'export {env_var}="{v}"'
-                    lines = open(bashrc).readlines() if os.path.exists(bashrc) else []
+                    with open(bashrc) as _rf:
+                        lines = _rf.readlines() if os.path.exists(bashrc) else []
                     lines = [l for l in lines if marker not in l and (env_var not in l or "export" not in l)]
                     lines.append(f"{export_line}  {marker}\n")
-                    open(bashrc, "w").writelines(lines)
+                    with open(bashrc, "w") as _wf:
+                        _wf.writelines(lines)
                 except Exception:
                     pass
     return loaded
@@ -512,6 +526,72 @@ def _build_ttyd_args(base_args: list, env: dict) -> list:
     return base_args
 
 
+_LANG_MAP = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR", "zh": "zh_CN"}
+
+
+def _detect_system_lang() -> str:
+    """v0.6.1: detecta o idioma do sistema operacional/navegador.
+
+    Ordem de consulta: $LANGUAGE → $LC_ALL → $LC_MESSAGES → $LANG
+    → locale.getdefaultlocale(). Mapeia o prefixo para um dos idiomas
+    suportados (pt/en/es/fr/zh); fallback pt_BR.
+    """
+    import locale as _locale
+    for src in (
+        os.environ.get("LANGUAGE"),
+        os.environ.get("LC_ALL"),
+        os.environ.get("LC_MESSAGES"),
+        os.environ.get("LANG"),
+    ):
+        if not src:
+            continue
+        # LANGUAGE pode ser uma lista "pt_BR:pt:en" — pegar o primeiro útil
+        for part in src.split(":"):
+            code = part.strip().split(".")[0].replace("-", "_").lower()
+            if not code or code in ("c", "posix"):
+                continue
+            short = code.split("_")[0]
+            if short in _LANG_MAP:
+                return _LANG_MAP[short]
+    try:
+        loc = _locale.getdefaultlocale()[0]
+        if loc:
+            short = str(loc).split("_")[0].lower()
+            if short in _LANG_MAP:
+                return _LANG_MAP[short]
+    except Exception:
+        pass
+    return "pt_BR"
+
+
+def _persist_lang(lang: str) -> None:
+    """Persiste o idioma atual em ~/.config/pesquisai_lang."""
+    try:
+        os.makedirs(os.path.dirname(_LANG_COOKIE_FILE), exist_ok=True)
+        with open(_LANG_COOKIE_FILE, "w", encoding="utf-8") as f:
+            f.write(lang)
+    except Exception:
+        pass
+
+
+def _wait_port_open(port: int, timeout_s: float = 10.0) -> bool:
+    """v0.6.1: aguarda uma porta TCP local aceitar conexões.
+
+    Usado após reiniciar o ttyd para garantir que a resposta do
+    POST /api/lang só chega ao frontend quando o terminal já está
+    pronto para aceitar conexões (evita iframe morto após reload).
+    """
+    import socket
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.25)
+    return False
+
+
 def start_ttyd(lang: str | None = None):
     """Inicia o ttyd com saudação no idioma solicitado.
 
@@ -527,21 +607,24 @@ def start_ttyd(lang: str | None = None):
     print(f"\n{next_joke('economia')}")
     opencode_bin, env = resolve_opencode()
 
-    # Resolve idioma (param > env > _current_lang > pt_BR)
+    # Resolve idioma (param > env > _current_lang > detecção do sistema)
     if lang is None:
-        lang = os.environ.get("PESQUISAI_LANG") or _current_lang or "pt_BR"
+        lang = os.environ.get("PESQUISAI_LANG") or _current_lang or _detect_system_lang()
     # Normaliza para o conjunto canônico
-    _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
     short = (lang or "pt_BR").split("_")[0].lower()
-    full_lang = _valid.get(short, lang if lang in _valid.values() else "pt_BR")
+    full_lang = _LANG_MAP.get(short, lang if lang in _LANG_MAP.values() else "pt_BR")
 
     greeting = get_greeting(full_lang)
     # Escapar aspas para o bash -c "..."
     safe_prompt = greeting.replace('"', '\\"').replace("'", "\\'")
-    bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" ; exec bash'
+    # v0.6.0: --yolo MANTIDO por padrão (decisão do usuário).
+    # Para desligar: export PESQUISAI_YOLO=0
+    _yolo = "" if os.environ.get("PESQUISAI_YOLO", "1").strip().lower() in ("0", "false", "off", "no") else " --yolo"
+    bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" {_yolo} ; exec bash'
 
     # v0.4.2.5: construir args com --index (touch handlers)
-    base_args = ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd]
+    # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
+    base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable", "bash", "-i", "-c", bash_cmd]
     ttyd_args = _build_ttyd_args(base_args, env)
 
     subprocess.Popen(
@@ -558,7 +641,12 @@ def restart_ttyd_with_lang(lang: str) -> bool:
     """Reinicia o ttyd com saudação no novo idioma.
 
     Usado pelo endpoint /api/lang quando o usuário troca o idioma.
-    Retorna True se reiniciou, False se falhou.
+    Retorna True se reiniciou (e a porta já aceita conexões), False se falhou.
+
+    v0.6.1: além de persistir e reiniciar, AGUARDA a porta do ttyd abrir
+    antes de responder — o frontend só recarrega a página quando o
+    terminal novo está pronto, garantindo que a saudação inicial apareça
+    no idioma selecionado.
     """
     global _current_lang
     try:
@@ -568,14 +656,11 @@ def restart_ttyd_with_lang(lang: str) -> bool:
         time.sleep(1.0)
         # Persiste o idioma
         _current_lang = lang
-        try:
-            os.makedirs(os.path.dirname(_LANG_COOKIE_FILE), exist_ok=True)
-            with open(_LANG_COOKIE_FILE, "w", encoding="utf-8") as f:
-                f.write(lang)
-        except Exception:
-            pass
+        _persist_lang(lang)
         # Reinicia ttyd com a saudação no novo idioma
         start_ttyd(lang=lang)
+        # v0.6.1: espera o terminal novo aceitar conexões (até ~12s)
+        _wait_port_open(TERMINAL_PORT, timeout_s=12.0)
         return True
     except Exception as e:
         logger.error("Falha ao reiniciar ttyd com lang=%s: %s", lang, e)
@@ -662,40 +747,83 @@ def start_wrapper_server():
         return None
     
     def save_opencode_config_to_drive():
-        """Copy opencode auth/config to Drive backup folder."""
+        """Copy opencode auth/config to Drive backup folder.
+
+        v0.6.0: grava CIFRADO com Fernet (o arquivo contém tokens de acesso!).
+        Formato novo: {"_ufvai_enc": true, "data": "<fernet-b64>"}.
+        Fallback: cópia plaintext apenas se a criptografia falhar (compat).
+        """
         src = find_opencode_config()
         if src and os.path.exists(src):
-            shutil.copy2(src, DRIVE_CONFIG_BACKUP)
-            return src
+            try:
+                from .security import encrypt_data, _load_or_create_encryption_key
+                raw = open(src, "rb").read()
+                key = _load_or_create_encryption_key(DRIVE_BACKUP_DIR)
+                enc = encrypt_data(key, _b64.b64encode(raw).decode("ascii"))
+                with open(DRIVE_CONFIG_BACKUP, "w", encoding="utf-8") as fh:
+                    json.dump({"_ufvai_enc": True, "data": enc}, fh)
+                return src
+            except Exception:
+                shutil.copy2(src, DRIVE_CONFIG_BACKUP)
+                return src
         return None
-    
+
     def restore_opencode_config_from_drive():
-        """Restore opencode auth/config from Drive backup if it exists."""
+        """Restore opencode auth/config from Drive backup if it exists.
+
+        v0.6.0: aceita formato cifrado (_ufvai_enc=true) e legado plaintext.
+        """
         if not os.path.exists(DRIVE_CONFIG_BACKUP):
             return False
-        # Restore to all candidate locations to ensure opencode finds it
         restored = False
+        try:
+            with open(DRIVE_CONFIG_BACKUP, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict) and data.get("_ufvai_enc"):
+                from .security import decrypt_data, _load_or_create_encryption_key
+                key = _load_or_create_encryption_key(DRIVE_BACKUP_DIR)
+                raw = _b64.b64decode(decrypt_data(key, data["data"]).encode("ascii"))
+                src_path = os.path.join("/tmp", "ufvai_oc_auth_restore.json")
+                with open(src_path, "wb") as fb:
+                    fb.write(raw)
+            else:
+                src_path = DRIVE_CONFIG_BACKUP  # legado plaintext
+        except Exception:
+            src_path = DRIVE_CONFIG_BACKUP
         for dest in OPENCODE_CONFIG_CANDIDATES:
             try:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                shutil.copy2(DRIVE_CONFIG_BACKUP, dest)
+                shutil.copy2(src_path, dest)
                 restored = True
             except Exception:
                 pass
         return restored
-    
+
     # Auto-restore opencode config from Drive on startup
     if restore_opencode_config_from_drive():
         print(f"🔑 Config do OpenCode restaurada do Drive.")
     
     # v0.4.2.2: restaura idioma persistido (cookie/arquivo)
+    # v0.6.1: se não houver preferência salva nem env, DETECTA o idioma do
+    # sistema ($LANG/LC_ALL/LANGUAGE ou locale) e inicia nele, persistindo.
     global _current_lang
     try:
         if os.path.exists(_LANG_COOKIE_FILE):
             with open(_LANG_COOKIE_FILE, "r", encoding="utf-8") as f:
-                _current_lang = (f.read() or "pt_BR").strip()
-        elif os.environ.get("PESQUISAI_LANG"):
+                _current_lang = (f.read() or "").strip()
+        if not _current_lang and os.environ.get("PESQUISAI_LANG"):
             _current_lang = os.environ["PESQUISAI_LANG"]
+        if not _current_lang:
+            _current_lang = _detect_system_lang()
+            print(f"🌐 Idioma detectado do sistema: {_current_lang}")
+        # Persiste para tornar determinístico nas próximas execuções
+        _persist_lang(_current_lang)
+    except Exception:
+        _current_lang = "pt_BR"
+    # Normaliza (aceita "pt", "en_US" etc.) e valida
+    try:
+        _short = (_current_lang or "pt").split("_")[0].lower()
+        _current_lang = _LANG_MAP.get(_short, _current_lang if _current_lang in _LANG_MAP.values() else "pt_BR")
     except Exception:
         _current_lang = "pt_BR"
     print(f"🌐 Idioma inicial: {_current_lang}")
@@ -709,30 +837,67 @@ def start_wrapper_server():
     
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_): pass
+
+        # ── v0.6.0 segurança ─────────────────────────────────────
+        def _authorized(self) -> bool:
+            """Exige o token de sessão injetado no HTML do wrapper."""
+            if not _SESSION_TOKEN:
+                return True  # uso standalone/script (sem HTML gerado)
+            return self.headers.get("X-UFVAI-Token", "") == _SESSION_TOKEN
+
+        def _reject_token(self):
+            self._json(403, {
+                "error": "Token de sessão ausente ou inválido.",
+                "hint": "Recarregue a página do wrapper (F5).",
+            })
         
         def _json(self, code, data):
             body = json.dumps(data, ensure_ascii=False).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            # v0.6.0: CORS '*' removido (a UI é same-origin). Headers seguros:
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Frame-Options", "SAMEORIGIN")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
         
         def do_OPTIONS(self):
-            self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST")
+            # v0.6.0: preflight same-origin apenas (sem Access-Control-*)
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
             self.end_headers()
         
         def do_GET(self):
             p = urlparse(self.path).path
-            
+            if p.startswith("/api/") and not self._authorized():
+                return self._reject_token()
+
+            if p == "/vendor/marked.min.js":
+                # v0.6.0: asset embutido para funcionamento offline
+                try:
+                    _vp = Path(__file__).resolve().parent / "vendor" / "marked.min.js"
+                    content = open(_vp, "rb").read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.end_headers()
+                    self.wfile.write(content)
+                except Exception:
+                    self.send_error(404)
+                return
+
             if p in ("/", "/index.html"):
                 idx = os.path.join(WRAPPER_DIR, "index.html")
                 content = open(idx, "rb").read()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("X-Frame-Options", "SAMEORIGIN")
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 self.wfile.write(content)
@@ -814,10 +979,10 @@ def start_wrapper_server():
                         "ffmpeg_ok": ffmpeg_ok,
                         "disk_free_mb": disk_free_mb,
                         "disk_total_mb": disk_total_mb,
-                        "env_keys_found": [
-                            k for k in sorted(os.environ)
+                        "env_keys_found_count": sum(
+                            1 for k in os.environ
                             if any(x in k for x in ["KEY", "TOKEN", "SECRET", "API"])
-                        ],
+                        ),
                     },
                     "drive_backup_dir": DRIVE_BACKUP_DIR,
                     "version": VERSION,
@@ -853,10 +1018,10 @@ def start_wrapper_server():
                     "keys_loaded_count": len(_loaded_keys),
                     "keys_loaded": _loaded_keys,
                     "opencode_bin": _opencode_bin,
-                    "env_keys_found": [
-                        k for k in sorted(os.environ)
+                    "env_keys_found_count": sum(
+                        1 for k in os.environ
                         if any(x in k for x in ["KEY", "TOKEN", "SECRET", "API"])
-                    ],
+                    ),
                     "bashrc_has_keys": False,
                 }
                 # Verifica se .bashrc tem exports de keys
@@ -890,7 +1055,7 @@ def start_wrapper_server():
                     "keys_encrypted": keys_exist,
                     "keys_data_masked": keys_data,
                     "opencode_bin": _opencode_bin,
-                    "env_keys": [k for k in _env if "KEY" in k or "TOKEN" in k or "SECRET" in k],
+                    "env_keys_count": sum(1 for k in _env if "KEY" in k or "TOKEN" in k or "SECRET" in k),
                 })
                 return
             
@@ -899,7 +1064,9 @@ def start_wrapper_server():
                 provider = qs.get("provider", [""])[0].strip()
                 keys = load_encrypted_keys(DRIVE_BACKUP_DIR)
                 if provider:
-                    self._json(200, {"apikey": keys.get(provider, "")})
+                    val = keys.get(provider, "")
+                    masked = (val[:4] + "…") if val else ""
+                    self._json(200, {"apikey": masked, "masked": True})
                 else:
                     # Mascarar valores por segurança (mostrar só primeiros 4 chars)
                     masked = {
@@ -911,15 +1078,14 @@ def start_wrapper_server():
 
             if p == "/api/agents":
                 # v0.4.2: serve o AGENTS.md no idioma solicitado
-                # Suporta ?lang=pt_BR | en_US | es_ES | fr_FR (default pt_BR)
+                # Suporta ?lang=pt_BR | en_US | es_ES | fr_FR | zh_CN (default pt_BR)
                 qs = parse_qs(urlparse(self.path).query)
                 lang = (qs.get("lang", ["pt_BR"])[0] or "pt_BR").strip()
                 lang_code = lang.split("_")[0].lower() if "_" in lang else lang.lower()
-                # Map pt_BR -> pt, en_US -> en, es_ES -> es, fr_FR -> fr
-                _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
-                if lang_code in _valid:
-                    full = _valid[lang_code]
-                elif lang in _valid.values():
+                # Map pt_BR -> pt, en_US -> en, es_ES -> es, fr_FR -> fr, zh_CN -> zh
+                if lang_code in _LANG_MAP:
+                    full = _LANG_MAP[lang_code]
+                elif lang in _LANG_MAP.values():
                     full = lang
                 else:
                     full = "pt_BR"
@@ -951,16 +1117,27 @@ def start_wrapper_server():
                         agents_dir = d
                         break
                 short = full.split("_")[0]
+                # v0.6.0: cadeia de fallback (zh_CN → en_US → pt_BR)
+                _lang_order = [full] + (["en_US"] if full == "zh_CN" else [])
+                if "pt_BR" not in _lang_order:
+                    _lang_order.append("pt_BR")
+                cand_files: list[str] = []
+                for _lg in _lang_order:
+                    _sh = _lg.split("_")[0]
+                    cand_files.append(f"AGENTS.{_sh}.md")
+                    cand_files.append(f"AGENTS.{_lg}.md")
                 content = None
+                served_file = None
                 tried_files = []
                 if agents_dir:
-                    for fname in (f"AGENTS.{short}.md", f"AGENTS.{full}.md"):
+                    for fname in cand_files:
                         fpath = os.path.join(agents_dir, fname)
                         tried_files.append(fpath)
                         if os.path.isfile(fpath):
                             try:
-                                with open(fpath, "r", encoding="utf-8") as f:
-                                    content = f.read()
+                                with open(fpath, "r", encoding="utf-8") as fh:
+                                    content = fh.read()
+                                served_file = fname
                                 break
                             except Exception as e:
                                 content = f"⚠️ Erro ao ler {fname}: {e}"
@@ -977,7 +1154,9 @@ def start_wrapper_server():
                 self._json(200, {
                     "ok": True,
                     "lang": full,
-                    "filename": f"AGENTS.{short}.md",
+                    "served_file": served_file or "",
+                    "fallback_used": bool(served_file and short not in str(served_file)),
+                    "filename": served_file or f"AGENTS.{short}.md",
                     "content": content,
                 })
                 return
@@ -1304,11 +1483,35 @@ def start_wrapper_server():
                     self._json(500, {"ok": False, "error": f"Erro: {e!r}"})
                 return
 
+            if p == "/api/consent":
+                # v0.6.0: estado do consentimento (Termos de Uso/telemetria)
+                state = {"accepted": False, "analytics": False}
+                try:
+                    with open(os.path.expanduser("~/.config/ufvai_consent.json"), encoding="utf-8") as fh:
+                        state.update(json.load(fh))
+                except Exception:
+                    pass
+                self._json(200, {"ok": True, **state})
+                return
+
             self.send_error(404)
 
         def do_POST(self):
             p = urlparse(self.path).path
-            length = int(self.headers.get("Content-Length", 0))
+            # v0.6.0: rate limit generoso nos mutantes (120/min/IP)
+            ip = self.client_address[0] if self.client_address else "?"
+            now = time.time()
+            win = [t for t in _RATE.get(ip, []) if now - t < 60]
+            if p.startswith("/api/") and len(win) >= 120:
+                return self._json(429, {"error": "Muitas requisições. Aguarde alguns segundos."})
+            if p.startswith("/api/"):
+                win.append(now)
+                _RATE[ip] = win[-240:]
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > 10 * 1024 * 1024:
+                return self._json(413, {"error": "Corpo da requisição muito grande."})
+            if p.startswith("/api/") and not self._authorized():
+                return self._reject_token()
             body = json.loads(self.rfile.read(length)) if length else {}
 
             # ════════════════════════════════════════════════════════════
@@ -1389,6 +1592,10 @@ def start_wrapper_server():
                             mem._vault.write(new_note, force=force)
                         if mem._searcher is not None:
                             mem._searcher.invalidate()
+                        try:
+                            _tel_event("memory_note_saved", {})
+                        except Exception:
+                            pass
                         self._json(200, {
                             "ok": True,
                             "action": "save",
@@ -1423,6 +1630,10 @@ def start_wrapper_server():
                             return
                         if mem._searcher is not None:
                             mem._searcher.invalidate()
+                        try:
+                            _tel_event("memory_note_created", {})
+                        except Exception:
+                            pass
                         self._json(200, {
                             "ok": True,
                             "action": "create",
@@ -1453,6 +1664,10 @@ def start_wrapper_server():
                             return
                         if mem._searcher is not None:
                             mem._searcher.invalidate()
+                        try:
+                            _tel_event("memory_note_deleted", {})
+                        except Exception:
+                            pass
                         self._json(200, {
                             "ok": True,
                             "action": "delete",
@@ -1511,6 +1726,10 @@ def start_wrapper_server():
                                 f.writelines(lines)
                     except Exception:
                         pass
+                    try:
+                        _tel_event("provider_deleted", {"provider": provider[:24]})
+                    except Exception:
+                        pass
                     self._json(200, {"ok": True, "deleted": provider})
                     return
 
@@ -1546,6 +1765,10 @@ def start_wrapper_server():
                         f.writelines(lines)
                 except Exception:
                     pass
+                try:
+                    _tel_event("provider_saved", {"provider": provider[:24]})
+                except Exception:
+                    pass
                 self._json(200, {"ok": True})
                 return
             
@@ -1556,7 +1779,7 @@ def start_wrapper_server():
                 return
             
             if p == "/api/run_terminal":
-                raw_cmd = body.get("command", "").strip()
+                raw_cmd = (body.get("command") or body.get("cmd") or "").strip()
                 no_fallback = body.get("no_fallback", False)
                 if not raw_cmd:
                     self._json(400, {"error": "Comando vazio."})
@@ -1632,7 +1855,8 @@ def start_wrapper_server():
                     self._json(400, {"error": "Nenhuma sessão encontrada para exportar."})
                     return
 
-                fname = f"backup_{session_id[:12]}_{ts}.json"
+                sid_safe = re.sub(r"[^A-Za-z0-9_-]", "", str(session_id))[:12] or "sess"
+                fname = f"backup_{sid_safe}_{ts}.json"
                 # ── Etapa 1: exportar para /tmp/ (SSD local, sem FUSE) ─────────
                 tmp_path = os.path.join("/tmp", fname)
 
@@ -1778,6 +2002,10 @@ def start_wrapper_server():
                     })
                     return
 
+                try:
+                    _tel_event("backup_created", {})
+                except Exception:
+                    pass
                 self._json(200, {
                     "ok": True,
                     "file": fname,
@@ -1790,9 +2018,12 @@ def start_wrapper_server():
                 return
             
             if p == "/api/restore":
-                fname = body.get("file", "")
-                if not fname:
-                    self._json(400, {"error": "Nome do arquivo não informado."})
+                fname_raw = str(body.get("file", "") or "").strip()
+                fname = os.path.basename(fname_raw)
+                if (not fname or fname != fname_raw or fname.startswith(".")
+                        or ".." in fname
+                        or not re.fullmatch(r"[A-Za-z0-9._-]+\.json", fname)):
+                    self._json(400, {"error": "Nome de arquivo inválido."})
                     return
                 fpath = os.path.join(DRIVE_BACKUP_DIR, fname)
                 if not os.path.exists(fpath):
@@ -1871,7 +2102,8 @@ def start_wrapper_server():
                         # Reinicia ttyd com a sessão importada
                         opencode_bin, env = resolve_opencode()
                         bash_cmd = f'{opencode_bin} -s "{session_id}" ; exec bash'
-                        base_args = ["ttyd", "-p", str(TERMINAL_PORT), "bash", "-i", "-c", bash_cmd]
+                        # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
+                        base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable", "bash", "-i", "-c", bash_cmd]
                         ttyd_args = _build_ttyd_args(base_args, env)
                         subprocess.Popen(
                             ttyd_args,
@@ -1886,6 +2118,10 @@ def start_wrapper_server():
                         logger.error("Falha ao reiniciar ttyd com sessão %s: %s", session_id, restart_err)
 
                 # 4. Respond
+                try:
+                    _tel_event("session_restored", {})
+                except Exception:
+                    pass
                 self._json(200, {
                     "ok": True,
                     "file": fname,
@@ -1906,6 +2142,9 @@ def start_wrapper_server():
             if p == "/api/theme":
                 # Persiste escolha de tema (escuro/claro) em tui.json
                 theme_name = body.get("theme", "").strip()
+                # v0.6.0: aliases de marca mapeiam aos temas internos existentes
+                _alias = {"ufvai": "pesquisai", "ufvai-light": "pesquisai-light"}
+                theme_name = _alias.get(theme_name, theme_name)
                 if theme_name not in ("pesquisai", "pesquisai-light"):
                     self._json(400, {"error": "Tema inválido. Use 'pesquisai' ou 'pesquisai-light'."})
                     return
@@ -1914,6 +2153,10 @@ def start_wrapper_server():
                     os.makedirs(os.path.dirname(tui_path), exist_ok=True)
                     with open(tui_path, "w") as f:
                         json.dump({"$schema": "https://opencode.ai/tui.json", "theme": theme_name}, f, indent=2)
+                    try:
+                        _tel_event("theme_changed", {"theme": theme_name})
+                    except Exception:
+                        pass
                     self._json(200, {"ok": True, "theme": theme_name})
                 except Exception as e:
                     self._json(500, {"error": str(e)})
@@ -1924,13 +2167,16 @@ def start_wrapper_server():
                 # no novo idioma ao invés de --prompt "oi" genérico.
                 lang_in = (body.get("lang", "") or "").strip()
                 if not lang_in:
-                    self._json(400, {"error": "lang obrigatório (pt_BR/en_US/es_ES/fr_FR)"})
+                    self._json(400, {"error": "lang obrigatório (pt_BR/en_US/es_ES/fr_FR/zh_CN)"})
                     return
-                _valid = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR"}
                 short = lang_in.split("_")[0].lower() if "_" in lang_in else lang_in.lower()
-                full_lang = _valid.get(short, lang_in if lang_in in _valid.values() else "pt_BR")
+                full_lang = _LANG_MAP.get(short, lang_in if lang_in in _LANG_MAP.values() else "pt_BR")
                 ok = restart_ttyd_with_lang(full_lang)
                 if ok:
+                    try:
+                        _tel_event("lang_changed", {"lang": full_lang})
+                    except Exception:
+                        pass
                     self._json(200, {
                         "ok": True,
                         "lang": full_lang,
@@ -1944,19 +2190,129 @@ def start_wrapper_server():
                     })
                 return
 
+            if p == "/api/consent":
+                # v0.6.0: grava aceite dos Termos + opt-in de telemetria
+                accepted = bool(body.get("accepted", False))
+                analytics = bool(body.get("analytics", False))
+                cpath = os.path.expanduser("~/.config/ufvai_consent.json")
+                try:
+                    os.makedirs(os.path.dirname(cpath), exist_ok=True)
+                    json.dump({
+                        "accepted": accepted,
+                        "analytics": analytics,
+                        "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "version": VERSION,
+                    }, open(cpath, "w", encoding="utf-8"))
+                except Exception:
+                    pass
+                try:
+                    _tel_set_consent(analytics)
+                    if accepted:
+                        _tel_event("terms_accepted", {"analytics": analytics})
+                except Exception:
+                    pass
+                self._json(200, {"ok": True, "accepted": accepted, "analytics": analytics})
+                return
+
             self.send_error(404)
     
-    threading.Thread(
-        target=lambda: HTTPServer(("0.0.0.0", WRAPPER_PORT), Handler).serve_forever(),
-        daemon=True,
-    ).start()
+    # v0.6.0: Colab mantém 0.0.0.0 (exigência do proxy); local usa 127.0.0.1.
+    # Override: export UFVAI_BIND_HOST=0.0.0.0  (Docker precisa disso)
+    _bind_host = os.environ.get("UFVAI_BIND_HOST") or ("0.0.0.0" if IN_COLAB else "127.0.0.1")
+    print(f"🛡️  Wrapper: bind {_bind_host}:{WRAPPER_PORT} · token {'ON' if _SESSION_TOKEN else 'OFF'} · CORS same-origin")
+
+    # v0.6.3: servidor DUAL-STACK no loopback — o Chromium/Firefox preferem
+    # ::1 (IPv6) ao resolver "localhost"; sem listener IPv6 a conexão cai
+    # com ERR_CONNECTION_REFUSED (regressão v0.6.0; padrão herdado do
+    # launcher 0.5.x). IPv4 principal + loopback IPv6 adicional (offline).
+    _servers_started = 0
+    try:
+        threading.Thread(
+            target=lambda: ThreadingHTTPServer((_bind_host, WRAPPER_PORT), Handler).serve_forever(),
+            daemon=True,
+            name="ufvai-wrapper",
+        ).start()
+        _servers_started += 1
+    except OSError as e:
+        logger.error("Falha ao bindar wrapper em %s:%s — %s", _bind_host, WRAPPER_PORT, e)
+
+    if not IN_COLAB and _bind_host == "127.0.0.1":
+        try:
+            import socket as _s
+
+            class _LoopbackV6(ThreadingHTTPServer):
+                address_family = _s.AF_INET6
+
+            threading.Thread(
+                target=lambda: _LoopbackV6(("::1", WRAPPER_PORT), Handler).serve_forever(),
+                daemon=True,
+                name="ufvai-wrapper-v6",
+            ).start()
+            _servers_started += 1
+        except OSError:
+            pass  # sem IPv6 no host — segue só com IPv4
+    if _servers_started == 0:
+        raise RuntimeError(f"Nenhum servidor wrapper pôde ser iniciado na porta {WRAPPER_PORT}.")
     print(f"\n{next_joke('economia')}")
-    print(f"🚀 Servidor wrapper iniciado na porta {WRAPPER_PORT}")
+    print(f"🚀 Servidor wrapper iniciado na porta {WRAPPER_PORT} ({_servers_started} listener(s))")
+
+
+def _auto_open_browser(url: str) -> None:
+    """v0.6.1: abre o navegador automaticamente quando a UI estiver pronta.
+
+    Modo offline/.deb (não-Colab): roda em thread daemon, espera a porta do
+    wrapper responder (até 30 s) e abre o navegador padrão via webbrowser,
+    com fallback para xdg-open/open.
+    Desabilitar com: export UFVAI_NO_OPEN=1
+    """
+    if os.environ.get("UFVAI_NO_OPEN", "").strip().lower() in ("1", "true", "yes", "on"):
+        print("ℹ️  UFVAI_NO_OPEN=1 — abertura automática do navegador desativada.")
+        return
+
+    def _worker():
+        try:
+            import socket as _socket
+            deadline = time.time() + 30
+            ready = False
+            while time.time() < deadline:
+                try:
+                    with _socket.create_connection(("127.0.0.1", WRAPPER_PORT), timeout=0.5):
+                        ready = True
+                        break
+                except OSError:
+                    time.sleep(0.5)
+            if not ready:
+                logger.warning("Porta %s não respondeu em 30s; navegador não aberto.", WRAPPER_PORT)
+                return
+            try:
+                import webbrowser
+                if webbrowser.open(url):
+                    print(f"🌍 Navegador aberto em {url}")
+                    return
+            except Exception:
+                pass
+            # Fallbacks por plataforma
+            for cmd in (["xdg-open", url], ["open", url]):
+                try:
+                    r = subprocess.run(cmd, capture_output=True, timeout=10)
+                    if r.returncode == 0:
+                        print(f"🌍 Navegador aberto em {url}")
+                        return
+                except Exception:
+                    continue
+            print(f"🌐 Abra manualmente: {url}")
+        except Exception:
+            try:
+                print(f"🌐 Abra manualmente: {url}")
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, daemon=True, name="ufvai-open-browser").start()
 
 
 def show_ready_message():
     if not IN_COLAB or not display or not HTML:
-        print("\n✨ PesquisAI pronto!\n")
+        print("\n✨ UFVAI pronto!\n")
         return
     
     display(HTML(f"""
@@ -1995,7 +2351,7 @@ def show_ready_message():
 <div class="ready-container">
     <div class="ready-badge">
         <span class="ready-icon">✨</span>
-        <span class="ready-text">PesquisAI pronto!</span>
+        <span class="ready-text">UFVAI pronto!</span>
     </div>
 </div>
 """))
@@ -2094,7 +2450,7 @@ def show_launch_button(banner_url):
   <a href="{banner_url}" target="_blank" class="pesquisai-launch">
     <span class="btn-icon">🚀</span>
     <span class="btn-text">
-      <span class="btn-main">ABRIR O PESQUISAI</span>
+      <span class="btn-main">ABRIR O UFVAI</span>
       <span class="btn-sub">clique para começar</span>
     </span>
     <span class="arrow">→</span>
@@ -2155,15 +2511,35 @@ def launch():
         terminal_url = f"http://localhost:{TERMINAL_PORT}"
         banner_url = f"http://localhost:{WRAPPER_PORT}"
     
-    create_wrapper_html(terminal_url, _drive_url)
+    global _SESSION_TOKEN
+    _SESSION_TOKEN = secrets.token_urlsafe(32)
+    create_wrapper_html(terminal_url, _drive_url, session_token=_SESSION_TOKEN)
     start_wrapper_server()
+    try:
+        _tel_event("app_started", {"version": VERSION, "lang": _current_lang, "colab": bool(IN_COLAB)})
+    except Exception:
+        pass
     
     time.sleep(1)
     show_ready_message()
     show_launch_button(banner_url)
-    
+
+    # v0.6.1: no modo offline (.deb/local) abre o navegador automaticamente
+    # quando a UI estiver pronta — o launcher roda em background e antes
+    # não havia nenhum feedback visível ("parecia não iniciar").
+    if not IN_COLAB:
+        _auto_open_browser(banner_url)
+        print(f"\n🌐 Interface: {banner_url}  (terminal: http://localhost:{TERMINAL_PORT})")
+
     return banner_url
 
 
 if __name__ == "__main__":
-    launch()
+    _url = launch()
+    # v0.6.3: execução direta fora do Colab também precisa manter o processo vivo
+    if not IN_COLAB:
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            print("\n👋 Encerrando UFVAI…")

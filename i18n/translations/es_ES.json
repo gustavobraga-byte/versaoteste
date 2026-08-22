@@ -19,8 +19,7 @@
     "title": "Panel de Salud",
     "drive_mounted": "Google Drive montado",
     "backup_dir": "Directorio de copia existe",
-    "ttyd_active": "webcli en ejecución",
-    "webcli_active": "webcli en ejecución",
+    "ttyd_active": "ttyd en ejecución",
     "opencode_found": "OpenCode encontrado",
     "keys_loaded": "Claves cargadas",
     "skills_installed": "Skills instaladas",
@@ -66,7 +65,8 @@
   "languages": {
     "pt_BR": "Portugués (Brasil)",
     "en_US": "Inglés (Estados Unidos)",
-    "es_ES": "Español (España)"
+    "es_ES": "Español (España)",
+    "zh_CN": "Español"
   },
   "agents": {
     "rules_title": "Reglas Absolutas",
@@ -88,5 +88,18 @@
     "session_imported": "¡Sesión importada!",
     "session_opened": "¡Sesión abierta!",
     "config_applied": "Configuración aplicada"
+  },
+  "terms": {
+    "title": "Términos de Uso — UFVAI",
+    "accept_label": "He leído y acepto los Términos de Uso y la Licencia MIT",
+    "analytics_label": "Opcional: permitir estadísticas anónimas de uso",
+    "btn_accept": "Aceptar y comenzar",
+    "btn_decline": "No aceptar",
+    "declined": "Has rechazado los Términos de Uso.",
+    "license_link": "Licencia MIT (GitHub)"
+  },
+  "memory": {
+    "title": "Memoria UFVAI",
+    "tooltip": "Memoria UFVAI (segundo cerebro)"
   }
 }

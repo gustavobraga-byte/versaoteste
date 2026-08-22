@@ -70,8 +70,23 @@ def setup_drive() -> tuple[str, str]:
         from google.colab import drive, auth  # type: ignore
         from googleapiclient.discovery import build  # type: ignore
     except ImportError:
+        # v0.6.0 (offline/.deb): persistir em ~/PesquisAI (não /tmp).
+        _local = os.path.join(os.path.expanduser("~"), "PesquisAI")
+        try:
+            os.makedirs(_local, exist_ok=True)
+            if os.access(_local, os.W_OK):
+                # v0.6.0: mesma estrutura prometida pelo launcher .deb
+                for _sub in ("vault", "outputs", "backups", "logs", "sessions"):
+                    try:
+                        os.makedirs(os.path.join(_local, _sub), exist_ok=True)
+                    except Exception:
+                        pass
+                print(f"⚠️  Fora do Colab — usando diretório local {_local}")
+                return _local, "https://drive.google.com/drive/my-drive"
+        except Exception:
+            pass
         os.makedirs("/tmp/pesquisai_work", exist_ok=True)
-        print("⚠️  Fora do Colab — usando diretório local.")
+        print("⚠️  Fora do Colab — usando diretório local temporário /tmp/pesquisai_work.")
         return "/tmp/pesquisai_work", "https://drive.google.com/drive/my-drive"
 
     mounted = os.path.exists("/content/drive/My Drive")
@@ -477,6 +492,42 @@ def setup_launch(folder_path: str, drive_url: str) -> str:
 
 # ── Orquestrador ──────────────────────────────────────────────
 
+def _offline_keep_alive(banner_url: str) -> None:
+    """v0.6.3: mantém o processo vivo no modo offline (.deb/local).
+
+    O servidor HTTP do wrapper roda em thread daemon; se run() retornasse,
+    o interpretador encerraria o processo e a porta 8001 cairia logo após a
+    inicialização (ERR_CONNECTION_REFUSED). No Colab o kernel permanece vivo,
+    então isto só se aplica fora dele.
+
+    Desabilitar (scripts/testes): export UFVAI_NO_KEEPALIVE=1
+    """
+    import signal
+
+    def _sigterm(_sig, _frm):
+        # Encerramento limpo via `kill <pid>` (launcher grava o PID)
+        print("\n👋 UFVAI encerrado (SIGTERM).")
+        raise SystemExit(0)
+
+    try:
+        signal.signal(signal.SIGTERM, _sigterm)
+    except Exception:
+        pass
+
+    print()
+    print("🧬 UFVAI rodando em segundo plano nesta máquina.")
+    print(f"   Interface: {banner_url}  ·  Terminal: http://localhost:{TERMINAL_PORT}")
+    if os.environ.get("UFVAI_NO_KEEPALIVE", "").strip().lower() in ("1", "true", "yes", "on"):
+        print("ℹ️  UFVAI_NO_KEEPALIVE=1 — processo NÃO será mantido vivo.")
+        return
+    print("   Para encerrar (foreground): Ctrl+C  ·  (background): kill $(cat ~/PesquisAI/pesquisai.pid)")
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        print("\n👋 Encerrando UFVAI… até a próxima! 🧬")
+
+
 def run() -> None:
     """Orquestrador principal do PesquisAI.
 
@@ -493,11 +544,18 @@ def run() -> None:
     setup_dependencies()
     setup_skills()
     setup_obsidian_vault()
-    setup_launch(folder_path, drive_url)
+    banner_url = setup_launch(folder_path, drive_url)
 
     elapsed = time.time() - t0
     print(f"\n⚡ Inicializado em {elapsed:.0f}s ")
     print()
+
+    # v0.6.3: fora do Colab, mantém o processo vivo para que a interface
+    # continue acessível (threads daemon morreriam com o fim de run()).
+    if not os.path.isdir("/content/drive"):
+        from .launch_app import IN_COLAB as _in_colab
+        if not _in_colab:
+            _offline_keep_alive(banner_url)
 
 
 if __name__ == "__main__":

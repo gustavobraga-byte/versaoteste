@@ -1,49 +1,56 @@
 """
-constants.py — Constantes centralizadas do PesquisAI v0.6.0 (WEBCLI Mode).
+constants.py — Constantes e configurações centralizadas do PesquisAI.
 
-v0.6.0 WEBCLI: usa `opencode web` (o webcli oficial do opencode) para
-servir a interface web. Não há mais ttyd, nem servidor FastAPI
-customizado — o opencode web faz tudo.
+Todas as paths, versões, listas de skills e configurações do sistema
+são definidas aqui. A VERSÃO é importada de __version__.py (fonte única).
 """
+
 import os
 import logging
+from typing import ClassVar
 
-# ── Versão ─────────────────────────────────────────────────────
-VERSION = "0.6.0"
-AUTHOR_NAME = "Gustavo Bastos Braga"
-AUTHOR_EMAIL = "gustavo.braga@ufv.br"
-INSTITUTION = "Universidade Federal de Viçosa (UFV)"
-SISPPG_REGISTRY = "10356285004"
-REPO_URL = "https://github.com/gustavobraga-byte/PesquisAI"
+from .__version__ import (
+    __version__ as VERSION,
+    __author__ as AUTHOR_NAME,
+    __author_email__ as AUTHOR_EMAIL,
+    __institution__ as INSTITUTION,
+    __registry__ as SISPPG_REGISTRY,
+    __repo_url__ as REPO_URL,
+)
 
-# ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
+    format="%(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger("pesquisai")
 
-# ── Google Drive (Colab) ───────────────────────────────────────
-DRIVE_FOLDER = "PesquisAI"
-MOUNT_PATH = "/content/drive"
-DRIVE_PATH = os.path.join(MOUNT_PATH, "My Drive", DRIVE_FOLDER)
-FALLBACK_URL = "https://drive.google.com/drive/my-drive"
+# ── Marca ──────────────────────────────────────────────────
+BRAND: str = "UFVAI"  # marca pública (v0.6.0); engine/pacote segue "pesquisai"
 
-# ── Diretórios temporários ────────────────────────────────────
-WORK_DIR = "/tmp/pesquisai"
+# ── Google Drive ───────────────────────────────────────────
+# ATENÇÃO: NÃO renomear — é a pasta de DADOS do usuário no Drive.
+DRIVE_FOLDER: str = "PesquisAI"
+MOUNT_PATH: str = "/content/drive"
+DRIVE_PATH: str = os.path.join(MOUNT_PATH, "My Drive", DRIVE_FOLDER)
+FALLBACK_URL: str = "https://drive.google.com/drive/my-drive"
 
-# ── OpenCode ──────────────────────────────────────────────────
-SKILLS_DIR = os.path.expanduser("~/.agents/skills")
-THEME_DIR = os.path.expanduser("~/.config/opencode/themes")
-AGENT_DIR = os.path.expanduser("~/.config/opencode/agent")  # singular!
-OPENCODE_CFG = os.path.expanduser("~/.config/opencode/config.json")
-TUI_JSON = os.path.expanduser("~/.config/opencode/tui.json")
+# ── Diretórios temporários ─────────────────────────────────
+WORK_DIR: str = "/tmp/pesquisai"
+WRAPPER_DIR: str = "/tmp/pesquisai-wrapper"
 
-# ── Porta do opencode web (webcli) ────────────────────────────
-WEBCLI_PORT = 8000  # porta padrão do opencode web (v0.6.0)
+# ── OpenCode ───────────────────────────────────────────────
+SKILLS_DIR: str = os.path.expanduser("~/.agents/skills")
+THEME_DIR: str = os.path.expanduser("~/.config/opencode/themes")
+AGENT_DIR: str = os.path.expanduser("~/.config/opencode/agents")
+OPENCODE_CFG: str = os.path.expanduser("~/.config/opencode/config.json")
+TUI_JSON: str = os.path.expanduser("~/.config/opencode/tui.json")
 
-# ── Skills registradas ────────────────────────────────────────
+# ── Portas ─────────────────────────────────────────────────
+TERMINAL_PORT: int = 8000
+WRAPPER_PORT: int = 8001
+
+# ── Skills registradas ─────────────────────────────────────
+# Formato: (repo_url, nome_destino, requerida)
 SkillEntry = tuple[str, str, bool]
 
 SKILL_REGISTRY: list[SkillEntry] = [
@@ -60,8 +67,10 @@ SKILL_REGISTRY: list[SkillEntry] = [
     ("https://github.com/gustavobraga-byte/skill-obsidian-memory.git", "obsidian-memory", False),
     ("https://github.com/gustavobraga-byte/Memorial_ufv.git", "memorial", False),
     ("https://github.com/gustavobraga-byte/BR-DWGD.git", "BR-DWGD", False),
+    
 ]
 
+# Mapeamento de /tmp/skill_<nome> → diretório final em SKILLS_DIR
 SKILL_MAPPINGS: list[tuple[str, str]] = [
     ("/tmp/skill_ibge-br", "ibge-br"),
     ("/tmp/skill_opendatasus", "opendatasus"),
@@ -74,39 +83,47 @@ SKILL_MAPPINGS: list[tuple[str, str]] = [
     ("/tmp/skill_meta-search-br", "meta-search-br"),
     ("/tmp/skill_obsidian-memory", "obsidian-memory"),
     ("/tmp/skill_memorial", "memorial"),
-    ("/tmp/skill_BR-DWGD", "BR-DWGD"),
+    ("/tmp/skill_BR-DWGD", "BR-DWGD"), 
 ]
 
+# Skills que o sistema considera ESSENCIAIS para funcionar
 ESSENTIAL_SKILLS: set[str] = {
     name for _, name, required in SKILL_REGISTRY if required
 }
 
-# ── Obsidian vault ────────────────────────────────────────────
-OBSIDIAN_VAULT_ENV = "PESQUISAI_OBSIDIAN_VAULT"
-OBSIDIAN_DEFAULT_VAULT = "/content/drive/My Drive/PesquisAI/vault"
+# ── Obsidian Second-Brain (v0.5.0+) ───────────────────────────
+# REGRA: o vault DEVE ficar no Google Drive do usuário.
+# Caminho padrão: /content/drive/My Drive/PesquisAI/vault/
+OBSIDIAN_VAULT_ENV: str = "PESQUISAI_OBSIDIAN_VAULT"
+OBSIDIAN_DEFAULT_VAULT: str = "/content/drive/My Drive/PesquisAI/vault"
+OBSIDIAN_DEFAULT_SUBDIR: str = "vault"
 
-# ── i18n ──────────────────────────────────────────────────────
-DEFAULT_LANG = "pt_BR"
-SUPPORTED_LANGS = ["pt_BR", "en_US", "es_ES", "fr_FR"]
+# Caminhos reconhecidos como "Google Drive" pelo discovery
+OBSIDIAN_DRIVE_PREFIXES: tuple[str, ...] = (
+    "/content/drive/",
+    "/content/drive/.colab/",
+    "/Volumes/GoogleDrive/",
+    "/mnt/gdrive/",
+    "/mnt/google-drive/",
+    "G:/Meu Drive/",
+    "G:/My Drive/",
+)
 
+# Configurações de comportamento
+OBSIDIAN_AUTO_LOG_SESSIONS: bool = True
+OBSIDIAN_AUTO_DAILY: bool = True
+OBSIDIAN_CONTEXT_BRIEF: bool = True
+OBSIDIAN_CONTEXT_BRIEF_MAX_CHARS: int = 4000
+OBSIDIAN_PROTECT_HUMAN_NOTES: bool = True
+OBSIDIAN_REQUIRE_DRIVE: bool = True  # rejeita fora do Drive no Colab
 
-# ── Detecção de ambiente ──────────────────────────────────────
-def is_colab() -> bool:
-    """Detecta se está rodando no Google Colab."""
-    try:
-        import google.colab  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
-def is_drive_mounted() -> bool:
-    """Verifica se o Google Drive está montado."""
-    return os.path.exists("/content/drive/My Drive")
-
-
-def get_pesquisai_path() -> str:
-    """Retorna o caminho de trabalho do PesquisAI (Drive no Colab, local fora)."""
-    if is_colab() and is_drive_mounted():
-        return DRIVE_PATH
-    return WORK_DIR
+# Tags oficiais da taxonomia pesquisai/*
+OBSIDIAN_OFFICIAL_TAGS: frozenset[str] = frozenset({
+    "pesquisai/ibge", "pesquisai/datasus", "pesquisai/agrobr",
+    "pesquisai/dados-brasil", "pesquisai/capes", "pesquisai/sucupira",
+    "pesquisai/daily", "pesquisai/research", "pesquisai/literature",
+    "pesquisai/session", "pesquisai/methodology", "pesquisai/datasource",
+    "pesquisai/hypothesis", "pesquisai/reference", "pesquisai/moc",
+    "pesquisai/inbox", "pesquisai/draft", "pesquisai/review",
+    "pesquisai/published", "pesquisai/archived",
+})
