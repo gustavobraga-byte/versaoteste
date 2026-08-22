@@ -1,4 +1,6 @@
-# <img src="assets/logo.svg"> 
+# UFVAI — Pesquisa científica com integridade
+
+> **UFVAI** é a marca do assistente; o motor/código é o PesquisAI (este repositório). v0.6.0
 
 [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
@@ -6,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
 [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br)
-[![Versão](https://img.shields.io/badge/versão-0.5.1.5-orange.svg)]()
+[![Versão](https://img.shields.io/badge/versão-0.5.1.8-orange.svg)]()
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
@@ -76,6 +78,88 @@ uv sync
 
 ---
 
+### Opção 2 - Uso offline - SO Linux
+
+O PesquisAI pode ser executado **100% offline** em sistemas Debian/Ubuntu, ideal para
+ambientes sem internet, necessidade de sigilo dos dados processados ou com restrições de conectividade.
+
+### Instalação Rápida
+
+```bash
+# Baixe e instale com um único comando
+wget https://github.com/gustavobraga-byte/PesquisAI/raw/main/debs/pesquisai_0.5.1.9.deb -O /tmp/pesquisai.deb && \
+sudo apt install /tmp/pesquisai.deb -y && \
+rm /tmp/pesquisai.deb
+
+# Execute
+pesquisai
+```
+
+### Requisitos Mínimos
+
+| Requisito | Especificação |
+|-----------|---------------|
+| **SO** | Debian 10+ / Ubuntu 26.04+ (amd64) |
+| **RAM** | 4 GB (mín.) · 8 GB+ (recomendado) Usando LLM em núvem|
+| **Disco** | 500 MB livres |
+| **Python** | 3.10+ (instalado como dependência) |
+| **Portas** | `8000` (Interface Web) · `8001` (Terminal TTYD) |
+
+### LLM Local (Ollama) — Para Offline Total
+
+Para funcionar **sem nenhuma conexão com a internet**, é necessário um LLM local via
+[Ollama](https://ollama.com):
+
+```bash
+# Instale o Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Baixe um modelo compatível (256k de contexto)
+ollama pull mistral-small:24b    # Melhor custo-benefício (14 GB VRAM)
+ollama pull qwen2.5:7b           # Para hardware limitado (6 GB VRAM)
+ollama pull kimi/kimi2.6         # Melhor qualidade geral
+```
+
+Configure o PesquisAI para usar o modelo local editando (exemplo com o mistral-small:24b)
+`~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai",
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        "mistral-small:24b": {
+          "name": "mistral-small:24b",
+          "contextWindow": 256000
+        }
+      }
+    }
+  }
+}
+```
+
+### Liberar Portas no Firewall (em caso de falha)
+
+```bash
+sudo ufw allow 8000/tcp   # Interface Web
+sudo ufw allow 8001/tcp   # Terminal TTYD
+sudo ufw allow 11434/tcp  # Ollama API (se usar LLM local)
+```
+
+
+
+> 📖 **Documentação completa da versão offline:**
+> [`debs/README.md`](debs/README.md) — inclui solução de problemas, estrutura de
+> diretórios, modelos recomendados e configuração avançada.
+
+---
+
 ## 🛠️ Skills disponíveis
 
 O PesquisAI opera por módulos especializados (*skills*). Cada skill conecta o agente a uma fonte de dados ou capacidade específica.
@@ -90,6 +174,7 @@ O PesquisAI opera por módulos especializados (*skills*). Cada skill conecta o a
 | `skill-dados-brasil` | Indicadores e datasets oficiais complementares | [@gustavobraga-byte](https://github.com/gustavobraga-byte) |
 | `skill-agrobr` | Dados do agronegócio (produção, pecuária, CAR) | [@gustavobraga-byte](https://github.com/gustavobraga-byte) |
 | `skill-obsidian-memory` | Memória persistente via Obsidian vault no Google Drive 🧠 | [@gustavobraga-byte](https://github.com/gustavobraga-byte) |
+| `skill-memorial-ufv` | Geração automática de Memorial RSC-PCCTAE conforme normas UFV/ABNT 📜 | [@gustavobraga-byte](https://github.com/gustavobraga-byte) |
 
 ---
 
@@ -120,6 +205,7 @@ Google Colab
         ├── skill-analise-qualitativa
         ├── scientific-skills
         ├── skill-obsidian-memory  ← memória persistente (v0.5.0+)
+        ├── skill-memorial-ufv    ← Memorial RSC-PCCTAE UFV/ABNT (v0.5.1.8+)
         └── pesquisai (instruções do agente)
 ```
 
@@ -145,7 +231,7 @@ O PesquisAI **não substitui** o julgamento humano e apresenta as seguintes limi
 
 ```
 BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.5.1.5. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.5.1.9. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -161,7 +247,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
   title        = {{PesquisAI}: Agente de Intelig{\^e}ncia Artificial
                   para Pesquisa Cient{\'\i}fica},
   year         = {2026},
-  version      = {0.5.1.5},
+  version      = {0.5.1.9},
   institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
   url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
 }
@@ -216,3 +302,14 @@ Desenvolvido por **Gustavo Bastos Braga** na Universidade Federal de Viçosa (UF
 
 Feito com 💙 para impulsionar a ciência brasileira.
 ```
+
+---
+
+## 📜 Termos · 🔒 Privacidade · 📊 Telemetria
+
+- Ao abrir a interface você aceita os [Termos de Uso](docs/TERMS_OF_USE.md) e a [Licença MIT](LICENSE).
+- Telemetria é **opt-in, anônima e desligável**: [`TELEMETRY.md`](TELEMETRY.md) · [`PRIVACY.md`](PRIVACY.md).
+
+## 🌐 Idiomas
+
+🇧🇷 pt_BR · 🇺🇸 en_US · 🇪🇸 es_ES · 🇫🇷 fr_FR · 🇨🇳 zh_CN（简体中文）

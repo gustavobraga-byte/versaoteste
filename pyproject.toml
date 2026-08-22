@@ -1,44 +1,159 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
 [project]
-name = "pesquisai"
-version = "0.6.0"
-description = "PesquisAI v0.6.0 — Modo WEBCLI (opencode web, sem ttyd)"
-readme = "README.md"
-license = { text = "MIT" }
-requires-python = ">=3.10"
+name = "pesquisai-additions"
+version = "0.6.3"
+description = "UFVAI v0.6.0 (engine PesquisAI) — obsidian autopilot + grant_finder + i18n (5 idiomas incl. 简体中文) + termos de uso + telemetria opt-in + hardening de segurança"
 authors = [
     { name = "Gustavo Bastos Braga", email = "gustavo.braga@ufv.br" },
 ]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+readme = "README.md"
 keywords = [
-    "ai", "research", "academic", "brazil", "ibge", "datasus",
-    "opencode", "webcli",
+    "pesquisai",
+    "scientific-research",
+    "grant-finder",
+    "i18n",
+    "mobile-responsive",
+    "theme-toggle",
+    "abnt",
+    "ibge",
+    "datasus",
+    "cnpq",
+    "fapemig",
+    "ufv",
+    "brazilian-research",
+    "obsidian",
+    "second-brain",
+    "persistent-memory",
+    "knowledge-graph",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
-    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Internationalization",
 ]
-dependencies = []
-[project.optional-dependencies]
-colab = [
+dependencies = [
     "google-api-python-client",
     "google-auth-httplib2",
     "google-auth-oauthlib",
+    "cryptography>=41.0",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
 ]
+
+[project.optional-dependencies]
 dev = [
-    "pytest>=8.2.0",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
 ]
-[project.scripts]
-pesquisai = "main:main"
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "requests-mock>=1.11",
+]
+obsidian = [
+    "pyyaml>=6.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/gustavobraga-byte/PesquisAI"
+Documentation = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/"
 Repository = "https://github.com/gustavobraga-byte/PesquisAI"
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+Issues = "https://github.com/gustavobraga-byte/PesquisAI/issues"
+Changelog = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/CHANGELOG.md"
+
 [tool.hatch.build.targets.wheel]
-packages = ["pesquisai"]
-include = ["AGENTS.md"]
+packages = [
+    "agents",
+    "docs",
+    "grant_finder",
+    "i18n",
+    "pesquisai",
+    "skills",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"README.md" = "README.md"
+"LICENSE" = "LICENSE"
+"CHANGELOG.md" = "CHANGELOG.md"
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+minversion = "8.0"
+testpaths = [
+    "grant_finder/tests",
+    "i18n/tests",
+    "skills/meta-search-br/tests",
+    "skills/obsidian-memory/tests",
+    "tests",
+]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+    "--cov=grant_finder",
+    "--cov=i18n",
+    "--cov=pesquisai/obsidian",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["grant_finder", "i18n", "pesquisai/obsidian"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/.pytest_cache/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]
+show_missing = true
+precision = 2
+fail_under = 75
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["**/node_modules/**", "sandbox/**"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true

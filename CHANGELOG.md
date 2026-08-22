@@ -1,36 +1,83 @@
 # Changelog — PesquisAI
 
+
+## [0.6.3] — 2026-08-22 — 🔌 Servidor persistente offline · 🎨 Ícone UFVAI no dock
+
+### Correções
+- **BUG CRÍTICO (offline) — "conexão recusada" em localhost:8001**: o wrapper HTTP roda em **thread daemon**; ao fim de `run()` a main thread terminava e o interpretador encerrava o processo, matando o servidor segundos depois da inicialização (no Colab não aparecia, pois o kernel permanece vivo). Agora `run_fast._offline_keep_alive()` mantém o processo ativo fora do Colab — encerra com Ctrl+C (foreground) ou `kill $(cat ~/PesquisAI/pesquisai.pid)` (background); `UFVAI_NO_KEEPALIVE=1` desabilita.
+- **Regressão restaurada — servidor dual-stack**: o 0.5.x bindava IPv4+IPv6 no loopback justamente porque Chromium/Firefox preferem `::1` ao resolver "localhost"; o hardening v0.6.0 deixou só IPv4. Agora, além do listener principal, sobe um loopback IPv6 (`::1`) adicional quando local.
+
+### Interface
+- **Ícone UFVAI no dock**: a janela aberta pelo launcher usa `--class="UFVAI"`, que agora casa com o novo `ufvai-app.desktop` (`StartupWMClass=UFVAI`) e PNGs instalados nos temas hicolor (256/128/64) — a barra/dock mostra a lupa dourada da marca em vez do ícone do navegador. `postinst` instala ícones + desktop entry e atualiza os caches.
+
+
+## [0.6.2] — 2026-08-22 — ⌨️ Terminal gravável · 🖥️ Launcher app-mode · 📊 Telemetria debug
+
+### Correções
+- **BUG CRÍTICO — não dava para digitar no terminal**: o v0.6.0 perdeu a flag `--writable` do ttyd (regressão do hardening) e o terminal ficava **read-only**. Restaurada em `start_ttyd()` e na restauração de sessão (`/api/run_terminal`).
+- **Modo offline (.deb) não abria a interface**: o launcher do v0.6.0 apenas imprimia a URL em background, sem feedback. Restaurado o comportamento do launcher v0.5.1.10: espera ativa da porta 8001 via `curl` (até 180 s na 1ª execução), abertura como **app separado** (Chrome `--app` com perfil próprio → Chromium → Firefox → `xdg-open`), PID-file e reabertura da UI se já estiver rodando. Fonte versionada em `debs/launcher/ufvai-launcher.sh`.
+
+### Telemetria
+- `UFVAI_TELEMETRY_DEBUG=1` envia os eventos para o **DebugView** do GA4 (tempo real, sem gravar relatórios) — facilita validar a configuração.
+- O launcher agora carrega `~/PesquisAI/config/ufvai.env` antes de iniciar: coloque lá `UFVAI_GA_MEASUREMENT_ID` e `UFVAI_GA_API_SECRET` para ativar a telemetria no modo offline.
+
+### Requisitos para a telemetria enviar de verdade (os 3 precisam estar ativos)
+1. Credenciais no ambiente: `UFVAI_GA_MEASUREMENT_ID` + `UFVAI_GA_API_SECRET`;
+2. Consentimento: checkbox "estatísticas anônimas" marcado na tela de Termos (`~/.config/ufvai_consent.json` → `"analytics": true`);
+3. Kill-switch desligado (`UFVAI_TELEMETRY` ≠ `0`).
+
+
+## [0.6.1] — 2026-08-22 — 🌐 Idioma do sistema · 🔁 Troca de idioma robusta · 🌍 Auto-open offline
+
+### Correções
+- **Troca de idioma agora muda a mensagem inicial** (Colab e .deb): o frontend recarregava a página em 700 ms enquanto o backend ainda reiniciava o ttyd (~3–4 s) — o iframe reconectava num terminal morto/antigo e a saudação não mudava. `setLang()` passou a ser `async` (aguarda o POST `/api/lang` com timeout de segurança de 15 s) e o backend só responde depois que a porta do terminal já aceita conexões (`_wait_port_open`, até 12 s).
+- **Idioma do SISTEMA detectado na 1ª execução** (`$LANGUAGE` → `$LC_ALL` → `$LC_MESSAGES` → `$LANG` → `locale`): saudação inicial no idioma do usuário (pt/en/es/fr/zh); preferência persistida em `~/.config/pesquisai_lang`. O frontend já usava `navigator.language` como fallback da UI.
+- **Modo offline (.deb) abre o navegador sozinho**: launcher roda em background e antes não havia feedback ("parecia não iniciar"). Agora thread daemon espera a porta da UI responder (até 30 s) e abre o navegador (`webbrowser` → fallback `xdg-open`/`open`). Desabilitar com `UFVAI_NO_OPEN=1`.
+
+### Marca
+- Banners Colab/console atualizados para UFVAI: "✨ UFVAI pronto!" · "ABRIR O UFVAI".
+
+### Arquivos
+- `pesquisai/launch_app.py`: `_detect_system_lang()`, `_persist_lang()`, `_wait_port_open()`, `_auto_open_browser()`; unificação do mapa de idiomas em `_LANG_MAP`; restart do ttyd com espera ativa da porta.
+- `pesquisai/launch_app_responsive_v041.py`: `setLang()` assíncrono com await + fallback.
+- `pesquisai/__version__.py` / `pyproject.toml`: 0.6.0 → **0.6.1**.
+
+
+## [0.6.0] — 2026-08-21 — 🏷️ UFVAI · 🔐 Hardening · 📊 Telemetria opt-in · 🇨🇳 zh_CN · 📜 Termos
+
+### Marca
+- **Rebrand visual PesquisAI → UFVAI** (wrapper/notebook/assets): paleta dourado `#b29149`/`#D1A705` + azul profundo `#141c24`/`#1f2831`, wordmark **UFV**(700)+**AI**(600) em Montserrat, ícone lupa dourada. Identificadores técnicos preservados (pacote `pesquisai`, pasta Drive `PesquisAI`, endpoints `/api/*`).
+
+### Segurança (auditoria completa — docs/SECURITY_AUDIT_2026-08-21.md)
+- **CORS `*` removido** de todos os endpoints; token de sessão obrigatório em `/api/*` (injetado no HTML; patch global de `window.fetch`). Fecha exfiltração de API keys por páginas maliciosas.
+- **Sanitização por segmento `&&`**: valida cada comando após `&&` contra a allowlist (fecha RCE pós-&&).
+- **`opencode_auth.json` agora é gravado CIFRADO** (Fernet) no Drive; leitura aceita legado plaintext.
+- `GET /api/apikey?provider=` retorna chave sempre mascarada; `/api/debug`/`diagnose`/`health` não listam mais nomes de env secrets.
+- `/api/restore` com sanitização anti-path-traversal; nome de backup saneado.
+- `ThreadingHTTPServer`, cap de corpo (10 MB), rate limit generoso (120/min/IP), headers `nosniff`/`no-referrer`/`SAMEORIGIN`.
+- Bind: Colab mantém `0.0.0.0`; local passa a `127.0.0.1` (override `UFVAI_BIND_HOST`).
+- `--yolo` **mantido por padrão** (decisão do usuário); desligável com `PESQUISAI_YOLO=0`.
+- Bugfix: `/api/run_terminal` aceita `cmd` OU `command` (botão "Restaurar sessão" voltou a funcionar).
+- Normalização de 12 escapes JS-regex latentes em strings Python (elimina SyntaxWarning/erro em py≥3.12; saída idêntica).
+
+### Telemetria anônima opt-in
+- Novo módulo `pesquisai/telemetry.py` (GA4 Measurement Protocol server-side). Sem consentimento/config não envia nada; kill-switch `UFVAI_TELEMETRY=0`. Zero conteúdo — só contadores. Detalhes: `TELEMETRY.md` e `PRIVACY.md`.
+
+### Termos de Uso
+- Tela de aceite obrigatória na 1ª entrada (overlay bloqueante, i18n, links para LICENSE/TERMOS/PRIVACIDADE no GitHub) + endpoint `/api/consent`.
+
+### Internacionalização
+- **中文（简体） zh_CN completo**: menu 🇨🇳, detector, saudação do agente, traduções inline + `zh_CN.json`.
+
+### Correções
+- Versão sincronizada 0.6.0 (`__version__.py`/`pyproject.toml`/Dockerfile); Dockerfile label corrigido.
+
 ---
-## [0.6.0] - 2026-07-20 - WEBCLI Mode (opencode web)
+## [0.5.1.9] - 2026-07-18 - Versão Offline para Linux e atualização do AGENTS.md
 
 ### 🚀 Major Changes
 
-- **Remoção completa do ttyd**: O terminal ttyd + xterm.js + iframe foi removido.
-- **Novo entry point**: `python main.py` inicia o `opencode web` (webcli oficial) na porta 8000.
-- **Remoção do wrapper FastAPI/React**: Não há mais servidor wrapper customizado. O `opencode web` serve a interface web completa nativamente.
-- **setup.py substitui run_fast.py**: Setup agora usa `opencode web` para configuração de providers e inicialização.
-
-### ✨ Improvements
-
-- **`__version__.py` atualizado**: Reflete v0.6.0, estrutura WEBCLI, remove referências a `__api_endpoints__` do wrapper.
-- **`opencode_utils.py` enriquecido**: Nova função `get_opencode_version()` para diagnóstico.
-- **`constants.py` limpo**: Remove referências a ttyd e FastAPI.
-- **i18n atualizado**: Chave `ttyd_active` mantida por compatibilidade, adicionada `webcli_active` em todos os idiomas.
-
-### 🔧 Bugfix
-
-- Corrigida referência a `run_fast.py` no docstring de `autopilot.py`.
-
-### 📋 Documentation
-
-- README, pyproject.toml e CHANGELOG refletem a nova arquitetura WEBCLI.
-
----
-
-## [0.5.1.9] - 2026-07-18 - Atualização do AGENTS.md
-
-### 🚀 Major Changes
-
+-**Instalador offline para Linux**: Instalador em formato .deb para utilização offline do PesquisAI.
 - **Reescrita completa do AGENTS.md**: Principal atualização desde a introdução da memória persistente. O documento foi reformulado do zero para maior clareza, consistência normativa, economia de tokens e alinhamento com o código-fonte (`constants.SKILL_REGISTRY`).
 - **Nova arquitetura de diretórios**: Introduzida separação oficial entre `vault/` (memória interna do agente) e `outputs-<slug-do-projeto>/` (entregáveis finais organizados por projeto). Isso melhora organização, reprodutibilidade e experiência do usuário final.
 - **Fortalecimento de Integridade e Segurança**: 
