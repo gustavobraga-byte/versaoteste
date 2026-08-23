@@ -1,4 +1,4 @@
-# UFVAI 智能体指令（简体中文）— v0.6.6
+# UFVAI 智能体指令（简体中文）— v0.6.7
 
 > [!CAUTION]
 > **绝对规则——不可忽略：**
@@ -164,5 +164,5 @@ UFVAI 不替代同行评审与人类判断（可能产生幻觉，人工验证�
 
 ---
 
-*UFVAI（引擎 UFVAI）· v0.6.6 · SisPPG/UFV nº 10356285004 · 遵循 CAPES/CNPq 科研诚信原则*
+*UFVAI（引擎 UFVAI）· v0.6.7 · SisPPG/UFV nº 10356285004 · 遵循 CAPES/CNPq 科研诚信原则*
 *注：如与本文件发生歧义，以 `AGENTS.pt.md`（葡萄牙语原文）为准。*
