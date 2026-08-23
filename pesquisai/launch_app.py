@@ -13,13 +13,14 @@ import base64 as _b64
 
 try:
     from google.colab import output
-    from IPython.display import display, HTML
+    from IPython.display import display, HTML, update_display
     IN_COLAB = True
 except ImportError:
     IN_COLAB = False
     output = None
     display = None
     HTML = None
+    update_display = None
 
 from .constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
 from .jokes import next_joke
@@ -2420,11 +2421,14 @@ def start_wrapper_server():
 
             if p == "/api/admin/telemetry":
                 # v0.6.4: salva credenciais GA4 configuradas pelo painel Admin da UI.
+                # v0.6.7: também grava contact_endpoint (canal HTTPS que recebe o
+                # e-mail de contato opt-in — ex.: Apps Script → Planilha Google).
                 # Grava em ~/.config/ufvai_telemetry.json (chmod 600) e aplica no
                 # processo imediatamente. O secret NUNCA é devolvido pela API.
                 ok, msg = _tel_save_admin(
                     str(body.get("measurement_id", "")),
                     str(body.get("api_secret", "")),
+                    str(body.get("contact_endpoint", "")) if "contact_endpoint" in body else None,
                 )
                 try:
                     if ok:
@@ -2627,103 +2631,317 @@ def show_ready_message():
 """))
 
 
+# ═══════════════════════════════════════════════════════════════════
+# v0.6.7: Painel de boot do Colab — barra de progresso + checkpoints
+# ═══════════════════════════════════════════════════════════════════
+
+# Lupa UFVAI (assets/ico.svg) embutida inline — offline-safe, sem request.
+_UFVAI_ICO_SVG: str = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" '
+    'width="100%" height="100%" role="img" aria-label="UFVAI">'
+    '<defs><linearGradient id="ufl-lens" x1="0" y1="0" x2="1" y2="1">'
+    '<stop offset="0%" stop-color="#d4b56a"/>'
+    '<stop offset="100%" stop-color="#8f7536"/>'
+    '</linearGradient></defs>'
+    '<circle cx="92" cy="92" r="48" fill="#1f2831"/>'
+    '<circle cx="92" cy="92" r="48" fill="none" stroke="url(#ufl-lens)" stroke-width="6"/>'
+    '<line x1="127" y1="127" x2="166" y2="166" stroke="url(#ufl-lens)" '
+    'stroke-width="10" stroke-linecap="round"/>'
+    '<g stroke="#b29149" stroke-width="1.6" opacity="0.85">'
+    '<line x1="76" y1="78" x2="96" y2="74"/><line x1="76" y1="78" x2="90" y2="92"/>'
+    '<line x1="76" y1="78" x2="70" y2="96"/><line x1="96" y1="74" x2="110" y2="88"/>'
+    '<line x1="96" y1="74" x2="90" y2="92"/><line x1="110" y1="88" x2="106" y2="106"/>'
+    '<line x1="110" y1="88" x2="90" y2="92"/><line x1="106" y1="106" x2="88" y2="110"/>'
+    '<line x1="106" y1="106" x2="90" y2="92"/><line x1="88" y1="110" x2="70" y2="96"/>'
+    '<line x1="88" y1="110" x2="90" y2="92"/><line x1="70" y1="96" x2="90" y2="92"/>'
+    '</g>'
+    '<circle cx="90" cy="92" r="5.5" fill="#d4b56a"/>'
+    '<circle cx="76" cy="78" r="4.5" fill="#b29149"/>'
+    '<circle cx="96" cy="74" r="4.5" fill="#b29149"/>'
+    '<circle cx="110" cy="88" r="4.5" fill="#b29149"/>'
+    '<circle cx="106" cy="106" r="4.5" fill="#b29149"/>'
+    '<circle cx="88" cy="110" r="4.5" fill="#b29149"/>'
+    '<circle cx="70" cy="96" r="4.5" fill="#b29149"/>'
+    '</svg>'
+)
+
+_UFL_CSS: str = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Syne:wght@700;800&display=swap');
+.ufl-panel{max-width:560px;margin:10px auto;padding:20px 24px;background:#141c24;border:1px solid rgba(178,145,73,.35);border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.35);font-family:'DM Mono',monospace}
+.ufl-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.ufl-logo{width:34px;height:34px;flex:0 0 34px}
+.ufl-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#d4b56a;letter-spacing:.06em;line-height:1}
+.ufl-sub{font-size:11px;color:rgba(230,238,247,.55);letter-spacing:.08em;margin-top:4px}
+.ufl-barwrap{position:relative;height:10px;background:#1f2831;border:1px solid rgba(178,145,73,.25);border-radius:999px;overflow:hidden}
+.ufl-fill{position:absolute;top:0;left:0;bottom:0;width:PERCENT%;background:linear-gradient(90deg,#8f7536,#b29149,#d4b56a);border-radius:999px;transition:width .45s ease;overflow:hidden}
+.ufl-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);animation:ufl-shim 1.4s linear infinite}
+@keyframes ufl-shim{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.ufl-pct{text-align:right;font-size:11px;color:#b29149;margin-top:6px;letter-spacing:.08em}
+.ufl-list{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.ufl-row{display:flex;align-items:center;gap:9px;font-size:13px;color:#cfd8e3;text-align:left}
+.ufl-mark{color:#d4b56a;font-weight:700;flex:0 0 auto}
+.ufl-row.bad .ufl-mark,.ufl-row.bad{color:#e06c5a}
+.ufl-spin{width:12px;height:12px;border:2px solid rgba(212,181,106,.25);border-top-color:#d4b56a;border-radius:50%;animation:ufl-rot .8s linear infinite;flex:0 0 12px}
+@keyframes ufl-rot{to{transform:rotate(360deg)}}
+.ufl-ready{margin-top:14px;font-family:'Syne',sans-serif;font-weight:700;color:#5dba7e;font-size:15px;text-align:center;letter-spacing:.04em}
+@media (prefers-reduced-motion: reduce){.ufl-fill::after,.ufl-spin{animation:none}}
+</style>
+"""
+
+
+class _BootPanel:
+    """Painel visual de inicialização do Colab (v0.6.7).
+
+    Barra de progresso no estilo UFVAI (azul #141c24/#1f2831 + dourado
+    #b29149/#d4b56a) com checklist de checkpoints que aparece linha a
+    linha conforme as etapas reais de launch() concluem.
+
+    Fora do Colab todas as operações são no-op (o fluxo de prints
+    legado permanece). Erros de renderização NUNCA derrubam o boot.
+    """
+
+    _DISPLAY_ID = "ufvai_boot_panel"
+
+    def __init__(self) -> None:
+        self._pct: int = 0
+        self._rows: list[tuple[str, bool]] = []  # (label, ok)
+        self._active: str | None = None
+        self._created: bool = False
+        self._finished: bool = False
+
+    # ── API de estado ────────────────────────────────────────────
+    def begin(self) -> None:
+        """Cria o painel vazio (barra em 0%)."""
+        self._render(create=True)
+
+    def active(self, label: str, pct: int) -> None:
+        """Inicia um checkpoint: revela a linha com spinner e avança a barra."""
+        self._pct = max(self._pct, min(int(pct), 99))
+        self._active = label
+        self._render()
+
+    def done(self, pct: int | None = None) -> None:
+        """Conclui o checkpoint ativo (linha fica ✓ verde-dourado)."""
+        if self._active:
+            self._rows.append((self._active, True))
+            self._active = None
+        if pct is not None:
+            self._pct = max(self._pct, min(int(pct), 99))
+        self._render()
+
+    def fail(self, note: str = "") -> None:
+        """Marca o checkpoint ativo como falho (✕) sem interromper o boot."""
+        if self._active:
+            label = self._active + (f" — {note}" if note else "")
+            self._rows.append((label, False))
+            self._active = None
+            self._render()
+
+    def finish(self) -> None:
+        """100% + linha '✨ UFVAI pronto!'."""
+        if self._active:
+            self._rows.append((self._active, True))
+            self._active = None
+        self._pct = 100
+        self._finished = True
+        self._render()
+
+    # ── Render ───────────────────────────────────────────────────
+    def _supported(self) -> bool:
+        return bool(
+            IN_COLAB and display is not None and HTML is not None
+            and update_display is not None
+        )
+
+    def _render(self, create: bool = False) -> None:
+        if not self._supported():
+            return
+        try:
+            html = HTML(self._html())
+            if create or not self._created:
+                display(html, display_id=self._DISPLAY_ID)
+                self._created = True
+            else:
+                update_display(html, display_id=self._DISPLAY_ID)
+        except Exception:
+            pass  # painel nunca derruba o boot
+
+    def _html(self) -> str:
+        rows = []
+        for label, ok in self._rows:
+            mark = "✓" if ok else "✕"
+            cls = "ok" if ok else "bad"
+            rows.append(
+                f'<li class="ufl-row {cls}"><span class="ufl-mark">{mark}</span>'
+                f"<span>{label}</span></li>"
+            )
+        if self._active:
+            rows.append(
+                f'<li class="ufl-row act"><span class="ufl-spin"></span>'
+                f"<span>{self._active}…</span></li>"
+            )
+        ready_line = (
+            '\n<div class="ufl-ready">✨ UFVAI pronto!</div>' if self._finished else ""
+        )
+        css = _UFL_CSS.replace("PERCENT", str(self._pct))
+        return (
+            css
+            + '<div class="ufl-panel">'
+            + '<div class="ufl-head">'
+            + f'<span class="ufl-logo">{_UFVAI_ICO_SVG}</span>'
+            + '<span><span class="ufl-title">UFVAI</span>'
+            + '<div class="ufl-sub">INICIALIZANDO AMBIENTE CIENTÍFICO</div></span>'
+            + "</div>"
+            + '<div class="ufl-barwrap"><div class="ufl-fill"></div></div>'
+            + f'<div class="ufl-pct">{self._pct}%</div>'
+            + ('<ul class="ufl-list">' + "".join(rows) + "</ul>" if rows else "")
+            + ready_line
+            + "</div>"
+        )
+
+
 def show_launch_button(banner_url):
     if not IN_COLAB or not display or not HTML:
         print(f"\n🎉 Acesse: {banner_url}")
         return
     
+    # v0.6.7: card escuro contínuo com o painel de boot + botão em pílula
+    # dourada com a lupa do logo embutida (chip circular azul-escuro com
+    # anel dourado — eco direto da lente do ico.svg).
     display(HTML(f"""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500;700&family=Syne:wght@700;800&display=swap');
-  @keyframes pulse-glow {{
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Syne:wght@700;800&display=swap');
+  @keyframes ufb-pulse {{
     0%, 100% {{ box-shadow: 0 0 20px rgba(178,145,73,0.35), 0 4px 12px rgba(0,0,0,0.3); }}
-    50% {{ box-shadow: 0 0 40px rgba(178,145,73,0.6), 0 6px 20px rgba(0,0,0,0.4); }}
+    50% {{ box-shadow: 0 0 40px rgba(212,181,106,0.55), 0 6px 20px rgba(0,0,0,0.4); }}
   }}
-  .btn-container {{
+  .ufb-card {{
+    max-width: 560px;
+    margin: 12px auto;
+    padding: 24px;
+    background: #141c24;
+    border: 1px solid rgba(178,145,73,0.35);
+    border-radius: 16px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
     display: flex;
-    justify-content: center;
-    padding: 20px;
-    margin-top: 10px;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
   }}
-  .pesquisai-launch {{
-    display: inline-flex; 
-    align-items: center; 
+  .ufb-brand {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Syne', sans-serif;
+  }}
+  .ufb-brand-logo {{ width: 26px; height: 26px; }}
+  .ufb-brand-name {{
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #d4b56a;
+  }}
+  .ufb-status {{
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: #5dba7e;
+    letter-spacing: 0.08em;
+  }}
+  .ufb-btn, .pesquisai-launch {{
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
     gap: 16px;
-    padding: 24px 56px; 
-    font-family: "Syne", sans-serif; 
-    font-size: 22px;
-    font-weight: 800; 
+    padding: 18px 44px;
+    font-family: 'Syne', sans-serif;
+    font-size: 21px;
+    font-weight: 800;
     letter-spacing: 0.08em;
-    color: #0d0f10; 
-    background: linear-gradient(135deg, #d4b56a 0%, #b29149 55%, #8a6d33 100%);
-    border: none; 
-    border-radius: 14px; 
+    color: #141c24;
+    background: linear-gradient(135deg, #e6cd8a 0%, #d4b56a 30%, #b29149 70%, #8f7536 100%);
+    border: none;
+    border-radius: 999px;
     cursor: pointer;
     text-decoration: none;
-    transition: all 0.2s ease;
-    animation: pulse-glow 2.5s ease-in-out infinite;
+    transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
+    animation: ufb-pulse 2.5s ease-in-out infinite;
     position: relative;
     overflow: hidden;
   }}
-  .pesquisai-launch::before {{
+  .ufb-btn::before {{
     content: '';
     position: absolute;
     top: 0;
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
     transition: left 0.5s;
   }}
-  .pesquisai-launch:hover::before {{
-    left: 100%;
-  }}
-  .pesquisai-launch:hover {{
+  .ufb-btn:hover::before {{ left: 100%; }}
+  .ufb-btn:hover {{
     transform: translateY(-4px) scale(1.02);
     filter: brightness(1.1);
     box-shadow: 0 12px 40px rgba(178,145,73,0.5), 0 8px 24px rgba(0,0,0,0.4);
   }}
-  .pesquisai-launch:active {{
-    transform: translateY(-1px) scale(0.99);
+  .ufb-btn:active {{ transform: translateY(-1px) scale(0.99); }}
+  .ufb-btn:focus-visible {{
+    outline: 3px solid rgba(212,181,106,0.65);
+    outline-offset: 3px;
   }}
-  .btn-icon {{
-    font-size: 28px;
+  /* Chip circular: lente da lupa (azul profundo + anel dourado) */
+  .ufb-chip {{
+    width: 46px;
+    height: 46px;
+    flex: 0 0 46px;
+    border-radius: 50%;
+    background: #1f2831;
+    border: 2px solid rgba(212,181,106,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.45);
   }}
-  .btn-text {{
+  .ufb-text {{
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 2px;
+    gap: 3px;
   }}
-  .btn-main {{
-    font-size: 22px;
-    font-weight: 800;
-  }}
-  .btn-sub {{
-    font-family: "DM Mono", monospace;
-    font-size: 11px;
+  .ufb-main {{ line-height: 1; }}
+  .ufb-sub {{
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
     font-weight: 500;
-    opacity: 0.8;
-    letter-spacing: 0.1em;
+    opacity: 0.75;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
   }}
-  .pesquisai-launch .arrow {{ 
-    font-size: 28px;
+  .ufb-arrow {{
+    font-size: 26px;
     font-weight: 500;
-    transition: transform 0.2s ease; 
+    transition: transform 0.2s ease;
   }}
-  .pesquisai-launch:hover .arrow {{ 
-    transform: translateX(8px); 
+  .ufb-btn:hover .ufb-arrow {{ transform: translateX(8px); }}
+  @media (prefers-reduced-motion: reduce) {{
+    .ufb-btn {{ animation: none; transition: none; }}
   }}
 </style>
-<div class="btn-container">
-  <a href="{banner_url}" target="_blank" class="pesquisai-launch">
-    <span class="btn-icon">🚀</span>
-    <span class="btn-text">
-      <span class="btn-main">ABRIR O UFVAI</span>
-      <span class="btn-sub">clique para começar</span>
+<div class="ufb-card">
+  <div class="ufb-brand">
+    <span class="ufb-brand-logo">{_UFVAI_ICO_SVG}</span>
+    <span class="ufb-brand-name">UFVAI</span>
+    <span class="ufb-status">✨ pronto</span>
+  </div>
+  <a href="{banner_url}" target="_blank" class="ufb-btn pesquisai-launch">
+    <span class="ufb-chip">{_UFVAI_ICO_SVG}</span>
+    <span class="ufb-text">
+      <span class="ufb-main">ABRIR O UFVAI</span>
+      <span class="ufb-sub">clique para começar</span>
     </span>
-    <span class="arrow">→</span>
+    <span class="ufb-arrow">→</span>
   </a>
 </div>
 """))
@@ -2732,66 +2950,88 @@ def show_launch_button(banner_url):
 def launch():
     global _drive_url
     
-    resolve_opencode()
+    # v0.6.7: painel de boot (barra + checkpoints) — no-op fora do Colab
+    boot = _BootPanel()
+    boot.begin()
     
-    # ═══ CARREGAR CHAVES ANTES DE INICIAR O TERMINAL ═══
-    # Determina o diretório de backup para carregar as chaves
-    _pesquisai_drive = "/content/drive/My Drive/PesquisAI"
-    if os.path.isdir(_pesquisai_drive):
-        _base = _pesquisai_drive
-    elif os.path.isdir(_folder_path) and "drive" in _folder_path.lower():
-        _base = _folder_path
-    else:
-        _base = _folder_path
-    _pre_backup_dir = os.path.join(_base, "backups")
-    os.makedirs(_pre_backup_dir, exist_ok=True)
-    
-    # Carrega chaves criptografadas do Drive ANTES do terminal
-    _pre_loaded = load_keys_from_drive(_pre_backup_dir, _env, write_bashrc=True)
-    if _pre_loaded:
-        print(f"🔑 Keys carregadas do Drive: {', '.join(_pre_loaded)}")
-    else:
-        # Verifica se os arquivos existem para dar diagnóstico
-        _keys_file = os.path.join(_pre_backup_dir, "keys_store.json")
-        _old_keys_file = os.path.join(_pre_backup_dir, ".keys.json")
-        _keyfile = os.path.join(_pre_backup_dir, "keys_encryption_key.bin")
-        _old_keyfile = os.path.join(_pre_backup_dir, ".keys_encryption_key")
-        
-        if os.path.exists(_keys_file) or os.path.exists(_old_keys_file):
-            print(
-                "⚠️  Arquivo de chaves encontrado, mas não foi possível "
-                "descriptografar. A chave de criptografia pode estar corrompida. "
-                "Use '+ provedor' para reconfigurar."
-            )
-        else:
-            print(
-                "ℹ️  Nenhuma API key configurada. "
-                "Use o botão '+ provedor' na interface para adicionar."
-            )
-    # ═══════════════════════════════════════════════════
-    
-    install_ttyd()
-    kill_previous()
-    start_ttyd()
-    
-    if IN_COLAB and output:
-        terminal_url = output.eval_js(f"google.colab.kernel.proxyPort({TERMINAL_PORT})")
-        banner_url = output.eval_js(f"google.colab.kernel.proxyPort({WRAPPER_PORT})")
-    else:
-        terminal_url = f"http://localhost:{TERMINAL_PORT}"
-        banner_url = f"http://localhost:{WRAPPER_PORT}"
-    
-    global _SESSION_TOKEN
-    _SESSION_TOKEN = secrets.token_urlsafe(32)
-    create_wrapper_html(terminal_url, _drive_url, session_token=_SESSION_TOKEN)
-    start_wrapper_server()
     try:
-        _tel_event("app_started", {"version": VERSION, "lang": _current_lang, "colab": bool(IN_COLAB)})
-    except Exception:
-        pass
+        boot.active("Localizando o núcleo opencode", 8)
+        resolve_opencode()
+        boot.done(18)
+        
+        # ═══ CARREGAR CHAVES ANTES DE INICIAR O TERMINAL ═══
+        boot.active("Carregando chaves de API do Drive", 22)
+        # Determina o diretório de backup para carregar as chaves
+        _pesquisai_drive = "/content/drive/My Drive/PesquisAI"
+        if os.path.isdir(_pesquisai_drive):
+            _base = _pesquisai_drive
+        elif os.path.isdir(_folder_path) and "drive" in _folder_path.lower():
+            _base = _folder_path
+        else:
+            _base = _folder_path
+        _pre_backup_dir = os.path.join(_base, "backups")
+        os.makedirs(_pre_backup_dir, exist_ok=True)
+        
+        # Carrega chaves criptografadas do Drive ANTES do terminal
+        _pre_loaded = load_keys_from_drive(_pre_backup_dir, _env, write_bashrc=True)
+        if _pre_loaded:
+            print(f"🔑 Keys carregadas do Drive: {', '.join(_pre_loaded)}")
+        else:
+            # Verifica se os arquivos existem para dar diagnóstico
+            _keys_file = os.path.join(_pre_backup_dir, "keys_store.json")
+            _old_keys_file = os.path.join(_pre_backup_dir, ".keys.json")
+            _keyfile = os.path.join(_pre_backup_dir, "keys_encryption_key.bin")
+            _old_keyfile = os.path.join(_pre_backup_dir, ".keys_encryption_key")
+            
+            if os.path.exists(_keys_file) or os.path.exists(_old_keys_file):
+                print(
+                    "⚠️  Arquivo de chaves encontrado, mas não foi possível "
+                    "descriptografar. A chave de criptografia pode estar corrompida. "
+                    "Use '+ provedor' para reconfigurar."
+                )
+            else:
+                print(
+                    "ℹ️  Nenhuma API key configurada. "
+                    "Use o botão '+ provedor' na interface para adicionar."
+                )
+        # ═══════════════════════════════════════════════════
+        boot.done(35)
+        
+        boot.active("Instalando o terminal (ttyd)", 40)
+        install_ttyd()
+        boot.done(55)
+        
+        boot.active("Encerrando sessões anteriores", 58)
+        kill_previous()
+        boot.done(66)
+        
+        boot.active("Iniciando terminal interativo", 70)
+        start_ttyd()
+        boot.done(82)
+        
+        if IN_COLAB and output:
+            terminal_url = output.eval_js(f"google.colab.kernel.proxyPort({TERMINAL_PORT})")
+            banner_url = output.eval_js(f"google.colab.kernel.proxyPort({WRAPPER_PORT})")
+        else:
+            terminal_url = f"http://localhost:{TERMINAL_PORT}"
+            banner_url = f"http://localhost:{WRAPPER_PORT}"
+        
+        boot.active("Preparando a interface web", 88)
+        global _SESSION_TOKEN
+        _SESSION_TOKEN = secrets.token_urlsafe(32)
+        create_wrapper_html(terminal_url, _drive_url, session_token=_SESSION_TOKEN)
+        start_wrapper_server()
+        try:
+            _tel_event("app_started", {"version": VERSION, "lang": _current_lang, "colab": bool(IN_COLAB)})
+        except Exception:
+            pass
+        boot.done(96)
+    except Exception as exc:
+        boot.fail(str(exc)[:80])
+        raise
     
     time.sleep(1)
-    show_ready_message()
+    boot.finish()  # 100% + "✨ UFVAI pronto!"
     show_launch_button(banner_url)
 
     # v0.6.1: no modo offline (.deb/local) abre o navegador automaticamente
