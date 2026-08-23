@@ -1111,7 +1111,14 @@ def create_wrapper_html(
       <div style="font-size:10.5px;line-height:1.5;color:var(--ink-muted);margin-bottom:14px;">
         GA4 → Admin → Fluxos de dados → Eventos de Measurement Protocol → Configurar.
         O secret é gravado localmente (<code>~/.config/ufvai_telemetry.json</code>, permissão 600)
-        e nunca é exibido novamente. Guia completo: TELEMETRY.md §0.
+        e nunca é exibido novamente. Deixe em branco para manter o já salvo. Guia completo: TELEMETRY.md §0.
+      </div>
+      <label style="display:block;font-size:11px;color:var(--ink-muted);margin-bottom:4px;">✉️ URL de contato — recebe o e-mail dos usuários que aceitaram (opcional)</label>
+      <input id="tel-contact" type="text" placeholder="https://script.google.com/macros/s/SEU_ID/exec" autocomplete="off" style="width:100%;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:7px 9px;font-size:12px;font-family:var(--font-mono);outline:none;margin-bottom:6px;" />
+      <div id="tel-contact-status" style="font-size:10.5px;line-height:1.5;color:var(--ink-muted);margin-bottom:14px;">
+        Canal recomendado (Google, grátis): Planilha + <b>Apps Script</b> — cada aceite de contato
+        chega como nova linha na sua planilha. Passo a passo pronto: TELEMETRY.md §Passo 9.
+        Vazio = usuários NÃO são encaminhados (fica só o contador anônimo no GA4).
       </div>
       <div id="tel-msg" style="font-size:11.5px;margin-bottom:10px;display:none;"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -2009,6 +2016,17 @@ def create_wrapper_html(
           else if(!s.consent_analytics) why.push("usuário não autorizou estatísticas");
           st.innerHTML = "<span style='color:var(--red)'>● Inativa</span> · ID <code>" + s.measurement_id + "</code> · motivo: " + why.join("; ");
         }
+        // v0.6.7: canal de contato — prefill da URL salva + status
+        const cIn = document.getElementById("tel-contact");
+        if(cIn && typeof s.contact_endpoint_url === "string") cIn.value = s.contact_endpoint_url;
+        const cs = document.getElementById("tel-contact-status");
+        if(cs){
+          const src = s.contact_endpoint_source === "env" ? "variável de ambiente" :
+                      (s.contact_endpoint_set ? "salva no painel" : "");
+          cs.innerHTML = (s.contact_endpoint_set ? "✉️ Canal de contato <b>ativo</b> ("+src+"). "
+                        : "✉️ Canal de contato inativo — vazio = usuários NÃO são encaminhados (só contador anônimo no GA4). ") +
+                        "Canal recomendado (Google, grátis): Planilha + <b>Apps Script</b> — TELEMETRY.md §Passo 9.";
+        }
       }).catch(()=>{ document.getElementById("tel-status").textContent = "Falha ao consultar estado."; });
     }
     function closeTelemetry() {
@@ -2018,13 +2036,14 @@ def create_wrapper_html(
     async function saveTelemetry() {
       const mid = document.getElementById("tel-mid").value.trim();
       const sec = document.getElementById("tel-secret").value.trim();
+      const contact = document.getElementById("tel-contact").value.trim(); // v0.6.7
       const msg = document.getElementById("tel-msg");
       msg.style.display = "block";
       msg.textContent = "Salvando…"; msg.style.color = "var(--ink-muted)";
       try{
         const r = await fetch(BASE + "/api/admin/telemetry", {method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({measurement_id:mid, api_secret:sec})});
+          body:JSON.stringify({measurement_id:mid, api_secret:sec, contact_endpoint:contact})});
         const j = await r.json();
         msg.textContent = j.message || (j.ok ? "Salvo." : "Erro.");
         msg.style.color = j.ok ? "var(--green)" : "var(--red)";

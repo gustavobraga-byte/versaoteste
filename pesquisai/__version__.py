@@ -23,7 +23,31 @@ Compatível com o PesquisAI principal (v0.2.1+).
 
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
-════════════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════════
+  v0.6.7 — 🖼️ Tela de carregamento do Colab no tema da logomarca +
+            ✉️ canal de contato opt-in configurável pela UI
+            • BARRA DESDE O INÍCIO: um único painel leve no tema da
+              logomarca (papel off-white, wordmark UFV navy + AI dourado)
+              nasce na fase de clone do notebook e percorre TODA a
+              inicialização (setup → launch) sem reiniciar; mensagens/
+              checkpoints sempre ABAIXO da barra, percentual monotônico.
+            • progress_bar.py aposentou a barra escura e virou driver do
+              painel único (singleton get_boot_panel(), mesmo display_id);
+              begin() idempotente; active() commita checkpoint pendente.
+            • Botão final com a LOGO REAL (base64) no lugar do texto
+              "✨ pronto"; badge verde separado removido no Colab;
+              PesquisAI.ipynb rebrandizado (citação ABNT v0.6.7).
+            • Canal de contato: URL HTTPS configurável no painel 📊
+              Telemetria (Admin), salva em ~/.config/ufvai_telemetry.json;
+              save_admin_config() parcial por campo; TELEMETRY.md §9.
+  v0.6.6 — 🔐 Registro voluntário LGPD + Google Sheets (rebuild sobre 0.6.4)
+            • registration.py: opt-in separado dos Termos, revogável
+              (art. 18 VI), backup criptografado no Drive; webhook
+              genérico UFVAI_REGISTRATION_URL (sem SMTP; PII nunca ao GA4).
+            • scripts/google-apps-script/registration_webhook.gs + guia
+              docs/REGISTRATION_SHEETS.md (+ token opcional).
+            • Base = 0.6.4 estável (0.6.5 retirado por falha de splash/
+              killpg/launcher); pytest 227/227.═
   v0.6.5 — 🔐 Terminal à prova de travamentos + splash de carregamento
             • KILL CIRÚRGICO: o ttyd é LÍDER do próprio grupo de processos
               (start_new_session=True) e fica rastreado em _TTYD_PROC —
@@ -212,13 +236,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.6"
+__version__: str = "0.6.7"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-08-22"
-__codename__: str = "Terminal estável: kill por árvore, /api/ttyd_ready e splash i18n"
+__release_date__: str = "2026-08-23"
+__codename__: str = "Tela de carregamento no tema da logomarca + canal de contato opt-in"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

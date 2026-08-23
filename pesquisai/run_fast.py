@@ -484,11 +484,15 @@ def setup_launch(folder_path: str, drive_url: str) -> str:
         URL do banner de acesso.
     """
     progress(4, 4, "Iniciando servidores e interface web...")
+    from pesquisai import launch_app as _la
     from pesquisai.launch_app import launch, set_drive_info, show_ready_message, show_launch_button
     set_drive_info(folder_path, drive_url)
     banner_url = launch()
     progress_finish()
-    show_ready_message()
+    # v0.6.7: no Colab o card final (logomarca + botão) substitui o antigo
+    # badge verde "✨ UFVAI pronto!"; fora do Colab mantém o print legado.
+    if not getattr(_la, "IN_COLAB", False):
+        show_ready_message()
     show_launch_button(banner_url)
     return banner_url
 

@@ -2665,26 +2665,70 @@ _UFVAI_ICO_SVG: str = (
     '</svg>'
 )
 
+_UFVAI_LOGO_B64: str | None = None  # cache; "" = asset ausente (fallback)
+
+
+def _load_logo_b64() -> str | None:
+    """Logomarca oficial (assets/logo-oficial-288.jpg) em base64, com cache.
+
+    Offline-safe: lê o arquivo do repositório, sem qualquer request de rede.
+    Retorna None se o asset não existir (o chamador usa o fallback em CSS).
+    """
+    global _UFVAI_LOGO_B64
+    if _UFVAI_LOGO_B64 is not None:
+        return _UFVAI_LOGO_B64 or None
+    try:
+        p = Path(__file__).resolve().parent.parent / "assets" / "logo-oficial-288.jpg"
+        if p.is_file():
+            _UFVAI_LOGO_B64 = _b64.b64encode(p.read_bytes()).decode("ascii")
+            return _UFVAI_LOGO_B64
+    except Exception:
+        pass
+    _UFVAI_LOGO_B64 = ""
+    return None
+
+
+def _launch_logo_markup() -> str:
+    """Logo real (<img> base64) ou wordmark CSS como fallback — tema da marca."""
+    b64 = _load_logo_b64()
+    if b64:
+        return (
+            '<img class="ufb-logo" src="data:image/jpeg;base64,' + b64 + '" '
+            'alt="UFVAI — Inteligência Artificial" width="230" height="230" />'
+        )
+    return (
+        '<div class="ufb-logo-fallback">'
+        '<div class="ufb-wm"><span>UFV</span><span class="ufl-ai">AI</span></div>'
+        '<div class="ufb-rule"></div>'
+        '<div class="ufb-tag">INTELIGÊNCIA ARTIFICIAL</div>'
+        "</div>"
+    )
+
+
+# Paleta da logomarca oficial (logo_8x8cm_300dpi.jpg): papel off-white,
+# azul-marinho "UFV", dourado "AI"; vermelho das constelações p/ falhas.
 _UFL_CSS: str = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Syne:wght@700;800&display=swap');
-.ufl-panel{max-width:560px;margin:10px auto;padding:20px 24px;background:#141c24;border:1px solid rgba(178,145,73,.35);border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.35);font-family:'DM Mono',monospace}
-.ufl-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-.ufl-logo{width:34px;height:34px;flex:0 0 34px}
-.ufl-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#d4b56a;letter-spacing:.06em;line-height:1}
-.ufl-sub{font-size:11px;color:rgba(230,238,247,.55);letter-spacing:.08em;margin-top:4px}
-.ufl-barwrap{position:relative;height:10px;background:#1f2831;border:1px solid rgba(178,145,73,.25);border-radius:999px;overflow:hidden}
-.ufl-fill{position:absolute;top:0;left:0;bottom:0;width:PERCENT%;background:linear-gradient(90deg,#8f7536,#b29149,#d4b56a);border-radius:999px;transition:width .45s ease;overflow:hidden}
-.ufl-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);animation:ufl-shim 1.4s linear infinite}
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Montserrat:wght@600;700;800&display=swap');
+.ufl-panel{max-width:560px;margin:10px auto;padding:26px 30px 22px;background:#f6f5f0;border:1px solid rgba(43,45,58,.14);border-radius:18px;box-shadow:0 14px 34px rgba(43,45,58,.12);font-family:'DM Mono',monospace}
+.ufl-head{text-align:center;margin-bottom:16px}
+.ufl-wordmark{font-family:'Montserrat','Syne',system-ui,sans-serif;font-size:34px;font-weight:800;letter-spacing:.04em;line-height:1;color:#2b2d3a}
+.ufl-wordmark .ufl-ai{color:#b8912f}
+.ufl-rule{height:1px;background:rgba(43,45,58,.22);margin:10px auto 7px;width:78%}
+.ufl-tagline{font-family:'Montserrat',system-ui,sans-serif;font-size:11px;font-weight:600;color:#8f8d86;letter-spacing:.42em;text-indent:.42em}
+.ufl-barwrap{position:relative;height:12px;background:#e9e6df;border:1px solid rgba(43,45,58,.15);border-radius:999px;overflow:hidden}
+.ufl-fill{position:absolute;top:0;left:0;bottom:0;width:PERCENT%;background:linear-gradient(90deg,#caa53f,#b8912f 45%,#8f7536);border-radius:999px;transition:width .45s ease;overflow:hidden}
+.ufl-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);animation:ufl-shim 1.4s linear infinite}
 @keyframes ufl-shim{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
-.ufl-pct{text-align:right;font-size:11px;color:#b29149;margin-top:6px;letter-spacing:.08em}
-.ufl-list{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
-.ufl-row{display:flex;align-items:center;gap:9px;font-size:13px;color:#cfd8e3;text-align:left}
-.ufl-mark{color:#d4b56a;font-weight:700;flex:0 0 auto}
-.ufl-row.bad .ufl-mark,.ufl-row.bad{color:#e06c5a}
-.ufl-spin{width:12px;height:12px;border:2px solid rgba(212,181,106,.25);border-top-color:#d4b56a;border-radius:50%;animation:ufl-rot .8s linear infinite;flex:0 0 12px}
+.ufl-pct{text-align:right;font-size:11px;color:#8f7536;margin-top:6px;letter-spacing:.08em}
+/* Mensagens SEMPRE abaixo da barra — ordem garantida em _html() */
+.ufl-list{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.ufl-row{display:flex;align-items:center;gap:9px;font-size:13px;color:#3c3f4e;text-align:left}
+.ufl-mark{color:#b8912f;font-weight:700;flex:0 0 auto}
+.ufl-row.bad .ufl-mark,.ufl-row.bad{color:#a94442}
+.ufl-spin{width:12px;height:12px;border:2px solid rgba(184,145,47,.30);border-top-color:#b8912f;border-radius:50%;animation:ufl-rot .8s linear infinite;flex:0 0 12px}
 @keyframes ufl-rot{to{transform:rotate(360deg)}}
-.ufl-ready{margin-top:14px;font-family:'Syne',sans-serif;font-weight:700;color:#5dba7e;font-size:15px;text-align:center;letter-spacing:.04em}
+.ufl-ready{margin-top:16px;font-family:'Montserrat','Syne',sans-serif;font-weight:700;color:#2b2d3a;font-size:15px;text-align:center;letter-spacing:.04em}
 @media (prefers-reduced-motion: reduce){.ufl-fill::after,.ufl-spin{animation:none}}
 </style>
 """
@@ -2693,9 +2737,11 @@ _UFL_CSS: str = """
 class _BootPanel:
     """Painel visual de inicialização do Colab (v0.6.7).
 
-    Barra de progresso no estilo UFVAI (azul #141c24/#1f2831 + dourado
-    #b29149/#d4b56a) com checklist de checkpoints que aparece linha a
-    linha conforme as etapas reais de launch() concluem.
+    Tela LEVE no tema da logomarca oficial (papel off-white #f6f5f0 +
+    azul-marinho "UFV" #2b2d3a + dourado "AI" #b8912f) com barra de
+    progresso e checklist de checkpoints que aparece linha a linha
+    SEMPRE ABAIXO da barra, conforme as etapas reais de launch()
+    concluem.
 
     Fora do Colab todas as operações são no-op (o fluxo de prints
     legado permanece). Erros de renderização NUNCA derrubam o boot.
@@ -2712,11 +2758,26 @@ class _BootPanel:
 
     # ── API de estado ────────────────────────────────────────────
     def begin(self) -> None:
-        """Cria o painel vazio (barra em 0%)."""
+        """Cria o painel vazio (barra em 0%) — idempotente.
+
+        Se o painel já foi criado nesta sessão (ex.: pelo progress_bar
+        no início do run(), ou por um begin() anterior), NÃO reinicia:
+        preserva % e histórico das linhas para a barra ser CONTÍNUA
+        desde o início do carregamento.
+        """
+        if self._created:
+            return
         self._render(create=True)
 
     def active(self, label: str, pct: int) -> None:
-        """Inicia um checkpoint: revela a linha com spinner e avança a barra."""
+        """Inicia um checkpoint: revela a linha com spinner e avança a barra.
+
+        Se houver checkpoint ativo pendente (troca direta de etapa,
+        caminho do progress_bar → launch()), ele é concluído com ✓
+        antes — nunca ficam dois spinners simultâneos.
+        """
+        if self._active and self._active != label:
+            self._rows.append((self._active, True))
         self._pct = max(self._pct, min(int(pct), 99))
         self._active = label
         self._render()
@@ -2789,9 +2850,10 @@ class _BootPanel:
             css
             + '<div class="ufl-panel">'
             + '<div class="ufl-head">'
-            + f'<span class="ufl-logo">{_UFVAI_ICO_SVG}</span>'
-            + '<span><span class="ufl-title">UFVAI</span>'
-            + '<div class="ufl-sub">INICIALIZANDO AMBIENTE CIENTÍFICO</div></span>'
+            + '<div class="ufl-wordmark"><span>UFV</span>'
+            + '<span class="ufl-ai">AI</span></div>'
+            + '<div class="ufl-rule"></div>'
+            + '<div class="ufl-tagline">INTELIGÊNCIA ARTIFICIAL</div>'
             + "</div>"
             + '<div class="ufl-barwrap"><div class="ufl-fill"></div></div>'
             + f'<div class="ufl-pct">{self._pct}%</div>'
@@ -2801,69 +2863,105 @@ class _BootPanel:
         )
 
 
+# ── Painel único da sessão ───────────────────────────────────────
+_BOOT_SINGLETON: "_BootPanel | None" = None
+
+
+def get_boot_panel() -> "_BootPanel":
+    """Retorna o painel de boot ÚNICO desta sessão (singleton).
+
+    v0.6.7 — a barra começa no INÍCIO do carregamento: o notebook cria
+    o painel ainda na fase de clone, progress_bar.show() alimenta os
+    estágios do run() (Drive → dependências → skills) e launch()
+    continua no mesmo display ("ufvai_boot_panel") até os 100%.
+    Uma única barra contínua, mensagens sempre abaixo dela, sem cards
+    duplicados nem reinicializações.
+    """
+    global _BOOT_SINGLETON
+    if _BOOT_SINGLETON is None:
+        _BOOT_SINGLETON = _BootPanel()
+    return _BOOT_SINGLETON
+
+
 def show_launch_button(banner_url):
     if not IN_COLAB or not display or not HTML:
         print(f"\n🎉 Acesse: {banner_url}")
         return
-    
-    # v0.6.7: card escuro contínuo com o painel de boot + botão em pílula
-    # dourada com a lupa do logo embutida (chip circular azul-escuro com
-    # anel dourado — eco direto da lente do ico.svg).
+
+    # v0.6.7 (revisão): tela LEVE no tema da logomarca oficial — papel
+    # off-white, azul-marinho "UFV" + dourado "AI". A LOGO REAL (base64,
+    # offline-safe) aparece acima do botão NO LUGAR do antigo texto
+    # "✨ UFVAI pronto"; botão em pílula dourada com tipografia navy.
+    logo_html = _launch_logo_markup()
     display(HTML(f"""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Syne:wght@700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Montserrat:wght@600;700;800&display=swap');
   @keyframes ufb-pulse {{
-    0%, 100% {{ box-shadow: 0 0 20px rgba(178,145,73,0.35), 0 4px 12px rgba(0,0,0,0.3); }}
-    50% {{ box-shadow: 0 0 40px rgba(212,181,106,0.55), 0 6px 20px rgba(0,0,0,0.4); }}
+    0%, 100% {{ box-shadow: 0 6px 18px rgba(143,117,54,.35); }}
+    50% {{ box-shadow: 0 10px 34px rgba(184,145,47,.55); }}
   }}
   .ufb-card {{
     max-width: 560px;
     margin: 12px auto;
-    padding: 24px;
-    background: #141c24;
-    border: 1px solid rgba(178,145,73,0.35);
-    border-radius: 16px;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    padding: 28px 24px 26px;
+    background: #f6f5f0;
+    border: 1px solid rgba(43,45,58,.14);
+    border-radius: 18px;
+    box-shadow: 0 14px 34px rgba(43,45,58,.12);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: 18px;
   }}
-  .ufb-brand {{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: 'Syne', sans-serif;
+  .ufb-logo {{
+    width: 210px;
+    height: auto;
+    border-radius: 10px;
   }}
-  .ufb-brand-logo {{ width: 26px; height: 26px; }}
-  .ufb-brand-name {{
-    font-size: 16px;
+  /* Fallback sem asset: wordmark CSS no tema da marca */
+  .ufb-logo-fallback {{
+    font-family: 'Montserrat', 'Syne', system-ui, sans-serif;
+    text-align: center;
+    color: #2b2d3a;
+    padding: 8px 0 2px;
+  }}
+  .ufb-wm {{
+    font-size: 40px;
     font-weight: 800;
-    letter-spacing: 0.06em;
-    color: #d4b56a;
+    letter-spacing: .04em;
+    line-height: 1;
   }}
-  .ufb-status {{
-    font-family: 'DM Mono', monospace;
-    font-size: 12px;
-    color: #5dba7e;
-    letter-spacing: 0.08em;
+  .ufb-wm .ufl-ai {{ color: #b8912f; }}
+  .ufb-rule {{
+    height: 1px;
+    background: rgba(43,45,58,.22);
+    margin: 10px auto 7px;
+    width: 220px;
+  }}
+  .ufb-tag {{
+    font-size: 11px;
+    font-weight: 600;
+    color: #8f8d86;
+    letter-spacing: .38em;
+    text-indent: .38em;
   }}
   .ufb-btn, .pesquisai-launch {{
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 16px;
-    padding: 18px 44px;
-    font-family: 'Syne', sans-serif;
-    font-size: 21px;
+    padding: 17px 46px;
+    font-family: 'Montserrat', 'Syne', sans-serif;
+    font-size: 20px;
     font-weight: 800;
-    letter-spacing: 0.08em;
-    color: #141c24;
-    background: linear-gradient(135deg, #e6cd8a 0%, #d4b56a 30%, #b29149 70%, #8f7536 100%);
+    letter-spacing: .08em;
+    color: #2b2d3a;
+    background: linear-gradient(135deg, #d3b054 0%, #b8912f 45%, #8f7536 100%);
     border: none;
     border-radius: 999px;
     cursor: pointer;
     text-decoration: none;
+    box-shadow: 0 6px 18px rgba(143,117,54,.35);
     transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
     animation: ufb-pulse 2.5s ease-in-out infinite;
     position: relative;
@@ -2882,27 +2980,13 @@ def show_launch_button(banner_url):
   .ufb-btn:hover::before {{ left: 100%; }}
   .ufb-btn:hover {{
     transform: translateY(-4px) scale(1.02);
-    filter: brightness(1.1);
-    box-shadow: 0 12px 40px rgba(178,145,73,0.5), 0 8px 24px rgba(0,0,0,0.4);
+    filter: brightness(1.08);
+    box-shadow: 0 12px 40px rgba(184,145,47,.5), 0 8px 24px rgba(43,45,58,.18);
   }}
   .ufb-btn:active {{ transform: translateY(-1px) scale(0.99); }}
   .ufb-btn:focus-visible {{
-    outline: 3px solid rgba(212,181,106,0.65);
+    outline: 3px solid rgba(43,45,58,.45);
     outline-offset: 3px;
-  }}
-  /* Chip circular: lente da lupa (azul profundo + anel dourado) */
-  .ufb-chip {{
-    width: 46px;
-    height: 46px;
-    flex: 0 0 46px;
-    border-radius: 50%;
-    background: #1f2831;
-    border: 2px solid rgba(212,181,106,0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.45);
   }}
   .ufb-text {{
     display: flex;
@@ -2930,13 +3014,8 @@ def show_launch_button(banner_url):
   }}
 </style>
 <div class="ufb-card">
-  <div class="ufb-brand">
-    <span class="ufb-brand-logo">{_UFVAI_ICO_SVG}</span>
-    <span class="ufb-brand-name">UFVAI</span>
-    <span class="ufb-status">✨ pronto</span>
-  </div>
+  {logo_html}
   <a href="{banner_url}" target="_blank" class="ufb-btn pesquisai-launch">
-    <span class="ufb-chip">{_UFVAI_ICO_SVG}</span>
     <span class="ufb-text">
       <span class="ufb-main">ABRIR O UFVAI</span>
       <span class="ufb-sub">clique para começar</span>
@@ -2950,17 +3029,19 @@ def show_launch_button(banner_url):
 def launch():
     global _drive_url
     
-    # v0.6.7: painel de boot (barra + checkpoints) — no-op fora do Colab
-    boot = _BootPanel()
+    # v0.6.7: painel de boot ÚNICO e contínuo — reutiliza a instância que
+    # já exibe os estágios do setup (progress_bar) desde o início do
+    # carregamento; begin() é idempotente e NÃO zera a barra.
+    boot = get_boot_panel()
     boot.begin()
     
     try:
-        boot.active("Localizando o núcleo opencode", 8)
+        boot.active("Localizando o núcleo opencode", 82)
         resolve_opencode()
-        boot.done(18)
+        boot.done(85)
         
         # ═══ CARREGAR CHAVES ANTES DE INICIAR O TERMINAL ═══
-        boot.active("Carregando chaves de API do Drive", 22)
+        boot.active("Carregando chaves de API do Drive", 87)
         # Determina o diretório de backup para carregar as chaves
         _pesquisai_drive = "/content/drive/My Drive/PesquisAI"
         if os.path.isdir(_pesquisai_drive):
@@ -2995,19 +3076,19 @@ def launch():
                     "Use o botão '+ provedor' na interface para adicionar."
                 )
         # ═══════════════════════════════════════════════════
-        boot.done(35)
+        boot.done(89)
         
-        boot.active("Instalando o terminal (ttyd)", 40)
+        boot.active("Instalando o terminal (ttyd)", 91)
         install_ttyd()
-        boot.done(55)
+        boot.done(93)
         
-        boot.active("Encerrando sessões anteriores", 58)
+        boot.active("Encerrando sessões anteriores", 94)
         kill_previous()
-        boot.done(66)
+        boot.done(95)
         
-        boot.active("Iniciando terminal interativo", 70)
+        boot.active("Iniciando terminal interativo", 96)
         start_ttyd()
-        boot.done(82)
+        boot.done(97)
         
         if IN_COLAB and output:
             terminal_url = output.eval_js(f"google.colab.kernel.proxyPort({TERMINAL_PORT})")
@@ -3016,7 +3097,7 @@ def launch():
             terminal_url = f"http://localhost:{TERMINAL_PORT}"
             banner_url = f"http://localhost:{WRAPPER_PORT}"
         
-        boot.active("Preparando a interface web", 88)
+        boot.active("Preparando a interface web", 98)
         global _SESSION_TOKEN
         _SESSION_TOKEN = secrets.token_urlsafe(32)
         create_wrapper_html(terminal_url, _drive_url, session_token=_SESSION_TOKEN)
@@ -3025,7 +3106,7 @@ def launch():
             _tel_event("app_started", {"version": VERSION, "lang": _current_lang, "colab": bool(IN_COLAB)})
         except Exception:
             pass
-        boot.done(96)
+        boot.done(99)
     except Exception as exc:
         boot.fail(str(exc)[:80])
         raise

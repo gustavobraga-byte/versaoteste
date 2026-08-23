@@ -63,33 +63,73 @@ def _ga_config() -> tuple[str, str]:
     return (mid or lmid).strip(), (sec or lsec).strip()
 
 
-def save_admin_config(measurement_id: str, api_secret: str) -> tuple[bool, str]:
-    """(v0.6.4) Salva credenciais configuradas pelo painel Admin da UI.
+def save_admin_config(
+    measurement_id: str | None = None,
+    api_secret: str | None = None,
+    contact_endpoint: str | None = None,
+) -> tuple[bool, str]:
+    """Salva a configuração do painel Admin da UI.
 
-    Validação básica de formato; arquivo local com permissão 600.
-    Retorna (ok, mensagem).
+    (v0.6.4) Credenciais GA4; (v0.6.7) também grava ``contact_endpoint``
+    (canal HTTPS que recebe o e-mail de contato opt-in — ex.: Apps Script
+    → Planilha Google).
+
+    Semântica por parâmetro:
+      • ``None`` ou ``""``  → NÃO altera o que já está salvo;
+      • texto               → valida e define.
+      • Exceção: ``contact_endpoint=""`` LIMPA o canal (remoção).
+    Cada campo é independente — dá para atualizar só o canal de contato
+    sem redigitar as credenciais GA4 (que nunca são devolvidas pela API).
+    Arquivo local com permissão 600. Retorna (ok, mensagem).
     """
-    mid = str(measurement_id or "").strip()
-    sec = str(api_secret or "").strip()
-    if not mid or not sec:
-        return False, "Informe o ID de medição e o API Secret."
-    if not re.fullmatch(r"G-[A-Z0-9]{6,12}", mid):
-        return False, "ID de medição inválido (formato esperado: G-XXXXXXXXXX)."
-    if len(sec) < 8:
-        return False, "API Secret muito curto."
     try:
+        # Base = configuração existente (edição parcial de campos)
+        base: dict = {}
+        try:
+            with open(_ADMIN_CFG_FILE, encoding="utf-8") as f:
+                base = json.load(f)
+        except Exception:
+            base = {}
+
+        # ── GA4: só toca se pelo menos um campo veio preenchido ──
+        new_mid = str(measurement_id).strip() if measurement_id else str(base.get("measurement_id", ""))
+        new_sec = str(api_secret).strip() if api_secret else str(base.get("api_secret", ""))
+        ga_touched = bool(measurement_id or api_secret)
+        if ga_touched:
+            if not re.fullmatch(r"G-[A-Z0-9]{6,12}", new_mid):
+                return False, "ID de medição inválido ou ausente (formato esperado: G-XXXXXXXXXX)."
+            if len(new_sec) < 8:
+                return False, "API Secret ausente ou muito curto — cole-o novamente."
+            base["measurement_id"] = new_mid
+            base["api_secret"] = new_sec
+            os.environ["UFVAI_GA_MEASUREMENT_ID"] = new_mid
+            os.environ["UFVAI_GA_API_SECRET"] = new_sec
+
+        # ── v0.6.7 canal de contato (HTTPS; localhost liberado p/ teste) ──
+        cmsg = ""
+        if contact_endpoint is not None:
+            curl = str(contact_endpoint).strip()
+            if curl and not (curl.startswith("https://") or curl.startswith("http://localhost")):
+                return False, "URL de contato inválida (use https://…)."
+            base["contact_endpoint"] = curl
+            if curl:
+                os.environ["UFVAI_CONTACT_ENDPOINT"] = curl
+                cmsg = " Canal de contato ativo."
+            else:
+                os.environ.pop("UFVAI_CONTACT_ENDPOINT", None)
+                cmsg = " Canal de contato removido."
+
+        if not ga_touched and contact_endpoint is None:
+            return False, "Nada a salvar."
+
+        base["updated"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         os.makedirs(os.path.dirname(_ADMIN_CFG_FILE), exist_ok=True)
         with open(_ADMIN_CFG_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "measurement_id": mid,
-                "api_secret": sec,
-                "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            }, f)
+            json.dump(base, f)
         os.chmod(_ADMIN_CFG_FILE, 0o600)
-        # Aplica imediatamente no processo em execução
-        os.environ["UFVAI_GA_MEASUREMENT_ID"] = mid
-        os.environ["UFVAI_GA_API_SECRET"] = sec
-        return True, "Configuração salva. A coleta inicia quando o usuário aceitar o opt-in nos Termos."
+        return True, ("Configuração salva." if not ga_touched else
+                      "Configuração salva. A coleta inicia quando o usuário aceitar "
+                      "o opt-in nos Termos.") + cmsg
     except Exception as e:
         return False, f"Falha ao salvar: {e}"
 
@@ -109,6 +149,10 @@ def masked_state() -> dict:
         "enabled": enabled(),
     }
     st.update(contact_status())  # v0.6.6: has_email / email_masked / endpoint_set
+    # v0.6.7: URL de contato EFETIVA (env > arquivo) visível SÓ ao admin — é a
+    # URL dele; o API secret continua nunca retornado. Usada p/ preencher o
+    # campo do painel ("o que está no campo é o que será salvo").
+    st["contact_endpoint_url"] = _contact_endpoint()
     return st
 
 
@@ -126,6 +170,22 @@ def masked_state() -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _contact_endpoint() -> str:
+    """(v0.6.7) Endpoint HTTPS do desenvolvedor que recebe o contato opt-in.
+
+    Prioridade: variável de ambiente UFVAI_CONTACT_ENDPOINT > painel Admin
+    (~/.config/ufvai_telemetry.json, chave contact_endpoint).
+    """
+    url = os.environ.get("UFVAI_CONTACT_ENDPOINT", "").strip()
+    if url:
+        return url
+    try:
+        with open(_ADMIN_CFG_FILE, encoding="utf-8") as f:
+            return str(json.load(f).get("contact_endpoint", "") or "").strip()
+    except Exception:
+        return ""
+
+
 def contact_status() -> dict:
     """Estado mascarado do contato — nunca expõe o e-mail completo."""
     prof = _read_profile()
@@ -134,10 +194,13 @@ def contact_status() -> dict:
     if email and "@" in email:
         loc, _, dom = email.partition("@")
         masked = (loc[:2] + "***@" + dom) if len(loc) > 2 else "***@" + dom
+    curl = _contact_endpoint()
     return {
         "has_email": bool(email),
         "email_masked": masked,
-        "contact_endpoint_set": bool(os.environ.get("UFVAI_CONTACT_ENDPOINT", "").strip()),
+        "contact_endpoint_set": bool(curl),
+        "contact_endpoint_source": ("env" if os.environ.get("UFVAI_CONTACT_ENDPOINT", "").strip()
+                                    else ("file" if curl else "")),
     }
 
 
@@ -191,11 +254,11 @@ def clear_contact() -> None:
 def _forward_contact(addr: str, sha: str) -> None:
     """POST {email, email_sha256, …} ao endpoint PRÓPRIO do desenvolvedor.
 
-    Ativado somente se UFVAI_CONTACT_ENDPOINT estiver definido (HTTPS
-    recomendado; ex.: Google Apps Script / servidor do mantenedor).
+    (v0.6.7) Ativado se UFVAI_CONTACT_ENDPOINT estiver definido no ambiente
+    OU salvo pelo painel Admin (ex.: Apps Script → Planilha Google).
     Fire-and-forget, silencioso.
     """
-    url = os.environ.get("UFVAI_CONTACT_ENDPOINT", "").strip()
+    url = _contact_endpoint()
     if not url:
         return
     try:
@@ -212,7 +275,9 @@ def _forward_contact(addr: str, sha: str) -> None:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=3).read(16)
+        # v0.6.7: timeout 8 s — Apps Script tem cold start de ~1-3 s;
+        # 3 s abortava envios válidos na primeira execução do dia.
+        urllib.request.urlopen(req, timeout=8).read(16)
     except Exception:
         pass
 
