@@ -81,23 +81,52 @@ usuário. Desde a v0.6.6, a tela de Termos oferece um campo **opcional** de e-ma
 |---|---|---|
 | Usuário digita o e-mail e clica "Aceitar" | `~/.config/ufvai_profile.json` (chmod 600, com SHA-256 + carimbo) na máquina dele | Consentimento explícito — LGPD art. 7º I |
 | Evento `contact_optin` (contador SEM conteúdo) | GA4 — quantos usuários autorizaram contato | Termos do GA4 permitem; nenhum dado pessoal sai |
-| O endereço em si chega até você | SOMENTE se você definir `UFVAI_CONTACT_ENDPOINT` (URL HTTPS própria, ex.: Apps Script que grava numa planilha). POST JSON: `{product, email, email_sha256, environment, sent_at}` | Consentimento com finalidade declarada |
+| O endereço em si chega até você | SOMENTE se você configurar a **URL de contato** (painel 📊 Telemetria desde a v0.6.7, ou `UFVAI_CONTACT_ENDPOINT`). POST JSON: `{product, email, email_sha256, environment, sent_at}` | Consentimento com finalidade declarada |
 
 ⚠️ **Nunca** envie o e-mail (bruto ou com hash) para o Google Analytics — viola os Termos do
 Google e pode derrubar sua propriedade. O canal do e-mail é separado do canal analítico.
 
-Exemplo de endpoint (Apps Script):
+#### Opção A (recomendada) — Planilha + Apps Script (Google · grátis · ~3 min)
+
+Os endereços caem numa **planilha sua no Google Drive** — mesmo ecossistema do Colab, zero
+servidor, zero custo, dado sob controle do titular (LGPD-friendly).
+
+1. Crie uma planilha nova em [sheets.new](https://sheets.new) (ex.: "UFVAI — contatos");
+2. Menu **Extensões → Apps Script**, apague tudo e cole:
+
 ```javascript
 function doPost(e){
   const d = JSON.parse(e.postData.contents);
-  SpreadsheetApp.openById('SUA_PLANILHA').getSheets()[0]
-    .appendRow([new Date(), d.email, d.environment]);
+  const sh = SpreadsheetApp.openById('COLE_O_ID_DA_PLANILHA').getSheets()[0];
+  sh.appendRow([new Date(), d.email, d.email_sha256, d.environment]);
   return ContentService.createTextOutput('{"ok":true}')
     .setMimeType(ContentService.MimeType.JSON);
 }
 ```
-Configuração: `export UFVAI_CONTACT_ENDPOINT="https://script.google.com/macros/s/…/exec"` no
-`~/PesquisAI/config/ufvai.env` (offline) ou nas variáveis do ambiente Colab.
+
+   *(O ID da planilha é o trecho entre `/d/` e `/edit` na URL dela.)*
+3. **Implantar → Nova implantação → tipo "App da Web"** → *Executar como:* **Eu**;
+   *Quem pode acessar:* **Qualquer pessoa** → **Implantar** (na 1ª vez o Google pedirá
+   autorização OAuth da SUA conta — normal) → copie a URL terminada em `/exec`;
+4. Cole a URL no painel 📊 Telemetria (Admin) → campo **"✉️ URL de contato"** → Salvar.
+   Alternativa por arquivo: `export UFVAI_CONTACT_ENDPOINT="https://script.google.com/macros/s/…/exec"`
+   no `~/PesquisAI/config/ufvai.env` (offline) ou nas variáveis do ambiente Colab.
+5. Teste: `curl -X POST -H "Content-Type: application/json" -d '{"email":"teste@teste"}' "<sua_url>/exec"` — deve surgir uma linha na planilha.
+
+> 💡 Para receber um **e-mail** a cada novo contato sem abrir a planilha: dentro do Apps Script,
+> adicione `MailApp.sendEmail("gustavo.braga@ufv.br", "Novo contato UFVAI", d.email);`
+> antes do `return` (cota gratuita do Gmail: ~100 e-mails/dia).
+
+#### Opção B (avançada) — servidor open-source próprio (self-hosted)
+
+Se preferir não depender de nuvem nenhuma: qualquer serviço open-source que aceite webhook
+HTTP serve — ex.: **Gotify** ou **ntfy** auto-hospedados (notificação no celular), ou um
+Flask/FastAPI seu gravando em SQLite. Basta expor uma URL HTTPS que responda ao POST JSON e
+colá-la no painel, igual à Opção A. Requer manutenção própria (VPS/domínio/TLS) — por isso a
+Opção A segue sendo a recomendada para uso pessoal.
+
+Configuração pela UI (v0.6.7): painel **📊 Telemetria (Admin)** → campo "✉️ URL de contato".
+Deixar vazio = usuários NÃO são encaminhados (fica só o contador anônimo `contact_optin` no GA4).
 
 O usuário pode revogar a qualquer momento: apagando o campo na tela de Termos, removendo
 `~/.config/ufvai_profile.json` ou chamando `POST /api/contact/delete` (LGPD art. 18, VI).
@@ -114,7 +143,7 @@ O usuário pode revogar a qualquer momento: apagando o campo na tela de Termos, 
 |---|---|
 | **Padrão** | ❌ **Desligada por padrão** — nada é enviado sem consentimento |
 | **Canais (v0.6.4)** | 🖥️ **gtag.js client-side** (página, cookie `_ga`, só após aceite) + 📡 **Measurement Protocol server-side** (eventos do app) — ambos sob o MESMO opt-in |
-| **Configuração pela UI** | Painel **📊 Telemetria (Admin)** na barra superior — cola ID + Secret sem editar arquivos (grava `~/.config/ufvai_telemetry.json`, chmod 600) |
+| **Configuração pela UI** | Painel **📊 Telemetria (Admin)** na barra superior — cola ID + Secret + URL de contato (v0.6.7) sem editar arquivos (grava `~/.config/ufvai_telemetry.json`, chmod 600) |
 | **Consentimento** | Checkbox opcional na tela de Termos de Uso (1ª entrada) |
 | **Tecnologia** | GA4 **Measurement Protocol** (envio *server-side*, sem cookies no navegador) |
 | **Conteúdo enviado** | Nome do evento + parâmetros não-pessoais (tabela §3) |

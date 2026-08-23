@@ -1,6 +1,63 @@
 # Changelog — PesquisAI
 
 
+## [0.6.7] — 2026-08-23 — 🖼️ Tela de carregamento do Colab no tema da logomarca · ✉️ Canal de contato configurável pela UI
+
+### Interface
+- **Barra de carregamento desde o primeiro segundo (Colab)**: a antiga barra escura de setup
+  (`progress_bar.py`, card `#0d0f10` com spinner colorido) foi APOSENTADA. Agora existe UM ÚNICO
+  painel leve no tema da logomarca oficial — papel off-white `#f6f5f0`, wordmark "**UFV**"
+  azul-marinho `#2b2d3a` + "**AI**" dourado `#b8912f/#b8912f`, régua fina e tagline
+  "INTELIGÊNCIA ARTIFICIAL" — que nasce ainda na fase de clone do repositório (`PesquisAI.ipynb`
+  embute uma réplica mínima com o mesmo display_id) e percorre TODA a inicialização sem reiniciar:
+  clone → Drive → dependências → skills → núcleo opencode → chaves → ttyd → interface web → 100%.
+  **As mensagens aparecem sempre ABAIXO da barra**, linha a linha (spinner dourado na etapa ativa,
+  ✓ na concluída, ✕ em falhas sem abortar o boot), com percentual monotônico (nunca regressivo).
+- **Arquitetura da barra contínua**: `progress_bar.show()` e o `launch()` alimentam a MESMA
+  instância via novo singleton `launch_app.get_boot_panel()` (mesmo display_id
+  `ufvai_boot_panel`) — fim de barras duplicadas/sobrepostas; `begin()` tornou-se idempotente
+  (não zera % nem histórico) e `active()` conclui automaticamente o checkpoint pendente ao trocar
+  de etapa (nunca dois spinners). Percentuais internos do `launch()` remapeados para continuar
+  acima dos estágios do setup (82→99→100). Renderização por `display_id`/`update_display`
+  (uma única saída atualizada); fora do Colab tudo vira no-op/fallback ASCII legado.
+- **Botão de lançamento no tema da marca**: card claro contínuo com a LOGO REAL embutida em
+  base64 (`assets/logo-oficial-288.jpg`, offline-safe, com fallback wordmark CSS) NO LUGAR do
+  antigo texto "✨ UFVAI pronto"; botão em pílula dourada com tipografia navy "ABRIR O UFVAI".
+  O badge verde separado "✨ UFVAI pronto!" não é mais exibido no Colab (o painel finaliza em
+  100% dentro do próprio painel); fora do Colab mantém-se o print equivalente. Mantidos a classe
+  `.pesquisai-launch` (compat) e cuidados de a11y (`:focus-visible`, `prefers-reduced-motion`).
+- **`PesquisAI.ipynb` atualizado**: rebrand UFVAI (título, instruções, citação ABNT v0.6.7),
+  removido o antigo aviso textual "⏳ PesquisAI — iniciando..." e o `clear_output()` que apagava
+  a saída; o notebook agora abre com o painel da logomarca já na clonagem (~5%) e entrega o
+  comando para `main.run()`, que continua a mesma barra até o botão final.
+
+### Telemetria
+- **URL de contato no painel 📊 Telemetria (Admin)**: novo campo opcional onde o mantenedor cola
+  a URL HTTPS que receberá os e-mails de contato opt-in (ex.: Apps Script → Planilha Google).
+  Sem editar arquivos nem variáveis de ambiente; grava em `~/.config/ufvai_telemetry.json`
+  (chmod 600) e aplica no processo na hora. Prefill da URL efetiva ao abrir o painel +
+  indicador de status/origem (env × painel). Deixar vazio = usuários não são encaminhados.
+- **`save_admin_config()` parcial**: cada campo é independente — dá para salvar só o canal de
+  contato sem redigir ID/Secret do GA4 (que nunca são devolvidos pela API); campo em branco =
+  mantém o valor já salvo (secret não é mais apagado por acidente ao re-salvar).
+- **Validações**: URL de contato exige `https://` (localhost liberado para teste); mensagem de
+  erro específica quando ID/Secret ficam incompletos numa edição parcial do GA4.
+- **Docs**: TELEMETRY.md §Passo 9 reescrito — Opção A recomendada = Planilha + Apps Script
+  (Google, grátis, passo a passo de 3 min + dica de e-mail via MailApp) · Opção B avançada =
+  webhook self-hosted open-source (Gotify/ntfy/Flask).
+
+### Técnico
+- `telemetry.py`: `_contact_endpoint()` (env > arquivo), `contact_status()` com
+  `contact_endpoint_source`, `masked_state()` expõe `contact_endpoint_url` só ao painel Admin;
+- `launch_app.py`: `/api/admin/telemetry` POST aceita `contact_endpoint`;
+- UI (`launch_app_responsive_v041.py`): campo `tel-contact` + status dinâmico + envio no POST.
+
+### Boot visual (v0.6.7, 2026-08-23)
+- `launch_app.py`: `_UFVAI_ICO_SVG` + `_UFL_CSS` + classe `_BootPanel` (begin/active/done/fail/
+  finish) integrada ao `launch()` com try/except que marca ✕ no checkpoint e re-levanta a exceção;
+  `show_launch_button()` reescrito; import de `update_display`; testes em `tests/test_boot_panel.py`.
+
+
 ## [0.6.6] — 2026-08-22 — 🖼️ Favicon UFVAI (incl. Colab) · ✉️ Contato opt-in LGPD
 
 ### Interface

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# UFVAI v0.6.6-offline (engine PesquisAI) — Instalação local
+# UFVAI v0.6.7-offline (engine PesquisAI) — Instalação local
 # ═══════════════════════════════════════════════════════════════
 #
 # Alternativa ao pacote .deb para quem baixou o código-fonte.
@@ -31,7 +31,7 @@ success() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-VERSION="0.6.6"
+VERSION="0.6.7"
 UI_PORT="8001"      # interface web (wrapper HTTP)
 TERM_PORT="8000"    # terminal ttyd
 
