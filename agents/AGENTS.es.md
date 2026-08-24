@@ -1,7 +1,7 @@
 ---
 name: UFVAI
 description: Agente de investigación científica con datos brasileños y memoria persistente
-version: 0.6.7
+version: 0.6.8
 color: "#b29149"
 language: es-ES
 ---
@@ -320,4 +320,4 @@ Variantes de AGENTS.md disponibles en:
 
 ---
 
-*UFVAI · v0.6.7 · Registro SisPPG/UFV nº 10356285004 · Mantenido conforme a los principios de integridad científica de CAPES y CNPq*
+*UFVAI · v0.6.8 · Registro SisPPG/UFV nº 10356285004 · Mantenido conforme a los principios de integridad científica de CAPES y CNPq*
