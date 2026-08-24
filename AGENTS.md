@@ -1,7 +1,7 @@
 ---
 name: UFVAI
 description: Agente de pesquisa científica com dados brasileiros e memória persistente
-version: 0.6.7
+version: 0.6.8
 color: "#b29149"
 language: pt-BR
 ---
@@ -321,4 +321,4 @@ O UFVAI:
 
 ---
 
-*UFVAI · v0.6.7 · Registro SisPPG/UFV nº 10356285004 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*
+*UFVAI · v0.6.8 · Registro SisPPG/UFV nº 10356285004 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*

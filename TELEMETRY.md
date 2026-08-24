@@ -81,7 +81,7 @@ usuário. Desde a v0.6.6, a tela de Termos oferece um campo **opcional** de e-ma
 |---|---|---|
 | Usuário digita o e-mail e clica "Aceitar" | `~/.config/ufvai_profile.json` (chmod 600, com SHA-256 + carimbo) na máquina dele | Consentimento explícito — LGPD art. 7º I |
 | Evento `contact_optin` (contador SEM conteúdo) | GA4 — quantos usuários autorizaram contato | Termos do GA4 permitem; nenhum dado pessoal sai |
-| O endereço em si chega até você | SOMENTE se você configurar a **URL de contato** (painel 📊 Telemetria desde a v0.6.7, ou `UFVAI_CONTACT_ENDPOINT`). POST JSON: `{product, email, email_sha256, environment, sent_at}` | Consentimento com finalidade declarada |
+| O endereço em si chega até você | SOMENTE se você configurar a **URL de contato** (painel 📊 Telemetria desde a v0.6.7, ou `UFVAI_CONTACT_ENDPOINT`). POST JSON: `{product, email, email_sha256, environment, app_version, sent_at}` | Consentimento com finalidade declarada |
 
 ⚠️ **Nunca** envie o e-mail (bruto ou com hash) para o Google Analytics — viola os Termos do
 Google e pode derrubar sua propriedade. O canal do e-mail é separado do canal analítico.
@@ -91,20 +91,14 @@ Google e pode derrubar sua propriedade. O canal do e-mail é separado do canal a
 Os endereços caem numa **planilha sua no Google Drive** — mesmo ecossistema do Colab, zero
 servidor, zero custo, dado sob controle do titular (LGPD-friendly).
 
-1. Crie uma planilha nova em [sheets.new](https://sheets.new) (ex.: "UFVAI — contatos");
-2. Menu **Extensões → Apps Script**, apague tudo e cole:
+1. Abra a planilha do desenvolvedor (https://docs.google.com/spreadsheets/d/149XGyTfPbGs34Wrb8WHBPC8gmzRQKJzvTEmqXlshvgg — ou crie uma nova em [sheets.new](https://sheets.new));
+2. Menu **Extensões → Apps Script**, apague tudo e cole o arquivo pronto
+   **`docs/APPS_SCRIPT_PLANILHA_CONTATO.gs`** (já vem com o ID da planilha acima e
+   cria sozinho a aba **"Contatos UFVAI"** com cabeçalho: Data/hora · E-mail ·
+   SHA-256 · Ambiente · Versão · Produto — sem tocar nas outras abas).
 
-```javascript
-function doPost(e){
-  const d = JSON.parse(e.postData.contents);
-  const sh = SpreadsheetApp.openById('COLE_O_ID_DA_PLANILHA').getSheets()[0];
-  sh.appendRow([new Date(), d.email, d.email_sha256, d.environment]);
-  return ContentService.createTextOutput('{"ok":true}')
-    .setMimeType(ContentService.MimeType.JSON);
-}
-```
-
-   *(O ID da planilha é o trecho entre `/d/` e `/edit` na URL dela.)*
+   *(Para outra planilha: troque `SHEET_ID` no topo do script pelo trecho
+   entre `/d/` e `/edit` na URL dela.)*
 3. **Implantar → Nova implantação → tipo "App da Web"** → *Executar como:* **Eu**;
    *Quem pode acessar:* **Qualquer pessoa** → **Implantar** (na 1ª vez o Google pedirá
    autorização OAuth da SUA conta — normal) → copie a URL terminada em `/exec`;
