@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=UFVAI
+GenericName=Agente de pesquisa científica
+Comment=Interface UFVAI (engine PesquisAI) · modo offline · LLM local via Ollama
+Exec=/usr/local/bin/pesquisai
+Icon=/opt/pesquisai/assets/ufvai-256.png
+Terminal=false
+Categories=Science;Education;
+Keywords=ufvai;pesquisai;research;science;ibge;obsidian;agent;ia;
+StartupWMClass=UFVAI
+StartupNotify=true
