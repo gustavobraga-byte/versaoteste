@@ -1,66 +1,121 @@
 /**
- * APPS_SCRIPT_PLANILHA_CONTATO.gs — UFVAI
- * Canal de contato opt-in → Planilha Google do desenvolvedor.
- *
- * COMO USAR (resumo — guia completo em TELEMETRY.md §Passo 9):
- *   1. Crie uma planilha em https://sheets.new (ex.: "UFVAI — contatos");
- *   2. Extensões → Apps Script → apague tudo e cole ESTE arquivo;
- *   3. Substitua COLE_O_ID_DA_PLANILHA pelo ID da planilha
- *      (trecho entre /d/ e /edit na URL dela);
- *   4. Implantar → Nova implantação → App da Web
- *        Executar como: Eu  ·  Quem pode acessar: Qualquer pessoa
- *      → autorize sua conta (1ª vez) → copie a URL terminada em /exec;
- *   5. Cole a URL no painel 📊 Telemetria (Admin) do UFVAI → campo
- *      "✉️ URL de contato" → Salvar.
- *
- * Colunas gravadas: Data/hora · E-mail · SHA-256 · Ambiente · Versão do app
- * Newsletter (opcional): a linha "MailApp" abaixo envia um aviso por e-mail
- * a cada novo contato (cota gratuita do Gmail ≈ 100/dia). Apague a linha
- * se não quiser receber os avisos.
+ * UFVAI — Webhook de Contato Opt-in → Google Sheets
+ * ===================================================
+ * Recebe POST JSON do UFVAI (telemetry._forward_contact) e grava na planilha
+ * "UFVAI — Contatos (0.6.8)" criada automaticamente.
+ * 
+ * Payload esperado (telemetry.py _forward_contact):
+ * {
+ *   "product": "ufvai",
+ *   "email": "usuario@dominio.br",
+ *   "email_sha256": "abc123...",
+ *   "environment": "colab" | "local",
+ *   "app_version": "0.6.8",
+ *   "sent_at": "2026-08-24T21:53:00"
+ * }
+ * 
+ * Configuração (2 min):
+ * 1. Abra a planilha: https://docs.google.com/spreadsheets/d/149XGyTfPbGs34Wrb8WHBPC8gmzRQKJzvTEmqXlshvgg/edit
+ * 2. Menu Extensões → Apps Script → apague o código e cole ESTE arquivo inteiro.
+ * 3. Edite SHEET_ID abaixo se usar outra planilha (ou mantenha o ID acima).
+ * 4. Implantar → Nova implantação → Tipo: Aplicativo da Web
+ *    - Executar como: Eu
+ *    - Quem pode acessar: Qualquer pessoa  ← obrigatório (webhook público)
+ *    → Copie a URL terminada em /exec
+ * 5. Cole a URL no painel 📊 Telemetria (Admin) → campo "✉️ URL de contato" → Salvar
+ *    ou em ~/PesquisAI/config/ufvai.env → UFVAI_CONTACT_ENDPOINT="URL"
+ * 
+ * Segurança: valida e-mail com regex simples; rejeita payload sem e-mail.
+ * Auditoria: grava linha com timestamp do servidor + dados recebidos.
+ * Notificação opcional por e-mail: descomente MailApp.sendEmail abaixo.
  */
 
-var SHEET_ID = 'COLE_O_ID_DA_PLANILHA';          // ← obrigatório
-var NOTIFY_EMAIL = 'gustavo.braga@ufv.br';       // ← opcional (avisos)
+var SHEET_ID = "149XGyTfPbGs34Wrb8WHBPC8gmzRQKJzvTEmqXlshvgg";
+var SHEET_NAME = "Contatos UFVAI";
+var NOTIFICAR_POR_EMAIL = false; // true = envia e-mail a cada novo contato
+var EMAIL_DO_DEV = "gustavo.braga@ufv.br";
 
 function doPost(e) {
   try {
-    var d = JSON.parse(e.postData.contents);
-    var sh = SpreadsheetApp.openById(SHEET_ID).getSheets()[0];
-
-    // Cabeçalho na primeira execução
-    if (sh.getLastRow() === 0) {
-      sh.appendRow(['Data/hora', 'E-mail', 'SHA-256', 'Ambiente', 'Produto']);
+    var body = {};
+    if (e && e.postData && e.postData.contents) {
+      body = JSON.parse(e.postData.contents);
+    } else if (e && e.parameter) {
+      body = e.parameter;
+    } else {
+      return response(200, {ok: false, message: "Payload vazio."});
     }
 
-    sh.appendRow([
-      new Date(),
-      d.email || '',
-      d.email_sha256 || '',
-      d.environment || '',
-      d.product || 'ufvai',
-    ]);
-
-    // Aviso por e-mail (newsletter) — comente para desativar
-    if (NOTIFY_EMAIL) {
-      MailApp.sendEmail(
-        NOTIFY_EMAIL,
-        'Novo contato UFVAI (' + (d.environment || '?') + ')',
-        'E-mail: ' + (d.email || '') +
-        '\nAmbiente: ' + (d.environment || '') +
-        '\nRecebido em: ' + new Date().toLocaleString('pt-BR')
-      );
+    var email = String(body.email || "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      return response(200, {ok: false, message: "E-mail inválido."});
     }
 
-    return ContentService.createTextOutput('{"ok":true}')
-      .setMimeType(ContentService.MimeType.JSON);
+    // Abrir planilha
+    var ss = SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      sheet = ss.insertSheet(SHEET_NAME);
+      sheet.appendRow(["Data/hora","E-mail","SHA-256","Ambiente","Versão","Produto"]);
+    }
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["Data/hora","E-mail","SHA-256","Ambiente","Versão","Produto"]);
+    }
+
+    var now = new Date();
+    var row = [
+      body.sent_at || Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"),
+      email,
+      String(body.email_sha256 || ""),
+      String(body.environment || ""),
+      String(body.app_version || body.version || ""),
+      String(body.product || "ufvai")
+    ];
+    sheet.appendRow(row);
+
+    // Notificação opcional
+    if (NOTIFICAR_POR_EMAIL && EMAIL_DO_DEV) {
+      try {
+        MailApp.sendEmail({
+          to: EMAIL_DO_DEV,
+          subject: "🧬 UFVAI — Novo contato opt-in: " + email,
+          body: "Novo contato voluntário no UFVAI\n" +
+                "-----------------------------------\n" +
+                "E-mail:     " + email + "\n" +
+                "SHA-256:    " + (body.email_sha256 || "—") + "\n" +
+                "Ambiente:   " + (body.environment || "—") + "\n" +
+                "Versão:     " + (body.app_version || body.version || "—") + "\n" +
+                "Enviado em: " + (body.sent_at || now.toISOString()) + "\n\n" +
+                "Planilha: https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/edit"
+        });
+      } catch (err) {}
+    }
+
+    return response(200, {ok: true, message: "Contato registrado."});
   } catch (err) {
-    return ContentService.createTextOutput('{"ok":false,"error":"' + err + '"}')
-      .setMimeType(ContentService.MimeType.JSON);
+    return response(500, {ok: false, message: "Erro: " + err});
   }
 }
 
-// Teste manual: rode doGet no editor (▶ Executar) para conferir a autorização
-// e ver a URL de implantação nos registros.
-function doGet() {
-  Logger.log('URL de implantação termina em /exec — cole no painel Admin do UFVAI.');
+function doGet(e) {
+  return response(200, {ok: true, message: "UFVAI webhook ativo. Use POST."});
+}
+
+function response(code, obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Teste manual: rode no editor do Apps Script e veja o log
+function testar() {
+  var e = {postData: {contents: JSON.stringify({
+    product: "ufvai",
+    email: "teste@ufv.br",
+    email_sha256: "abc123",
+    environment: "colab",
+    app_version: "0.6.8",
+    sent_at: new Date().toISOString()
+  })}};
+  var r = doPost(e);
+  Logger.log(r.getContent());
 }
