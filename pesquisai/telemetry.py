@@ -28,6 +28,11 @@ import time
 import urllib.request
 import uuid
 
+try:
+    from .__version__ import __version__ as _APP_VERSION  # v0.6.7: payload de contato carrega a versão
+except Exception:
+    _APP_VERSION = "unknown"
+
 _CID_FILE = os.path.expanduser("~/.config/ufvai_cid")
 _CONSENT_FILE = os.path.expanduser("~/.config/ufvai_consent.json")
 _ADMIN_CFG_FILE = os.path.expanduser("~/.config/ufvai_telemetry.json")  # v0.6.4
@@ -251,35 +256,84 @@ def clear_contact() -> None:
         pass
 
 
+_SHEET_ID_COLAB_FALLBACK = "149XGyTfPbGs34Wrb8WHBPC8gmzRQKJzvTEmqXlshvgg"
+_SHEET_NAME_COLAB_FALLBACK = "Contatos UFVAI"
+
+def _forward_contact_direct_sheet(addr: str, sha: str) -> None:
+    """Fallback Colab: escrita direta na planilha via Sheets API.
+
+    Usado quando UFVAI_CONTACT_ENDPOINT não está configurado mas estamos no Colab.
+    Requer que a planilha esteja compartilhada como 'Qualquer pessoa com link - Editor'
+    (feito automaticamente na criação 0.6.8) e que o usuário esteja autenticado no Colab
+    (auth.authenticate_user). Firewall silencioso.
+    """
+    try:
+        import gspread  # type: ignore
+        from google.auth import default  # type: ignore
+        creds, _ = default()
+        if not creds or not creds.valid:
+            # tenta refresh silencioso
+            try:
+                from google.auth.transport.requests import Request
+                creds.refresh(Request())
+            except Exception:
+                return
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(_SHEET_ID_COLAB_FALLBACK)
+        try:
+            ws = sh.worksheet(_SHEET_NAME_COLAB_FALLBACK)
+        except Exception:
+            ws = sh.sheet1
+        row = [
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+            addr,
+            sha,
+            "colab",
+            _APP_VERSION,
+            "ufvai",
+        ]
+        ws.append_row(row, value_input_option="RAW")
+    except Exception:
+        pass
+
+
 def _forward_contact(addr: str, sha: str) -> None:
     """POST {email, email_sha256, …} ao endpoint PRÓPRIO do desenvolvedor.
 
     (v0.6.7) Ativado se UFVAI_CONTACT_ENDPOINT estiver definido no ambiente
     OU salvo pelo painel Admin (ex.: Apps Script → Planilha Google).
-    Fire-and-forget, silencioso.
+    (v0.6.8) Fallback Colab: se sem endpoint e em /content, tenta escrita direta
+    via Sheets API (planilha compartilhada como anyone writer). Fire-and-forget.
     """
     url = _contact_endpoint()
-    if not url:
-        return
-    try:
-        payload = {
-            "product": "ufvai",
-            "email": addr,
-            "email_sha256": sha,
-            "environment": "colab" if os.path.isdir("/content") else "local",
-            "sent_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        # v0.6.7: timeout 8 s — Apps Script tem cold start de ~1-3 s;
-        # 3 s abortava envios válidos na primeira execução do dia.
-        urllib.request.urlopen(req, timeout=8).read(16)
-    except Exception:
-        pass
+    if url:
+        try:
+            payload = {
+                "product": "ufvai",
+                "email": addr,
+                "email_sha256": sha,
+                "environment": "colab" if os.path.isdir("/content") else "local",
+                "app_version": _APP_VERSION,
+                "sent_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            # v0.6.7: timeout 8 s — Apps Script tem cold start de ~1-3 s;
+            # 3 s abortava envios válidos na primeira execução do dia.
+            urllib.request.urlopen(req, timeout=8).read(16)
+            return
+        except Exception:
+            pass
+    # Fallback Colab direto (sem endpoint)
+    if os.path.isdir("/content"):
+        try:
+            _forward_contact_direct_sheet(addr, sha)
+        except Exception:
+            pass
 
 
 def kill_switch_active() -> bool:

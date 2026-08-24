@@ -57,6 +57,8 @@ def show(step: int = 0, total: int = 4, message: str = "Iniciando...") -> None:
         pass
 
     # ── Fallback ASCII (terminal/offline sem painel disponível) ──
+    if IN_COLAB:
+        return
     bar = "█" * (pct // 4) + "░" * (25 - pct // 4)
     print(f"\r  {message:<42} {bar} {pct:>3}%", end="", flush=True)
 

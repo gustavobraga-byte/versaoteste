@@ -10,6 +10,14 @@ Otimizações implementadas:
   6. Barra de progresso reflete economia de tempo real
   7. Skills definidas centralmente em constants.py (SKILL_REGISTRY)
 
+v0.6.7 — POLÍTICA "PAINEL ÚNICO": nenhuma mensagem textual é impressa no
+fluxo de inicialização (Colab). Marca, versão, estágios e progresso são
+comunicados exclusivamente pelo painel da logomarca (_BootPanel via
+progress_bar.show()). Falhas críticas vão para `logger` (stderr) para
+não poluir o painel nem perder diagnóstico. O único trecho textual
+restante é `_offline_keep_alive()` — modo .deb/offline, onde NÃO há
+painel e os prints são a única saída (feedback exigido desde v0.6.1).
+
 Uso:
     from run_fast import run
     run()
@@ -36,7 +44,6 @@ from .constants import (
     WRAPPER_DIR,
     TERMINAL_PORT,
     WRAPPER_PORT,
-    VERSION,
     logger,
 )
 from .jokes import next_joke
@@ -81,18 +88,26 @@ def setup_drive() -> tuple[str, str]:
                         os.makedirs(os.path.join(_local, _sub), exist_ok=True)
                     except Exception:
                         pass
-                print(f"⚠️  Fora do Colab — usando diretório local {_local}")
                 return _local, "https://drive.google.com/drive/my-drive"
         except Exception:
             pass
         os.makedirs("/tmp/pesquisai_work", exist_ok=True)
-        print("⚠️  Fora do Colab — usando diretório local temporário /tmp/pesquisai_work.")
         return "/tmp/pesquisai_work", "https://drive.google.com/drive/my-drive"
 
     mounted = os.path.exists("/content/drive/My Drive")
     if not mounted:
-        print("📂 Montando Google Drive...")
-        drive.mount("/content/drive", force_remount=False)
+        # v0.6.8: painel único — suprimir saída ruidosa do drive.mount
+        # ("Mounted at /content/drive") que poluiria o stdout. Mensagem já
+        # está no painel (progress_bar 20% → "Montando Google Drive...").
+        import contextlib, io
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                drive.mount("/content/drive", force_remount=False)
+        except Exception:
+            try:
+                drive.mount("/content/drive", force_remount=False)
+            except Exception:
+                pass
 
     os.makedirs(DRIVE_PATH, exist_ok=True)
     os.chdir(DRIVE_PATH)
@@ -111,7 +126,6 @@ def setup_drive() -> tuple[str, str]:
     except Exception:
         pass
 
-    print(f"📂 Diretório: {DRIVE_PATH}")
     return DRIVE_PATH, folder_url
 
 
@@ -120,17 +134,15 @@ def setup_drive() -> tuple[str, str]:
 def _install_opencode_if_missing() -> bool:
     """Instala o opencode se não estiver presente."""
     if _check_bin("opencode"):
-        print("✅ opencode já instalado — pulando.")
         return True
 
-    print("📦 Instalando OpenCode...")
     for cmd in [
         "curl -fsSL https://opencode.ai/install | bash",
     ]:
         r = _run(cmd, check=False)
         if r.returncode == 0 and _check_bin("opencode"):
             return True
-    print("❌ Todas as tentativas de instalação do opencode falharam.")
+    logger.error("Falha ao instalar o opencode — todas as tentativas falharam.")
     return False
 
 
@@ -152,7 +164,7 @@ def _install_system_deps() -> None:
             capture_output=True, text=True, check=False,
         )
         if r.returncode != 0:
-            print("⚠️  apt-get falhou. Tentando download manual do ttyd...")
+            logger.warning("apt-get falhou (%s) — tentando download manual do ttyd...", tasks)
             subprocess.run(
                 ["curl", "-fsSL",
                  "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64",
@@ -161,13 +173,9 @@ def _install_system_deps() -> None:
             )
             subprocess.run(["chmod", "+x", "/usr/local/bin/ttyd"],
                            capture_output=True, text=True, check=False)
-    else:
-        print("✅ ttyd e ferramentas de sistema já instalados — pulando.")
 
     if not _check_bin("uv"):
         _run("curl -LsSf https://astral.sh/uv/install.sh | sh", check=False)
-    else:
-        print("✅ uv já instalado — pulando.")
 
 
 def _install_python_deps() -> None:
@@ -270,7 +278,6 @@ def _setup_theme_and_agent() -> None:
     tui_theme = existing_tui.get("theme", "pesquisai")
     with open(TUI_JSON, "w") as f:
         json.dump({"$schema": "https://opencode.ai/tui.json", "theme": tui_theme}, f, indent=2)
-    print("✅ Temas configurados (escuro + claro).")
 
     agents_md = os.path.join(os.path.dirname(os.path.dirname(__file__)), "AGENTS.md")
     content = open(agents_md, encoding="utf-8").read() if os.path.exists(agents_md) else "# PesquisAI"
@@ -367,7 +374,6 @@ color: "#b29149"
     cfg["default_agent"] = "pesquisai"
     with open(OPENCODE_CFG, "w") as f:
         json.dump(cfg, f, indent=2)
-    print("✅ Agente configurado (com autopilot de salvamento).")
 
 
 def setup_dependencies() -> None:
@@ -421,12 +427,8 @@ def setup_skills() -> None:
             for repo, name, _ in SKILL_REGISTRY
         }
         for f in as_completed(fut):
-            name = fut[f]
-            if f.result():
-                print(f"✅ {name}")
-            else:
-                print(f"❌ Falha em {name}")
-                failed_skills.append(name)
+            if not f.result():
+                failed_skills.append(fut[f])
 
     # Verificar skills essenciais
     for skill_name in failed_skills:
@@ -444,9 +446,6 @@ def setup_skills() -> None:
             if os.path.exists(dest):
                 shutil.rmtree(dest)
             shutil.copytree(src, dest, dirs_exist_ok=True)
-            print(f"📋 {dest_name} copiado.")
-
-    print("✅ Todas as skills instaladas com sucesso!")
 
 
 # ── Etapa 3.5: Obsidian Vault (autopilot) ─────────────────────
@@ -456,23 +455,14 @@ def setup_obsidian_vault() -> None:
 
     Cria a estrutura de pastas, a daily note de hoje, o MOC raiz,
     e inicia a sessão de log automático. Tudo é no-op se falhar.
+    v0.6.7: sem prints — o estado é visível na interface; falha vai
+    para o logger e o boot continua sem memória.
     """
     try:
         from pesquisai.obsidian.autopilot import auto_init
-        result = auto_init()
-        if result["enabled"]:
-            if result["created"]:
-                print(f"🧠 Vault do Obsidian criado em: {result['vault_path']}")
-            else:
-                print(f"🧠 Vault do Obsidian detectado: {result['vault_path']}")
-            if result["daily_created"]:
-                print("📝 Daily note de hoje criada.")
-            if result["session_started"]:
-                print("🤖 Autopilot de salvamento ativado.")
-        else:
-            print("🧠 Obsidian memory: desativado (vault não configurado)")
+        auto_init()
     except Exception as exc:
-        print(f"⚠️  Obsidian memory: falha ao inicializar ({exc}) — continuando sem memória")
+        logger.warning("Obsidian memory: falha ao inicializar (%s) — continuando sem memória", exc)
 
 
 # ── Etapa 4: Launch ───────────────────────────────────────────
@@ -538,24 +528,21 @@ def _offline_keep_alive(banner_url: str) -> None:
 def run() -> None:
     """Orquestrador principal do PesquisAI.
 
-    Sequência: Drive → Dependências → Skills → Launch
+    Sequência: Drive → Dependências → Skills → Obsidian vault → Launch.
+    v0.6.7: nenhuma saída textual — todo o feedback visual vem do painel
+    de boot da logomarca (_BootPanel), do clone até os 100% + botão.
     """
-    t0 = time.time()
     progress(0, 4, "Preparando...")
 
-    print("=" * 50)
-    print(f"  🧑‍🔬  PESQUISAI v{VERSION} (MODO RÁPIDO)")
-    print("=" * 50)
+    # v0.6.7: o banner textual "🧑‍🔬 PESQUISAI (MODO RÁPIDO)" foi aposentado —
+    # o painel de boot da logomarca (display "ufvai_boot_panel") já comunica
+    # marca, versão e progresso desde o primeiro segundo do carregamento.
 
     folder_path, drive_url = setup_drive()
     setup_dependencies()
     setup_skills()
     setup_obsidian_vault()
     banner_url = setup_launch(folder_path, drive_url)
-
-    elapsed = time.time() - t0
-    print(f"\n⚡ Inicializado em {elapsed:.0f}s ")
-    print()
 
     # v0.6.3: fora do Colab, mantém o processo vivo para que a interface
     # continue acessível (threads daemon morreriam com o fim de run()).

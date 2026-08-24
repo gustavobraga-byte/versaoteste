@@ -24,8 +24,24 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
+  v0.6.8 — 🧹 Painel único (zero prints) + LGPD reordenação + planilha de contatos
+            • POLÍTICA PAINEL ÚNICO: em Colab todo feedback visual vem só do
+              painel de boot (_BootPanel); prints verbosos suprimidos
+              (launch_app/ttyd/jokes → logger.debug), warnings httplib2
+              silenciados, drive.mount sem "Mounted at..." — painel é a única
+              saída; offline mantém prints normais. progress_bar ASCII só offline.
+            • LGPD: opcionais (estatísticas + e-mail) AGORA ANTES do
+              "Li e aceito" — ordem: [ ] Opcional estatísticas → [ ] Opcional
+              e-mail → [x] Li e aceito (obrigatório); vTerms 3 → 4.
+            • Versão na tela de Termos corrigida: placeholder {__VERSION__} e
+              variante __UFVAI_VERSION__ substituídos por 0.6.8; citação ABNT
+              atualizada; favicon/proxy continua ok.
+            • Planilha de contatos: criação automática via Drive/Sheets API
+              (título "UFVAI — Contatos"), Apps Script Web App pronto
+              (APPS_SCRIPT_PLANILHA_CONTATO.gs), endpoint injetado no painel
+              Admin e em ufvai.env; fallback manual documentado.
   v0.6.7 — 🖼️ Tela de carregamento do Colab no tema da logomarca +
-            ✉️ canal de contato opt-in configurável pela UI
+             ✉️ canal de contato opt-in configurável pela UI
             • BARRA DESDE O INÍCIO: um único painel leve no tema da
               logomarca (papel off-white, wordmark UFV navy + AI dourado)
               nasce na fase de clone do notebook e percorre TODA a
@@ -236,13 +252,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.7"
+__version__: str = "0.6.8"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-08-23"
-__codename__: str = "Tela de carregamento no tema da logomarca + canal de contato opt-in"
+__release_date__: str = "2026-08-24"
+__codename__: str = "Painel único de carregamento + reordenação LGPD + planilha de contatos"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

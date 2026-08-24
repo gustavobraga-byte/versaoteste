@@ -24,6 +24,25 @@ except ImportError:
 
 from .constants import TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, logger
 from .jokes import next_joke
+
+# v0.6.8 — POLÍTICA PAINEL ÚNICO (Colab): nenhum print verboso vai para stdout —
+# todo feedback visual vem do painel de boot (_BootPanel). Em Colab o stdout é
+# roteado para logger.debug; offline continua com prints normais.
+if IN_COLAB:
+    import builtins as _builtins
+    import logging as _logging
+    try:
+        _logging.getLogger("google_auth_httplib2").setLevel(_logging.ERROR)
+    except Exception:
+        pass
+    _orig_print = _builtins.print
+    def _silent_print(*a, **k):
+        try:
+            # rotear para logger para não perder diagnóstico
+            logger.debug(" ".join(str(x) for x in a))
+        except Exception:
+            pass
+    _builtins.print = _silent_print
 from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
 try:

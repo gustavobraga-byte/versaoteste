@@ -796,7 +796,7 @@ def create_wrapper_html(
       <button class="tb-icon" onclick="toggleTheme()" id="theme-toggle" title="Alternar tema" data-theme="pesquisai" data-i18n-title="theme.toggle">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       </button>
-      <button class="tb-icon" onclick="openTelemetry()" id="telemetry-btn" title="Telemetria (Admin)" data-i18n-title="telemetry.title">
+      <button class="tb-icon" onclick="openTelemetry()" id="telemetry-btn" title="Telemetria (Admin)" style="display:none !important" data-i18n-title="telemetry.title">
         <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="4" width="3" height="14"/></svg>
       </button>
       <button class="lang-btn" id="lang-btn" onclick="toggleLangMenu()" aria-haspopup="true" aria-expanded="false" title="Idioma / Language">
@@ -2001,6 +2001,14 @@ def create_wrapper_html(
 
     // ── Painel Admin de Telemetria (v0.6.4) ─────────────────────
     function openTelemetry() {
+      // v0.6.8: painel invisível ao usuário comum - só abre para admin
+      // Admin pode abrir via: URL ?admin=1, ou localStorage.setItem('ufvai_admin','1'), ou Ctrl+Shift+Alt+T
+      const isAdmin = new URLSearchParams(window.location.search).has('admin') || localStorage.getItem('ufvai_admin') === '1';
+      if (!isAdmin) {
+        // Silenciosamente ignora para usuário comum - telemetria continua via opt-in dos Termos
+        console.debug('Telemetria: painel restrito ao admin');
+        return;
+      }
       const o = document.getElementById("telemetry-overlay");
       o.style.opacity = "1"; o.style.pointerEvents = "all";
       fetch(BASE + "/api/admin/telemetry").then(r=>r.json()).then(s=>{
@@ -2033,6 +2041,14 @@ def create_wrapper_html(
       const o = document.getElementById("telemetry-overlay");
       o.style.opacity = "0"; o.style.pointerEvents = "none";
     }
+    // Atalho secreto admin: Ctrl+Shift+Alt+T libera painel de telemetria
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.shiftKey && e.altKey && e.key.toLowerCase() === 't') {
+        localStorage.setItem('ufvai_admin', '1');
+        openTelemetry();
+      }
+    });
+
     async function saveTelemetry() {
       const mid = document.getElementById("tel-mid").value.trim();
       const sec = document.getElementById("tel-secret").value.trim();
@@ -3219,7 +3235,7 @@ def create_wrapper_html(
            style="width:96px;height:96px;border-radius:50%;border:2px solid rgba(178,145,73,.55);box-shadow:0 4px 18px rgba(0,0,0,.45);background:#fff;object-fit:cover;" />
     </div>
     <div class="t-brand"><b>UFV</b><em>AI</em></div>
-    <div class="t-sub">Pesquisa científica com integridade · UFV/DER · v__UFV_VERSION__</div>
+    <div class="t-sub">Pesquisa científica com integridade · UFV/DER · v{__VERSION__}</div>
     <div class="t-scroll">
       <h4>🇧🇷 Português</h4>
       <p>O UFVAI é fornecido sob a <b>licença MIT</b>, sem garantias, e apoia pesquisa científica
@@ -3241,8 +3257,7 @@ def create_wrapper_html(
       <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/TERMS_OF_USE.md" target="_blank" rel="noopener">📄 Termos completos v2.0 / Full terms</a>
       <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/PRIVACY.md" target="_blank" rel="noopener">🔒 Privacidade · LGPD / Privacy</a>
     </div>
-    <label class="t-check"><input type="checkbox" id="t-accept">
-      <span>Li e aceito os Termos de Uso e a Licença MIT &nbsp;<span style="opacity:.7">(I have read and accept the Terms of Use and the MIT License)</span></span></label>
+    <!-- v0.6.8: LGPD — opcionais ANTES do obrigatório (ordem crescente de exigência) -->
     <label class="t-check"><input type="checkbox" id="t-analytics">
       <span>Opcional: permitir estatísticas anônimas de uso &nbsp;<span style="opacity:.7">(Optional: allow anonymous usage stats — GA Measurement Protocol, no content, opt-out anytime via UFVAI_TELEMETRY=0)</span></span></label>
     <label class="t-check" style="display:block">
@@ -3257,6 +3272,8 @@ def create_wrapper_html(
         O Google Analytics <b>nunca</b> recebe seu endereço (apenas um contador anônimo). Você pode apagar a qualquer momento (art. 18).<br>
         Used solely to contact you about UFVAI; stored locally and never sent to Google Analytics.</span>
     </label>
+    <label class="t-check"><input type="checkbox" id="t-accept">
+      <span>Li e aceito os Termos de Uso e a Licença MIT &nbsp;<span style="opacity:.7">(I have read and accept the Terms of Use and the MIT License)</span></span></label>
     <div class="t-actions">
       <button class="t-no" id="t-decline-btn">Não aceitar / Decline</button>
       <button class="t-ok" id="t-accept-btn" disabled>Aceitar e começar / Accept</button>
@@ -3266,8 +3283,8 @@ def create_wrapper_html(
 <script>
 (function(){
   try{
-    // v0.6.6: termos v3 → re-consentimento (novo aviso de contato opcional)
-    if(localStorage.getItem("ufvai_terms_version")==="3") return;
+    // v0.6.8: termos v4 → re-consentimento (reordenação LGPD: opcionais antes do aceite) (novo aviso de contato opcional)
+    if(localStorage.getItem("ufvai_terms_version")==="4") return;
     var ov=document.getElementById("terms-overlay");
     if(!ov) return;
     ov.style.display="flex";
@@ -3299,7 +3316,7 @@ def create_wrapper_html(
       var v=(em&&em.value||"").trim();
       if(!_validMail(v)){ _showErr("E-mail inválido — corrija ou apague o campo. / Invalid e-mail."); try{em.focus();}catch(e){} return; }
       if(err) err.textContent="";
-      localStorage.setItem("ufvai_terms_version","3");
+      localStorage.setItem("ufvai_terms_version","4");
       localStorage.setItem("ufvai_analytics", an.checked?"1":"0");
       _post(true, an.checked, v);
       ov.style.display="none";
@@ -3345,7 +3362,7 @@ def create_wrapper_html(
   }
   window._ufvaiGaStart=_start;
   try{
-    if(localStorage.getItem("ufvai_terms_version")==="3" &&
+    if(localStorage.getItem("ufvai_terms_version")==="4" &&
        localStorage.getItem("ufvai_analytics")==="1"){
       setTimeout(_start,1200); // deixa a UI carregar primeiro
     }
@@ -3363,6 +3380,11 @@ def create_wrapper_html(
     html = html.replace("{__TERMINAL_URL__}", terminal_url)
     html = html.replace("{__DRIVE_URL__}", drive_url)
     html = html.replace("{__VERSION__}", VERSION)
+    # v0.6.8: garantir que qualquer variante do placeholder seja substituída
+    # (screenshot mostrava v__UFVAI_VERSION__ literal por cache/branch antigo)
+    html = html.replace("__UFVAI_VERSION__", VERSION)
+    html = html.replace("__VERSION__", VERSION)
+    html = html.replace("v__UFVAI_VERSION__", f"v{VERSION}")
     html = html.replace("__UFVAI_TOKEN__", session_token or "")
     html = html.replace("{RESPONSIVE_CSS}", RESPONSIVE_CSS)
     # v0.6.4: GA4 client-side (gtag.js) — ID do admin (env > default embutido);
