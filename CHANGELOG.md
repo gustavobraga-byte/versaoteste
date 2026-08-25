@@ -1,5 +1,66 @@
 # Changelog — PesquisAI
 
+## [0.6.9] — 2026-08-25 — 📜 Termos v2.1: telemetria opt-out · e-mail de ativação · perfil persistente · botão Manual
+
+### Termos de Uso v2.1 (re-consentimento — `_TV=5`)
+- **Telemetria ativa por padrão (opt-out)**: base legítimo interesse (**LGPD art. 7º, IX**);
+  caixa de telemetria vem **marcada** na tela de Termos; oposição a qualquer momento desliga
+  (art. 18, §2º) via caixa ou `UFVAI_TELEMETRY=0`.
+- **Sem cookies**: gtag carrega com `analytics_storage:'denied'` — nenhum cookie `_ga` é criado.
+- **Coleta resumida aos dados padrão do Analytics**: evento custom `ufvai_session` **removido**;
+  canal client-side limitado ao `page_view` padrão.
+- **E-mail de ativação obrigatório** (base **art. 7º, V** — execução do serviço): backend devolve
+  **400** se o aceite vier sem e-mail válido; eliminação (art. 18) mantida e re-solicitada na
+  próxima abertura.
+
+### Perfil persistente e pré-preenchimento
+- **Novo arquivo**: `backups/ufvai_consentimento.json` (Colab: no Drive; offline:
+  `~/PesquisAI/backups/`) com `{email, email_sha256, analytics, terms_version, accepted_at,
+  app_version}` — helpers `_consent_backup_file()` / `_read_consent_profile()`.
+- **GET /api/consent** agora inclui `"profile"` → frontend pré-preenche e-mail/checkboxes e,
+  se a mesma versão dos Termos já foi aceita, **pula a tela diretamente**.
+- Fallback local preservado (`~/.config/ufvai_profile.json`).
+
+### Interface
+- **Botão 📘 Manual** ao lado do Dashboard de Saúde; nova rota **`GET /api/manual`** serve o
+  `MANUAL.md` local (cadeia de candidatos raiz → fallback GitHub); modal com Recarregar +
+  Ver fonte; i18n `manual.*` nos 5 idiomas.
+- **Ícones distintos**: Diretrizes do Agente = clipboard-list 📋 · Manual = book-open 📘.
+- **Tela de Termos responsiva**: card com `max-height:100dvh` + rolagem interna; media queries
+  ≤640px (coluna nos botões, logo 64px, input 16px anti-zoom iOS) e landscape ≤600px.
+
+### Correções
+- **DebugView (bug da v0.6.2)**: `UFVAI_TELEMETRY_DEBUG` agora envia `"debug_mode": 1` nos params
+  do evento — o antigo parâmetro de URL `&debug_view=1` era ignorado pelo GA4.
+- **Logs fora do Drive (Colab)**: `ttyd.log` → `/tmp/ufvai-logs/`; a pasta `logs/` não é mais
+  criada no Drive do usuário.
+
+### Documentação
+- `docs/TERMS_OF_USE.md` → **v2.1** (§7 reescrito: opt-out art. 7º IX sem cookies + e-mail art. 7º V);
+  `PRIVACY.md` (tabela de saída de dados + nota sobre cookie/e-mail); `TELEMETRY.md` ("as três
+  condições" → duas; canais revisados).
+
+## [0.6.8] — 2026-08-24 — 🧹 Painel único (zero prints) · reordenação LGPD · planilha de contatos
+
+### Interface
+- **Política painel único (Colab)**: todo feedback visual vem só do painel de boot (`_BootPanel`);
+  prints verbosos suprimidos (`logger.debug`), warnings httplib2 silenciados, "Mounted at..." do
+  Drive oculto; offline mantém prints normais.
+- **Reordenação LGPD na tela de Termos**: opcionais (estatísticas + e-mail) ANTES do aceite
+  obrigatório; `ufvai_terms_version=4`.
+- **Versão na tela de Termos corrigida**: placeholders `{__VERSION__}`/`__UFVAI_VERSION__`
+  substituídos por 0.6.8; citação ABNT atualizada.
+
+### Novidades
+- **Planilha de contatos automática**: criação via Drive/Sheets API (título "UFVAI — Contatos"),
+  Apps Script pronto (`APPS_SCRIPT_PLANILHA_CONTATO.gs`), endpoint injetado no painel Admin e em
+  `ufvai.env`; fallback manual documentado (`GUIA_PLANILHA_CONTATOS_0.6.8.md`).
+
+### Empacotamento
+- **Rebuild `.deb` 0.6.8-2** (24/08): staging por seleção a partir da fonte; launcher estável
+  (5.541 B, Chrome --app/curl-wait); validação md5 49 arquivos = fonte; versões 0.6.5-1 e 0.6.8-1
+  **vetadas** (launcher regressivo/contaminação por aninhamento).
+
 
 ## [0.6.7] — 2026-08-23 — 🖼️ Tela de carregamento do Colab no tema da logomarca · ✉️ Canal de contato configurável pela UI
 

@@ -24,15 +24,17 @@ LLMs em nuvem e não é controlado pelo UFVAI.
 
 | Dado | Destino | Quando | Como desligar |
 |---|---|---|---|
-| Contadores anônimos de uso +, se consentido, cookie `_ga` do navegador (gtag.js, `anonymize_ip`) | Google Analytics 4 (dois canais: página + eventos do app, mesmo ID) | **Somente se você aceitar** o opt-in na tela de Termos | `UFVAI_TELEMETRY=0` · revogar consentimento · ver `TELEMETRY.md` |
+| Contadores anônimos de uso (`page_view` padrão; **sem cookie `_ga`** desde v2.1) | Google Analytics 4 (dois canais: página + eventos do app, mesmo ID) | Ativa por padrão (opt-out, LGPD art. 7º IX); desligue a qualquer momento | `UFVAI_TELEMETRY=0` · desmarcar telemetria na tela de Termos · ver `TELEMETRY.md` |
 | Requisições a APIs públicas de dados (IBGE/SIDRA, NASA POWER, etc.) | Órgãos/fonte correspondentes | Quando uma skill consulta dados | Inerente à funcionalidade |
 | Chamadas ao LLM do provedor escolhido | Provedor configurado por você | A cada interação com o agente | Não usar o provedor |
 
 A telemetria **não inclui**: prompts, respostas, nomes de arquivos/projetos, conteúdo de notas,
-endereços de e-mail, identificadores de conta. O cookie `_ga` (gtag.js client-side) só é criado
-após o seu consentimento explícito na tela de Termos. Detalhamento completo: [`TELEMETRY.md`](TELEMETRY.md).
-O e-mail de contato opcional (v0.6.6) segue regras próprias — ver seção abaixo; ele também
-**nunca** vai para o Google Analytics.
+endereços de e-mail, identificadores de conta. Desde a v2.1 dos Termos **nenhum cookie `_ga` é
+criado** (o gtag roda com `analytics_storage:'denied'` e só envia o `page_view` padrão).
+Detalhamento completo: [`TELEMETRY.md`](TELEMETRY.md). O e-mail de **ativação obrigatória**
+(v0.6.9, LGPD art. 7º V — antes opcional na v0.6.6) segue regras próprias — ver seção abaixo;
+ele também **nunca** vai para o Google Analytics e pode ser eliminado a qualquer momento
+(LGPD art. 18).
 
 ## Termos de Uso
 

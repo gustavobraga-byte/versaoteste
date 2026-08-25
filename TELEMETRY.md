@@ -63,7 +63,9 @@ Sem a flag DEBUG, os eventos vão para **Relatórios → Tempo real** (até algu
 | E-mails **somente** via opt-in de contato (Passo 9) — nunca pelo GA4 | E-mail no GA4 (proibido pelos Termos do Google) |
 
 ### Passo 8 — Conformidade LGPD (resumo operacional)
-- **Base legal:** consentimento (art. 7º, I) — opt-in granular na tela de Termos, revogável a qualquer momento;
+- **Base legal (v0.6.9):** **legítimo interesse (art. 7º, IX)** — contadores anônimos sem cookies,
+  ativa por padrão, com direito de oposição a qualquer momento (art. 18, §2º) via caixa da tela de
+  Termos ou `UFVAI_TELEMETRY=0`; até a v0.6.8 era consentimento opt-in (art. 7º, I);
 - **Identificador:** UUID aleatório gerado localmente (`~/.config/ufvai_cid`), sem tabela de ligação
   a identidades — tratado como dado pessoal por cautela (pseudonimização não afasta a LGPD);
 - **Transferência internacional:** Google Analytics (arts. 33–36) — declarada nos Termos v2.0 §5
@@ -135,12 +137,12 @@ O usuário pode revogar a qualquer momento: apagando o campo na tela de Termos, 
 
 | Aspecto | Como é |
 |---|---|
-| **Padrão** | ❌ **Desligada por padrão** — nada é enviado sem consentimento |
-| **Canais (v0.6.4)** | 🖥️ **gtag.js client-side** (página, cookie `_ga`, só após aceite) + 📡 **Measurement Protocol server-side** (eventos do app) — ambos sob o MESMO opt-in |
+| **Padrão (v0.6.9)** | ✅ **Ativa por padrão (opt-out)** — contadores anônimos, sem cookies; o usuário pode se opor a qualquer momento (`UFVAI_TELEMETRY=0` ou desmarcar a caixa na tela de Termos) — LGPD art. 7º IX + art. 18 §2º |
+| **Canais (v0.6.9)** | 🖥️ **gtag.js client-side** (`page_view` padrão, SEM cookie `_ga`, gate: aceite dos Termos v2.1 e não-oposição) + 📡 **Measurement Protocol server-side** (eventos do app) |
 | **Configuração pela UI** | Painel **📊 Telemetria (Admin)** na barra superior — cola ID + Secret + URL de contato (v0.6.7) sem editar arquivos (grava `~/.config/ufvai_telemetry.json`, chmod 600) |
-| **Consentimento** | Checkbox opcional na tela de Termos de Uso (1ª entrada) |
+| **Consentimento/oposição** | Caixa de telemetria na tela de Termos (marcada = ativa); desmarcá-la ou `UFVAI_TELEMETRY=0` desliga (opt-out) |
 | **Tecnologia** | GA4 **Measurement Protocol** (envio *server-side*, sem cookies no navegador) |
-| **Conteúdo enviado** | Nome do evento + parâmetros não-pessoais (tabela §3) |
+| **Conteúdo enviado** | Nome do evento + parâmetros não-pessoais (tabela §3); client-side limitado ao `page_view` padrão (evento custom `ufvai_session` removido na v0.6.9) |
 | **O que NUNCA vai** | Prompts, respostas da IA, notas do vault, caminhos de arquivo, chaves de API, e-mails, IDs de conta Google |
 | **Identificador** | UUID aleatório gerado localmente (`~/.config/ufvai_cid`) — não é vinculado a ninguém |
 | **Kill-switch global** | `export UFVAI_TELEMETRY=0` desliga mesmo com consentimento ativo |
@@ -206,16 +208,20 @@ Todos os valores são categóricos/anônimos:
 
 ---
 
-## 4. As três condições (todas obrigatórias para enviar)
+## 4. As duas condições (todas obrigatórias para enviar)
 
 ```python
 def enabled() -> bool:
-    if kill_switch_active():   return False   # UFVAI_TELEMETRY=0
+    if kill_switch_active():   return False   # UFVAI_TELEMETRY=0 (oposição do usuário)
     if not configured():       return False   # faltam UFVAI_GA_* no ambiente
     return consented()                        # ~/.config/ufvai_consent.json.analytics == true
 ```
 
-1. **Sem kill-switch** — `UFVAI_TELEMETRY=0` vence tudo.
+> **v0.6.9:** o antigo item "consentimento opt-in" tornou-se **não-oposição** — a caixa de
+> telemetria vem marcada (ativa por padrão, base legítimo interesse art. 7º IX, sem cookies);
+> desmarcá-la registra a oposição (art. 18 §2º) e desliga imediatamente.
+
+1. **Sem kill-switch / sem oposição** — `UFVAI_TELEMETRY=0` ou desmarcar a caixa vencem tudo.
 2. **Com configuração do mantenedor** — o dono do projeto precisa definir as variáveis de ambiente:
    - `UFVAI_GA_MEASUREMENT_ID` (ex.: `G-XXXXXXXXXX`)
    - `UFVAI_GA_API_SECRET` (gerado no GA4: Admin → Data Streams → Measurement Protocol API secrets)
@@ -231,28 +237,34 @@ def enabled() -> bool:
    EOF
    chmod 600 ~/PesquisAI/config/ufvai.env
    ```
-3. **Com consentimento do usuário** — checkbox da tela de Termos.
+3. ~~Com consentimento do usuário~~ — **(v0.6.9) incorporado ao item 1:** a caixa de telemetria
+   vem **marcada** (opt-out); desmarcá-la registra a oposição e desliga (`consented() == False`).
 
-### Testando (DebugView — v0.6.2+)
+### Testando (DebugView — v0.6.2+ · parâmetro corrigido na v0.6.9)
 1. No GA4: **Admin → DebugView** (deixe a página aberta).
 2. Ative o modo debug e reinicie: `export UFVAI_TELEMETRY_DEBUG=1` antes de iniciar o UFVAI.
 3. Os eventos (`terms_accepted`, `app_started`, `lang_changed`…) aparecem em tempo real no DebugView; **não gravam relatórios**. Sem a flag, os eventos vão para Relatórios → Tempo real (até alguns minutos de atraso).
+
+> ⚠️ v0.6.9 corrige um bug da v0.6.2: o modo debug usava o parâmetro de URL `&debug_view=1`
+> (ignorado pelo GA4); agora envia `"debug_mode": 1` nos params do evento, como exige o
+> Measurement Protocol.
 
 > ⚠️ O Measurement Protocol exige internet. No modo 100% offline os eventos são descartados silenciosamente (thread daemon, timeout de 3 s).
 
 ---
 
-## 5. Dois canais, um único consentimento (v0.6.4)
+## 5. Dois canais, uma única condição de aceite (v0.6.4 · revisado v0.6.9)
 
-Desde a v0.6.4 o UFVAI usa **canal duplo**, ambos condicionados ao mesmo opt-in da tela de Termos:
+Desde a v0.6.4 o UFVAI usa **canal duplo**, condicionado à mesma tela de Termos. Desde a **v0.6.9**
+o canal client-side é limitado ao `page_view` padrão (**sem** evento custom e **sem** cookie `_ga`):
 
 | Canal | O que envia | Quando dispara |
 |---|---|---|
-| 🖥️ **gtag.js client-side** (`G-CMVTFP2M6F`) | `page_view`, sessão, idioma, `ufvai_session` (versão + colab/local), cookie `_ga` no navegador | Só após aceite dos Termos **com** estatísticas marcadas; recarregar a página mantém se consentimento salvo |
+| 🖥️ **gtag.js client-side** (`G-CMVTFP2M6F`) | Apenas `page_view` padrão — **sem cookie `_ga`** (`analytics_storage:'denied'`) e **sem** `ufvai_session` (removido na v0.6.9) | Após aceite dos Termos (versão vigente) **sem** oposição à telemetria; recarregar mantém o estado salvo |
 | 📡 **MP server-side** (mesmo ID) | Eventos de aplicação (`app_started`, backups, provedores…) via Python | A cada evento, se `enabled()` |
 
-O gtag usa `anonymize_ip:true`. Sem consentimento, **nenhum script do googletagmanager é
-carregado** — não há requisição, nem cookie, nem ping.
+O gtag usa `anonymize_ip:true`. Com oposição registrada (caixa desmarcada), **nenhum script do
+googletagmanager é carregado** — não há requisição, nem cookie, nem ping.
 
 ---
 
