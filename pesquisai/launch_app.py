@@ -3,6 +3,7 @@ import subprocess
 import time
 import threading
 import json
+import hashlib
 import shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -645,17 +646,57 @@ def _wait_port_open(port: int, timeout_s: float = 10.0) -> bool:
     return False
 
 
-def _ttyd_log_file():
-    """v0.6.5: arquivo de log do ttyd (antes: DEVNULL — falhas invisíveis).
+def _consent_backup_file():
+    """v0.6.9: arquivo PERSISTENTE de consentimento+contato do usuário.
 
-    Offline: ~/PesquisAI/logs/ttyd.log · Colab: <Drive>/PesquisAI/logs/ttyd.log.
-    Em caso de falha ao criar, retorna DEVNULL.
+    Colab: <Drive>/PesquisAI/backups/ufvai_consentimento.json — sobrevive à
+    sessão (diferente de ~/.config, efêmero) e permite pré-preencher a tela de
+    Termos nas reaberturas. Offline: ~/PesquisAI/backups/ufvai_consentimento.json.
+    Retorna o caminho ou None em caso de falha.
     """
     try:
         base = ("/content/drive/My Drive/PesquisAI"
                 if os.path.isdir("/content/drive/My Drive")
                 else os.path.expanduser("~/PesquisAI"))
-        log_dir = os.path.join(base, "logs")
+        bdir = os.path.join(base, "backups")
+        os.makedirs(bdir, exist_ok=True)
+        return os.path.join(bdir, "ufvai_consentimento.json")
+    except Exception:
+        return None
+
+
+def _read_consent_profile() -> dict:
+    """v0.6.9: lê o perfil persistente (backup do Drive → fallback local)."""
+    prof: dict = {}
+    bpath = _consent_backup_file()
+    if bpath and os.path.isfile(bpath):
+        try:
+            with open(bpath, encoding="utf-8") as fh:
+                prof = json.load(fh) or {}
+        except Exception:
+            prof = {}
+    if not prof.get("email"):
+        try:
+            with open(os.path.expanduser("~/.config/ufvai_profile.json"), encoding="utf-8") as fh:
+                local = json.load(fh) or {}
+            prof.setdefault("email", local.get("email", ""))
+            prof.setdefault("email_sha256", local.get("email_sha256", ""))
+        except Exception:
+            pass
+    return prof
+
+
+def _ttyd_log_file():
+    """v0.6.5: arquivo de log do ttyd (antes: DEVNULL — falhas invisíveis).
+    v0.6.9: NO COLAB o log NÃO vai mais para o Drive do usuário (poluição);
+    vai para /tmp/ufvai-logs/ttyd.log (efêmero). Offline: ~/PesquisAI/logs/ttyd.log
+    (máquina local, não é nuvem). Em caso de falha ao criar, retorna DEVNULL.
+    """
+    try:
+        if os.path.isdir("/content/drive/My Drive"):
+            log_dir = "/tmp/ufvai-logs"          # v0.6.9: fora do Drive do usuário
+        else:
+            log_dir = os.path.join(os.path.expanduser("~/PesquisAI"), "logs")
         os.makedirs(log_dir, exist_ok=True)
         return open(os.path.join(log_dir, "ttyd.log"), "ab")
     except Exception:
@@ -1729,6 +1770,10 @@ def start_wrapper_server():
             if p == "/api/consent":
                 # v0.6.0: estado do consentimento (Termos de Uso/telemetria)
                 # v0.6.6: + estado do contato (e-mail mascarado, nunca exposto)
+                # v0.6.9: + profile persistente (backups/ufvai_consentimento.json)
+                #          p/ pré-preencher a tela de Termos nas reaberturas.
+                #          O e-mail volta EM CLARO somente ao próprio usuário,
+                #          na sessão autenticada dele (token obrigatório).
                 state = {"accepted": False, "analytics": False}
                 try:
                     with open(os.path.expanduser("~/.config/ufvai_consent.json"), encoding="utf-8") as fh:
@@ -1739,7 +1784,53 @@ def start_wrapper_server():
                     state.update({"contact": _tel_contact_status()})
                 except Exception:
                     pass
+                try:
+                    prof = _read_consent_profile()
+                    state["profile"] = {
+                        "email": str(prof.get("email", "")),
+                        "analytics": bool(prof.get("analytics", True)),
+                        "accepted": bool(prof.get("accepted", False)),
+                        "terms_version": str(prof.get("terms_version", "")),
+                    }
+                except Exception:
+                    state["profile"] = {}
                 self._json(200, {"ok": True, **state})
+                return
+
+            # v0.6.9: Manual do UFVAI — serve o MANUAL.md (botão 📘 da barra)
+            if p == "/api/manual":
+                _cands = []
+                _here = os.path.dirname(os.path.abspath(__file__))
+                _parent = os.path.dirname(_here)
+                _cands.append(os.path.join(_parent, "MANUAL.md"))
+                for _ in range(5):
+                    _here = os.path.dirname(_here)
+                    if _here and _here != os.path.dirname(_here):
+                        _cands.append(os.path.join(_here, "MANUAL.md"))
+                if _folder_path:
+                    _cands.append(os.path.join(_folder_path, "MANUAL.md"))
+                    _cands.append(os.path.join(os.path.dirname(_folder_path), "MANUAL.md"))
+                _cands.append(os.path.join(os.getcwd(), "MANUAL.md"))
+                _mcontent = None
+                _mserved = None
+                for _mf in _cands:
+                    if os.path.isfile(_mf):
+                        try:
+                            with open(_mf, "r", encoding="utf-8") as fh:
+                                _mcontent = fh.read()
+                            _mserved = _mf
+                            break
+                        except Exception:
+                            continue
+                if _mcontent is None:
+                    self._json(200, {
+                        "ok": False,
+                        "error": "MANUAL.md não encontrado localmente.",
+                        "github": "https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md",
+                        "tried": _cands[:6],
+                    })
+                    return
+                self._json(200, {"ok": True, "source": _mserved, "content": _mcontent})
                 return
 
             self.send_error(404)
@@ -2460,18 +2551,29 @@ def start_wrapper_server():
 
             if p == "/api/consent":
                 # v0.6.0: grava aceite dos Termos + opt-in de telemetria
-                # v0.6.6: e-mail de contato OPCIONAL (LGPD art. 7º I) — só
-                # gravado/enviado se o usuário digitou; GA4 recebe apenas
-                # contador anônimo ("contact_optin"), nunca o endereço.
+                # v0.6.6: e-mail de contato OPCIONAL (LGPD art. 7º I)
+                # v0.6.9: (a) telemetria ATIVA POR PADRÃO — opt-out (art. 7º IX,
+                #            sem cookie, oposição art. 18 §2º);
+                #         (b) E-MAIL OBRIGATÓRIO para aceitar (art. 7º V —
+                #            execução do serviço; eliminação art. 18 mantida);
+                #         (c) perfil persistente em backups/ufvai_consentimento.json
+                #            (sobrevive à sessão → pré-preenche a tela nas reaberturas).
                 accepted = bool(body.get("accepted", False))
-                analytics = bool(body.get("analytics", False))
+                analytics = bool(body.get("analytics", True))  # v0.6.9: opt-out (default ativo)
+                terms_version = str(body.get("terms_version") or "5").strip()
                 contact_msg = ""
-                if "contact_email" in body:
-                    cemail = str(body.get("contact_email") or "").strip()
-                    if cemail:
-                        _ok, contact_msg = _tel_save_contact(cemail)
-                    else:
-                        _tel_clear_contact()  # campo esvaziado → eliminação (art. 18)
+                cemail = str(body.get("contact_email") or "").strip()
+                if accepted and not cemail:
+                    return self._json(400, {
+                        "ok": False,
+                        "error": "E-mail obrigatório: informe um e-mail válido para ativar o UFVAI.",
+                    })
+                if cemail:
+                    _ok, contact_msg = _tel_save_contact(cemail)
+                    if not _ok:
+                        return self._json(400, {"ok": False, "error": contact_msg})
+                elif "contact_email" in body:
+                    _tel_clear_contact()  # campo esvaziado → eliminação (art. 18)
                 cpath = os.path.expanduser("~/.config/ufvai_consent.json")
                 try:
                     os.makedirs(os.path.dirname(cpath), exist_ok=True)
@@ -2483,6 +2585,22 @@ def start_wrapper_server():
                     }, open(cpath, "w", encoding="utf-8"))
                 except Exception:
                     pass
+                # v0.6.9: perfil persistente (Drive/offline) p/ pré-preenchimento
+                try:
+                    bpath = _consent_backup_file()
+                    if bpath and accepted and cemail:
+                        json.dump({
+                            "email": cemail.lower(),
+                            "email_sha256": hashlib.sha256(cemail.lower().encode("utf-8")).hexdigest(),
+                            "analytics": analytics,
+                            "accepted": True,
+                            "terms_version": terms_version,
+                            "app_version": VERSION,
+                            "accepted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                            "purpose": "ativação/contato UFVAI (LGPD art. 7º V) · telemetria opt-out (art. 7º IX)",
+                        }, open(bpath, "w", encoding="utf-8"))
+                except Exception:
+                    pass
                 try:
                     _tel_set_consent(analytics)
                     if accepted:
@@ -2492,8 +2610,6 @@ def start_wrapper_server():
                 resp = {"ok": True, "accepted": accepted, "analytics": analytics}
                 if contact_msg:
                     resp["contact_message"] = contact_msg
-                    if not contact_msg.lower().startswith(("contato registrado", "contact")):
-                        resp["ok"] = True  # aceite dos termos vale mesmo se o contato falhar
                 self._json(200, resp)
                 return
 

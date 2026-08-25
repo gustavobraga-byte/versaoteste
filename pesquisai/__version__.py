@@ -24,6 +24,31 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
+  v0.6.9 — 📜 Termos v2.1: telemetria opt-out + e-mail obrigatório +
+            perfil persistente + botão Manual
+            • TELEMETRIA OPT-OUT (LGPD art. 7º IX): caixa vem MARCADA
+              (ativa por padrão), sem cookie _ga (analytics_storage
+              'denied'); evento custom ufvai_session removido — canal
+              client-side limitado ao page_view padrão; oposição a
+              qualquer momento (art. 18 §2º) via caixa ou UFVAI_TELEMETRY=0.
+            • E-MAIL DE ATIVAÇÃO OBRIGATÓRIO (art. 7º V): POST /api/consent
+              devolve 400 sem e-mail válido; eliminação (art. 18) mantida.
+            • PERFIL PERSISTENTE: backups/ufvai_consentimento.json (Colab:
+              no Drive) guarda e-mail+SHA-256+preferências; GET /api/consent
+              expõe profile → tela de Termos pré-preenchida e, se a mesma
+              versão já foi aceita, pulada diretamente.
+            • LOGS FORA DO DRIVE (Colab): ttyd.log → /tmp/ufvai-logs/;
+              pasta logs/ do Drive não é mais criada.
+            • BOTÃO 📘 MANUAL: rota /api/manual serve o MANUAL.md local
+              (fallback GitHub); modal com Recarregar/Ver fonte; ícones
+              distintos p/ Diretrizes (clipboard-list) e Manual (book-open);
+              i18n manual.* nos 5 idiomas; tela de Termos responsiva
+              (mobile/tablet, media queries ≤640px e landscape).
+            • CORREÇÃO DebugView (bug v0.6.2): UFVAI_TELEMETRY_DEBUG agora
+              envia "debug_mode":1 no params do evento (o antigo parâmetro
+              de URL &debug_view=1 era ignorado pelo GA4).
+            • Docs: TERMS_OF_USE v2.1 §7 (opt-out art. 7º IX + e-mail
+              art. 7º V), PRIVACY.md, TELEMETRY.md §§4-5.
   v0.6.8 — 🧹 Painel único (zero prints) + LGPD reordenação + planilha de contatos
             • POLÍTICA PAINEL ÚNICO: em Colab todo feedback visual vem só do
               painel de boot (_BootPanel); prints verbosos suprimidos
@@ -252,13 +277,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.8"
+__version__: str = "0.6.9"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-08-24"
-__codename__: str = "Painel único de carregamento + reordenação LGPD + planilha de contatos"
+__release_date__: str = "2026-08-25"
+__codename__: str = "Termos v2.1: telemetria opt-out + e-mail de ativação + perfil persistente + botão Manual"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

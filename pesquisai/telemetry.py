@@ -425,8 +425,11 @@ def event(name: str, params: dict | None = None) -> None:
         url = f"{_MP_URL}?measurement_id={mid}&api_secret={sec}"
         # v0.6.2: UFVAI_TELEMETRY_DEBUG=1 → envia para o DebugView do GA4
         # (visível em tempo real em Admin → DebugView), sem gravar relatórios.
+        # v0.6.9: CORREÇÃO — o parâmetro correto do Measurement Protocol é o
+        # campo "debug_mode":1 no EVENTO (não "&debug_view=1" na URL, que o
+        # GA4 ignorava silenciosamente e os eventos nunca apareciam no DebugView).
         if os.environ.get("UFVAI_TELEMETRY_DEBUG", "").strip().lower() in ("1", "true", "yes", "on"):
-            url += "&debug_view=1"
+            payload["events"][0]["params"]["debug_mode"] = 1
 
         def _send() -> None:
             try:

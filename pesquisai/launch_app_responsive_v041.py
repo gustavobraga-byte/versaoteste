@@ -781,6 +781,9 @@ def create_wrapper_html(
       <button class="tb-icon" onclick="openHealth()" title="Dashboard de Saúde" data-i18n-title="dashboard.title">
         <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       </button>
+      <button class="tb-icon" onclick="openManual()" title="Manual do UFVAI" data-i18n-title="manual.title">
+        <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+      </button>
       <button class="tb-icon" onclick="openSessions()" title="Histórico de Sessões" data-i18n-title="sessions.title">
         <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
       </button>
@@ -788,7 +791,7 @@ def create_wrapper_html(
         <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
       </button>
       <button class="tb-icon" onclick="openAgents()" title="Diretrizes do Agente" data-i18n-title="agents.title">
-        <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6M9 16h4"/></svg>
       </button>
       <button class="tb-icon" onclick="openMemory()" id="memory-btn" title="Memória UFVAI" data-i18n-title="memory.tooltip">
         <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 7l1 1v3a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-3l1-1c1.5-2 3-4 3-7a7 7 0 0 0-7-7z"/><path d="M9 22h6"/><path d="M12 2v20"/></svg>
@@ -848,6 +851,7 @@ def create_wrapper_html(
     </button>
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
     <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
+    <button class="modal-close" onclick="openManual(); toggleMobileMenu();">📘 <span data-i18n="manual.title">Manual do UFVAI</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
@@ -1019,6 +1023,26 @@ def create_wrapper_html(
         <button onclick="reloadAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="ui.loading">Recarregar</span></button>
         <div style="flex:1;"></div>
         <a id="agents-source-link" href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS.pt.md" target="_blank" class="footer-link" style="font-size:10.5px;" data-i18n="agents.open_source">Ver fonte</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal do Manual do UFVAI (v0.6.9 — MANUAL.md renderizado) -->
+  <div id="manual-overlay" onclick="if(event.target===this)closeManual()" style="position:fixed;inset:0;background:var(--ov-dim);display:flex;align-items:center;justify-content:center;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s;">
+    <div id="manual-modal" class="modal-shell" style="background:var(--rail);border:1px solid var(--line);border-radius:10px;padding:0;width:720px;max-width:94vw;max-height:88vh;box-shadow:0 28px 72px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">📘</span>
+        <div style="flex:1;min-width:0;">
+          <div class="modal-title" style="margin-bottom:2px;" data-i18n="manual.title">Manual do UFVAI</div>
+          <div style="font-size:10.5px;color:var(--ink-muted);" data-i18n="manual.subtitle">Guia completo de uso (MANUAL.md)</div>
+        </div>
+        <button onclick="closeManual()" class="modal-close" style="width:auto;padding:4px 10px;font-size:11px;" aria-label="Fechar">✕</button>
+      </div>
+      <div id="manual-content" class="markdown-body" style="flex:1;overflow-y:auto;padding:22px 26px;font-size:12.5px;line-height:1.65;color:var(--ink);" data-i18n="manual.loading">Carregando manual…</div>
+      <div style="padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.02);">
+        <button onclick="reloadManual()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="ui.loading">Recarregar</span></button>
+        <div style="flex:1;"></div>
+        <a id="manual-source-link" href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md" target="_blank" class="footer-link" style="font-size:10.5px;" data-i18n="manual.open_source">Ver fonte</a>
       </div>
     </div>
   </div>
@@ -2142,8 +2166,59 @@ def create_wrapper_html(
           el.textContent = mdText;
         }
       } catch (e) {
-        el.textContent = mdText;
         console.error("Erro ao renderizar markdown:", e);
+      }
+    }
+
+    // ── v0.6.9: Manual do UFVAI (botão 📘 ao lado do Dashboard de Saúde) ──
+    let _manualCache = null;
+
+    async function openManual() {
+      const overlay = document.getElementById("manual-overlay");
+      if (overlay) {
+        overlay.style.opacity = "1";
+        overlay.style.pointerEvents = "all";
+      }
+      await loadManual();
+    }
+
+    function closeManual() {
+      const overlay = document.getElementById("manual-overlay");
+      if (overlay) {
+        overlay.style.opacity = "0";
+        overlay.style.pointerEvents = "none";
+      }
+    }
+
+    function reloadManual() {
+      _manualCache = null;
+      loadManual();
+    }
+
+    async function loadManual(forceReload = false) {
+      const contentEl = document.getElementById("manual-content");
+      if (!contentEl) return;
+      if (!forceReload && _manualCache) {
+        renderAgentsContent(contentEl, _manualCache);
+        return;
+      }
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      contentEl.textContent = dict["manual.loading"] || "Carregando manual…";
+      try {
+        const r = await fetch(BASE + "/api/manual");
+        const d = await r.json();
+        if (d.ok && d.content) {
+          _manualCache = d.content;
+          renderAgentsContent(contentEl, d.content);
+        } else {
+          // v0.6.9: fallback — abre o manual no GitHub
+          const gh = d.github || "https://github.com/gustavobraga-byte/PesquisAI/blob/main/MANUAL.md";
+          contentEl.innerHTML = (dict["manual.error"] || "Manual não encontrado localmente.")
+            + ' <a href="' + gh + '" target="_blank" style="color:var(--gold,#b8912f)">'
+            + (dict["manual.open_source"] || "Abrir no GitHub") + " ↗</a>";
+        }
+      } catch (e) {
+        contentEl.textContent = (dict["manual.error"] || "Erro") + " — " + e.message;
       }
     }
 
@@ -3203,9 +3278,12 @@ def create_wrapper_html(
 <style>
   #terms-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;
     justify-content:center;background:rgba(10,13,17,.93);backdrop-filter:blur(6px);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;padding:16px;}
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;padding:16px;
+    overflow-y:auto;-webkit-overflow-scrolling:touch;}
   #terms-overlay .t-card{max-width:660px;width:100%;background:#141c24;border:1px solid #b29149;
-    border-radius:14px;padding:24px 26px;color:#e8e6e0;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+    border-radius:14px;padding:24px 26px;color:#e8e6e0;box-shadow:0 20px 60px rgba(0,0,0,.5);
+    max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;
+    -webkit-overflow-scrolling:touch;margin:auto;}
   #terms-overlay .t-brand{font-family:"Montserrat","Syne",sans-serif;font-size:26px;
     letter-spacing:-0.02em;margin-bottom:2px;}
   #terms-overlay .t-brand b{font-weight:700}#terms-overlay .t-brand em{font-style:normal;font-weight:600;color:#b29149}
@@ -3218,13 +3296,63 @@ def create_wrapper_html(
   #terms-overlay .t-links a{color:#D1A705;text-decoration:none;border-bottom:1px dotted #D1A705;}
   #terms-overlay label.t-check{display:flex;gap:9px;align-items:flex-start;font-size:12px;
     margin-bottom:8px;cursor:pointer;line-height:1.45;}
-  #terms-overlay input[type=checkbox]{accent-color:#b29149;width:15px;height:15px;margin-top:1px;}
+  #terms-overlay input[type=checkbox]{accent-color:#b29149;width:15px;height:15px;margin-top:1px;flex:0 0 auto;}
   #terms-overlay .t-actions{display:flex;gap:10px;margin-top:14px;}
   #terms-overlay button{flex:1;padding:11px 14px;border-radius:9px;font-size:13px;font-weight:600;
     cursor:pointer;border:1px solid transparent;transition:.15s;}
   #terms-overlay .t-ok{background:linear-gradient(135deg,#D1A705,#b29149);color:#141c24;border:none;}
   #terms-overlay .t-ok:disabled{opacity:.35;cursor:not-allowed;}
   #terms-overlay .t-no{background:transparent;color:#9a9790;border-color:rgba(154,151,144,.35);}
+  /* ── v0.6.9: RESPONSIVO (celulares/tablets — tudo visível e rolável) ── */
+  @media (max-width:640px){
+    #terms-overlay{padding:10px;padding-left:max(10px,env(safe-area-inset-left));
+      padding-right:max(10px,env(safe-area-inset-right));align-items:flex-start;
+      -webkit-text-size-adjust:100%;text-size-adjust:100%;}
+    #terms-overlay .t-card{padding:16px 14px;padding-bottom:calc(16px + env(safe-area-inset-bottom));
+      border-radius:12px;max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px);}
+    #terms-overlay .t-card > div:first-child{margin-bottom:6px;}
+    #terms-overlay .t-card img[alt^="UFVAI"]{width:64px !important;height:64px !important;}
+    #terms-overlay .t-brand{font-size:21px;}
+    #terms-overlay .t-sub{font-size:10px;margin-bottom:10px;}
+    /* rolagem ÚNICA no card (sem scroll aninhado — mais natural no toque) */
+    #terms-overlay .t-scroll{max-height:none;padding:10px 11px;font-size:11.5px;}
+    #terms-overlay .t-scroll h4{font-size:11.5px;}
+    #terms-overlay .t-links{gap:9px;font-size:10.5px;margin-bottom:10px;}
+    #terms-overlay label.t-check{font-size:11.5px;gap:8px;}
+    #terms-overlay input[type=checkbox]{width:14px;height:14px;}
+    #terms-overlay input[type=email]{font-size:16px !important;padding:10px 11px !important;}
+    #terms-overlay .t-actions{flex-direction:column;gap:8px;margin-top:12px;}
+    /* v0.6.9: alvo de toque ≥44px (Apple HIG/Material) + sem highlight de tap */
+    #terms-overlay button{padding:12px 10px;font-size:13px;flex:none;width:100%;
+      min-height:46px;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+    #terms-overlay input[type=checkbox]{width:18px !important;height:18px !important;flex:0 0 auto;}
+  }
+  /* telas MUITO estreitas (ex.: iPhone SE, 320–400px) */
+  @media (max-width:400px){
+    #terms-overlay{padding:8px;}
+    #terms-overlay .t-card{padding:14px 12px;}
+    #terms-overlay .t-card img[alt^="UFVAI"]{width:54px !important;height:54px !important;}
+    #terms-overlay .t-brand{font-size:19px;}
+    #terms-overlay .t-scroll{font-size:11px;}
+    #terms-overlay .t-links{flex-direction:column;gap:7px;}
+    #terms-overlay label.t-check{font-size:11px;}
+  }
+  /* ALTURA baixa (landscape de celular OU tablet esticado) — prioriza o formulário */
+  @media (max-height:520px){
+    #terms-overlay{align-items:flex-start;}
+    #terms-overlay .t-card{padding:12px 16px;max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);}
+    #terms-overlay .t-card img[alt^="UFVAI"]{width:40px !important;height:40px !important;margin-bottom:4px !important;}
+    #terms-overlay .t-brand{font-size:17px;margin-bottom:0;}
+    #terms-overlay .t-sub{margin-bottom:6px;}
+    #terms-overlay .t-scroll{max-height:none;font-size:10.5px;padding:8px 10px;}
+    #terms-overlay .t-links{margin-bottom:8px;}
+    #terms-overlay .t-actions{gap:6px;margin-top:8px;}
+  }
+  @media (max-height:600px) and (orientation:landscape){
+    #terms-overlay{align-items:flex-start;}
+    #terms-overlay .t-scroll{max-height:none;}
+    #terms-overlay .t-card img[alt^="UFVAI"]{width:48px !important;height:48px !important;}
+  }
 </style>
 <div id="terms-overlay" role="dialog" aria-modal="true" aria-label="Termos de Uso">
   <div class="t-card">
@@ -3242,35 +3370,42 @@ def create_wrapper_html(
       com <b>integridade</b>: valide as saídas da IA e declare o uso de IA conforme a Portaria CNPq
       nº 2.664/2026. Você é responsável pelas suas chaves de API (armazenadas cifradas no seu Google
       Drive), pelo conteúdo gerado e pelas políticas dos provedores de IA. Nenhum conteúdo do seu
-      vault é enviado a terceiros pela telemetria — ela é <b>anônima, opcional (LGPD art. 7º I) e
-      desligável</b> (UFVAI_TELEMETRY=0). Termos completos v2.0 no link abaixo.</p>
+      vault é enviado a terceiros pela telemetria — ela é <b>anônima, sem cookies, ativa por padrão
+      após este aceite (legítimo interesse, LGPD art. 7º IX) e desligável a qualquer momento</b>
+      (desmarque a opção acima ou UFVAI_TELEMETRY=0 — art. 18 §2º). Termos completos v2.1 no link abaixo.</p>
       <h4>🇺🇸 English</h4>
       <p>UFVAI is provided under the <b>MIT license</b>, without warranty. Validate AI outputs and
       disclose AI use per CNPq Ordinance 2.664/2026. You are responsible for your API keys,
-      generated content and provider policies. Telemetry is anonymous, optional and can be disabled.</p>
-      <p style="opacity:.75">Español: licencia MIT, sin garantías; telemetría anónima y opcional.
-      · Français : licence MIT, sans garantie ; télémétrie anonyme et facultative.
-      · 中文：MIT 许可证，不提供担保；遥测为匿名且可选。</p>
+      generated content and provider policies. Telemetry is anonymous, cookie-free, <b>on by
+      default after accepting these terms</b> (legitimate interest, LGPD art. 7º IX) and can be
+      disabled anytime (uncheck above or UFVAI_TELEMETRY=0).</p>
+      <p style="opacity:.75">Español: licencia MIT, sin garantías; telemetría anónima activa por defecto, sin cookies, desactivable.
+      · Français : licence MIT, sans garantie ; télémétrie anonyme active par défaut, sans cookies, désactivable.
+      · 中文：MIT 许可证，不提供担保；遥测为匿名、默认开启（无 Cookie），可随时关闭。</p>
     </div>
     <div class="t-links">
       <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/LICENSE" target="_blank" rel="noopener">📜 Licença MIT + Notice / License</a>
-      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/TERMS_OF_USE.md" target="_blank" rel="noopener">📄 Termos completos v2.0 / Full terms</a>
+      <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/TERMS_OF_USE.md" target="_blank" rel="noopener">📄 Termos completos v2.1 / Full terms</a>
       <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/PRIVACY.md" target="_blank" rel="noopener">🔒 Privacidade · LGPD / Privacy</a>
     </div>
-    <!-- v0.6.8: LGPD — opcionais ANTES do obrigatório (ordem crescente de exigência) -->
-    <label class="t-check"><input type="checkbox" id="t-analytics">
-      <span>Opcional: permitir estatísticas anônimas de uso &nbsp;<span style="opacity:.7">(Optional: allow anonymous usage stats — GA Measurement Protocol, no content, opt-out anytime via UFVAI_TELEMETRY=0)</span></span></label>
+    <!-- v0.6.9: telemetria ATIVA POR PADRÃO (opt-out) — base: legítimo interesse (LGPD art. 7º IX),
+         sem cookie _ga (analytics_storage:'denied'), direito de oposição art. 18 §2º + UFVAI_TELEMETRY=0.
+         Opcionais ANTES do obrigatório (ordem crescente de exigência, v0.6.8) -->
+    <label class="t-check"><input type="checkbox" id="t-analytics" checked>
+      <span>Estatísticas anônimas de uso — <b>ativas por padrão</b> &nbsp;<span style="opacity:.7">(Anonymous usage stats — on by default, no cookies, no content. Desmarque para não contribuir / uncheck to opt out — LGPD art. 18 §2º; kill-switch UFVAI_TELEMETRY=0)</span></span></label>
     <label class="t-check" style="display:block">
-      <span style="display:block;margin-bottom:4px">Opcional: deixar meu e-mail para contato/novidades do UFVAI
-        <span style="opacity:.7">(Optional: leave my e-mail for UFVAI news/contact)</span></span>
-      <input type="email" id="t-email" placeholder="nome@dominio.br (opcional / optional)"
+      <span style="display:block;margin-bottom:4px">E-mail para contato/ativação — <b>obrigatório</b>
+        <span style="opacity:.7">(E-mail for contact/activation — <b>required</b>)</span></span>
+      <input type="email" id="t-email" placeholder="nome@dominio.br"
              autocomplete="email" spellcheck="false"
              style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;font-size:13px;
                     background:#0f151c;border:1px solid rgba(178,145,73,.35);color:#e8e6e0;outline:none;">
       <span style="display:block;font-size:10.5px;opacity:.65;margin-top:5px;line-height:1.45">
-        🔒 LGPD art. 7º I — uso exclusivo para contato sobre o UFVAI, guardado localmente e cifrado em trânsito.
-        O Google Analytics <b>nunca</b> recebe seu endereço (apenas um contador anônimo). Você pode apagar a qualquer momento (art. 18).<br>
-        Used solely to contact you about UFVAI; stored locally and never sent to Google Analytics.</span>
+        🔒 LGPD — usado para ativação do UFVAI e contato sobre o produto (art. 7º V), guardado localmente
+        (chmod 600) e em backups/ufvai_consentimento.json no SEU Drive; cifrado em trânsito.
+        O Google Analytics <b>nunca</b> recebe seu endereço (apenas um contador anônimo).
+        Você pode apagar a qualquer momento (art. 18).<br>
+        Used to activate UFVAI and contact you about it; stored locally and in YOUR Drive; never sent to Google Analytics.</span>
     </label>
     <label class="t-check"><input type="checkbox" id="t-accept">
       <span>Li e aceito os Termos de Uso e a Licença MIT &nbsp;<span style="opacity:.7">(I have read and accept the Terms of Use and the MIT License)</span></span></label>
@@ -3283,21 +3418,24 @@ def create_wrapper_html(
 <script>
 (function(){
   try{
-    // v0.6.8: termos v4 → re-consentimento (reordenação LGPD: opcionais antes do aceite) (novo aviso de contato opcional)
-    if(localStorage.getItem("ufvai_terms_version")==="4") return;
+    // v0.6.9: termos v5 → re-consentimento (telemetria ativa por padrão/opt-out,
+    // e-mail OBRIGATÓRIO, perfil persistente em backups/ufvai_consentimento.json)
+    var _TV="5";
     var ov=document.getElementById("terms-overlay");
     if(!ov) return;
-    ov.style.display="flex";
     var chk=document.getElementById("t-accept"),
         btn=document.getElementById("t-accept-btn"),
         an=document.getElementById("t-analytics"),
         em=document.getElementById("t-email"),
         err=null;
-    chk.addEventListener("change",function(){btn.disabled=!chk.checked;});
-    function _validMail(v){return !v || /^[^@\\s]{1,64}@[^@\\s]+\\.[^@\\s]{2,}$/.test(v);}
+    function _validMail(v){return !!v && /^[^@\\s]{1,64}@[^@\\s]+\\.[^@\\s]{2,}$/.test(v);}
+    function _updateBtn(){
+      // v0.6.9: e-mail OBRIGATÓRIO — habilita só com Termos aceitos + e-mail válido
+      btn.disabled=!(chk.checked && _validMail((em.value||"").trim()));
+    }
     function _post(accepted, analytics, contactEmail){
       try{
-        var payload={accepted:accepted,analytics:analytics};
+        var payload={accepted:accepted,analytics:analytics,terms_version:_TV};
         if(contactEmail!==undefined) payload.contact_email=contactEmail;
         fetch("/api/consent",{method:"POST",
           headers:{"Content-Type":"application/json"},
@@ -3312,15 +3450,53 @@ def create_wrapper_html(
       }
       err.textContent=msg||"";
     }
+    chk.addEventListener("change",_updateBtn);
+    em.addEventListener("input",function(){ if(err) err.textContent=""; _updateBtn(); });
+    // v0.6.9: MOBILE — autofill do celular preenche o e-mail SEM disparar "input";
+    // sem isso o botão ficaria desabilitado e o usuário não conseguiria clicar.
+    // Cobrimos com change/blur + verificação periódica leve (só com overlay visível).
+    em.addEventListener("change",_updateBtn);
+    em.addEventListener("blur",_updateBtn);
+    var _autofillTimer=null;
+    function _ensureAutofillWatch(){
+      if(_autofillTimer) return;
+      _autofillTimer=setInterval(function(){
+        if(ov.style.display==="none"){ clearInterval(_autofillTimer); _autofillTimer=null; return; }
+        _updateBtn();
+      },400);
+    }
+    _ensureAutofillWatch();
+    // v0.6.9: MOBILE — teclado virtual não pode cobrir o campo/botão: rola até o
+    // elemento focado (visualViewport quando disponível; fallback scrollIntoView).
+    function _reveal(elm,delay){
+      try{ setTimeout(function(){
+        if(window.visualViewport && typeof window.visualViewport.height==="number"){
+          var r=elm.getBoundingClientRect(), vh=window.visualViewport.height;
+          if(r.bottom>vh || r.top<0) elm.scrollIntoView({block:"center",behavior:"smooth"});
+        } else {
+          elm.scrollIntoView({block:"nearest",behavior:"smooth"});
+        }
+      },delay||250); }catch(e){}
+    }
+    em.addEventListener("focus",function(){ _reveal(em,300); });   // aguarda teclado subir
+    if(btn) btn.addEventListener("focus",function(){ _reveal(btn,150); });
+    if(window.visualViewport){
+      try{
+        window.visualViewport.addEventListener("resize",function(){
+          if(document.activeElement===em) _reveal(em,60);
+        });
+      }catch(e){}
+    }
     btn.addEventListener("click",function(){
       var v=(em&&em.value||"").trim();
-      if(!_validMail(v)){ _showErr("E-mail inválido — corrija ou apague o campo. / Invalid e-mail."); try{em.focus();}catch(e){} return; }
+      if(!_validMail(v)){ _showErr("E-mail obrigatório — informe um e-mail válido para continuar. / E-mail required — enter a valid e-mail to continue."); try{em.focus();}catch(e){} return; }
       if(err) err.textContent="";
-      localStorage.setItem("ufvai_terms_version","4");
+      localStorage.setItem("ufvai_terms_version",_TV);
       localStorage.setItem("ufvai_analytics", an.checked?"1":"0");
       _post(true, an.checked, v);
       ov.style.display="none";
-      // v0.6.4: se o usuário autorizou estatísticas, liga o GA client-side na hora
+      if(_autofillTimer){ clearInterval(_autofillTimer); _autofillTimer=null; }
+      // v0.6.9: telemetria ativa por padrão — liga o GA se NÃO desmarcada (opt-out)
       if(an.checked && typeof window._ufvaiGaStart==="function"){ try{ window._ufvaiGaStart(); }catch(e){} }
     });
     document.getElementById("t-decline-btn").addEventListener("click",function(){
@@ -3330,6 +3506,25 @@ def create_wrapper_html(
         'A interface permanecerá bloqueada. Feche esta aba para encerrar.<br><br>'+
         '<span style="opacity:.75">You declined the Terms of Use — the UI stays locked. Close this tab to exit.</span></p></div>';
     });
+    // ── v0.6.9: PRÉ-PREENCHIMENTO — perfil persistente (backups/ufvai_consentimento.json) ──
+    try{
+      fetch("/api/consent").then(function(r){return r.json();}).then(function(d){
+        var prof=(d&&d.profile)||{};
+        // Já aceitou ESTA versão (perfil sobrevive à sessão)? → pula a tela direto
+        if(prof.accepted && prof.terms_version===_TV){
+          localStorage.setItem("ufvai_terms_version",_TV);
+          localStorage.setItem("ufvai_analytics", prof.analytics?"1":"0");
+          if(prof.analytics && typeof window._ufvaiGaStart==="function"){ try{ window._ufvaiGaStart(); }catch(e){} }
+          return; // overlay nem é exibido
+        }
+        // Sessão anterior (versão antiga dos Termos): pré-preenche e só confirma
+        if(prof.email && em && !em.value){ em.value=prof.email; }
+        if(an && typeof prof.analytics!=="undefined"){ an.checked=!!prof.analytics; }
+        if(chk){ chk.checked=true; }
+        ov.style.display="flex";
+        _updateBtn();
+      }).catch(function(){ ov.style.display="flex"; _updateBtn(); });
+    }catch(e){ ov.style.display="flex"; _updateBtn(); }
   }catch(e){}
 })();
 </script>
@@ -3352,18 +3547,20 @@ def create_wrapper_html(
       s.src="https://www.googletagmanager.com/gtag/js?id="+MID;
       document.head.appendChild(s);
       gtag('js',new Date());
-      gtag('config',MID,{send_page_view:true,anonymize_ip:true});
-      gtag('event','ufvai_session',{
-        app_version:'{__VERSION__}',
-        environment:IS_COLAB?'colab':'local',
-        lang:(localStorage.getItem("pesquisai_lang")||'pt_BR')
-      });
+      // v0.6.9: telemetria ativa por padrão (opt-out) e SEM cookie —
+      // analytics_storage:'denied' impede o cookie _ga no dispositivo do
+      // usuário (base: legítimo interesse, LGPD art. 7º IX; oposição art. 18 §2º).
+      gtag('config',MID,{send_page_view:true,anonymize_ip:true,analytics_storage:'denied'});
+      // v0.6.9: coleta resumida aos DADOS PADRÃO do Analytics (page_view) —
+      // evento custom ufvai_session removido.
     }catch(e){}
   }
   window._ufvaiGaStart=_start;
   try{
-    if(localStorage.getItem("ufvai_terms_version")==="4" &&
-       localStorage.getItem("ufvai_analytics")==="1"){
+    // v0.6.9: opt-out — inicia se o aceite da versão atual existir E o usuário
+    // NÃO tiver desativado as estatísticas ("0"). undefined/"1" = ativo.
+    if(localStorage.getItem("ufvai_terms_version")==="5" &&
+       localStorage.getItem("ufvai_analytics")!=="0"){
       setTimeout(_start,1200); // deixa a UI carregar primeiro
     }
   }catch(e){}
@@ -3481,6 +3678,11 @@ def create_wrapper_html(
             "memory.no_results": "Nenhum resultado para a busca.",
             # v0.5.1.2 hotfix — Diretrizes do Agente
             "agents.title": "Diretrizes do Agente",
+            "manual.title": "Manual do UFVAI",
+            "manual.subtitle": "Guia completo de uso (MANUAL.md)",
+            "manual.loading": "Carregando manual…",
+            "manual.error": "Manual não encontrado localmente.",
+            "manual.open_source": "Abrir no GitHub",
             "agents.subtitle": "Regras e princípios do UFVAI (AGENTS.md)",
             "agents.loading": "Carregando diretrizes…",
             "agents.error": "Erro ao carregar diretrizes do agente.",
@@ -3575,6 +3777,11 @@ def create_wrapper_html(
             "memory.no_results": "No results for the search.",
             # v0.5.1.2 hotfix — Agent Guidelines
             "agents.title": "Agent Guidelines",
+            "manual.title": "UFVAI Manual",
+            "manual.subtitle": "Complete user guide (MANUAL.md)",
+            "manual.loading": "Loading manual…",
+            "manual.error": "Manual not found locally.",
+            "manual.open_source": "Open on GitHub",
             "agents.subtitle": "UFVAI rules and principles (AGENTS.md)",
             "agents.loading": "Loading guidelines…",
             "agents.error": "Error loading agent guidelines.",
@@ -3669,6 +3876,11 @@ def create_wrapper_html(
             "memory.no_results": "Sin resultados para la búsqueda.",
             # v0.5.1.2 hotfix — Directrices del Agente
             "agents.title": "Directrices del Agente",
+            "manual.title": "Manual del UFVAI",
+            "manual.subtitle": "Guía completa de uso (MANUAL.md)",
+            "manual.loading": "Cargando manual…",
+            "manual.error": "Manual no encontrado localmente.",
+            "manual.open_source": "Abrir en GitHub",
             "agents.subtitle": "Reglas y principios del UFVAI (AGENTS.md)",
             "agents.loading": "Cargando directrices…",
             "agents.error": "Error al cargar las directrices del agente.",
@@ -3763,6 +3975,11 @@ def create_wrapper_html(
             "memory.no_results": "Aucun résultat pour la recherche.",
             # v0.5.1.2 hotfix — Directives de l'Agent
             "agents.title": "Directives de l'Agent",
+            "manual.title": "Manuel du UFVAI",
+            "manual.subtitle": "Guide complet d'utilisation (MANUAL.md)",
+            "manual.loading": "Chargement du manuel…",
+            "manual.error": "Manuel introuvable localement.",
+            "manual.open_source": "Ouvrir sur GitHub",
             "agents.subtitle": "Règles et principes du UFVAI (AGENTS.md)",
             "agents.loading": "Chargement des directives…",
             "agents.error": "Erreur lors du chargement des directives de l'agent.",
@@ -3852,6 +4069,11 @@ def create_wrapper_html(
             "memory.note_title": "笔记标题",
             "memory.open_vault": "在 Obsidian 中打开",
             "agents.title": "智能体规则（AGENTS.md）",
+            "manual.title": "UFVAI 使用手册",
+            "manual.subtitle": "完整使用指南（MANUAL.md）",
+            "manual.loading": "正在加载手册…",
+            "manual.error": "本地未找到手册。",
+            "manual.open_source": "在 GitHub 打开",
             "agents.subtitle": "UFVAI 的规则与原则（AGENTS.md）",
             "agents.copy": "复制 AGENTS.md",
             "agents.copy_ok": "已复制到剪贴板",
