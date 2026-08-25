@@ -1,11 +1,12 @@
 # Termos de Uso — UFVAI
 
-**Versão:** 2.0 · **Data:** 22/08/2026 · Substitui a versão 1.0
+**Versão:** 2.1 · **Data:** 25/08/2026 · Substitui a versão 2.0
 
 > **Resumo em uma frase:** o UFVAI é um software livre (licença MIT) de apoio à pesquisa científica,
 > fornecido "como está", sem garantias; você é responsável pelo uso que faz das saídas geradas, pelas
-> suas chaves de API e pelo cumprimento das normas de integridade acadêmica aplicáveis — e a telemetria
-> só funciona se você autorizar, podendo ser revogada a qualquer momento.
+> suas chaves de API e pelo cumprimento das normas de integridade acadêmica aplicáveis — a ativação
+> exige um e-mail de contato (eliminável a qualquer tempo) e a telemetria anônima vem **ativa por
+> padrão**, sem cookies, podendo ser desligada a qualquer momento (opt-out).
 
 Ao instalar, acessar ou utilizar o UFVAI ("o Software"), você declara ter lido e aceito estes Termos de
 Uso, a Licença MIT ([`LICENSE`](../LICENSE)) e o Aviso de Privacidade ([`PRIVACY.md`](../PRIVACY.md)).
@@ -23,7 +24,7 @@ não utilize o Software.
 - **Provedores de terceiros:** serviços externos opcionais configurados por você (LLMs como OpenAI,
   Anthropic, Google/Ollama; Google Drive; APIs públicas de dados como IBGE/SIDRA e NASA POWER).
 - **Telemetria:** contadores anônimos de eventos enviados via Google Analytics 4 Measurement Protocol,
- exclusivamente mediante opt-in (ver §7).
+ ativa por padrão (opt-out), **sem cookies** nem identificadores pessoais (ver §7).
 
 ## 2. Natureza do instrumento: licença × termos
 
@@ -83,13 +84,22 @@ hipótese os autores serão responsáveis por danos decorrentes do uso do Softwa
 decisões tomadas com base em saídas de IA não revisadas por humanos. Tratando-se de relação de
 consumo, eventuais cláusulas excludentes serão interpretadas nos limites do CDC (art. 51).
 
-## 7. Telemetria anônima (opcional)
+## 7. Telemetria anônima e e-mail de ativação
 
-A telemetria é **opt-in**: só funciona mediante consentimento livre, informado e específico
-(checkbox própria na tela de Termos — base legal do consentimento, LGPD art. 7º, I), envia
-exclusivamente contadores de eventos **sem qualquer conteúdo pessoal**, e pode ser revogada a
-qualquer momento (`UFVAI_TELEMETRY=0` ou limpeza de `~/.config/ufvai_consent.json`). Detalhes:
-[`TELEMETRY.md`](../TELEMETRY.md) e [`PRIVACY.md`](../PRIVACY.md).
+**7.1. E-mail obrigatório para ativação.** Para aceitar estes Termos e ativar o Software você deve
+informar um **e-mail válido**, usado exclusivamente para contato sobre o UFVAI (segurança, atualizações
+e suporte — base legal: **execução do serviço, LGPD art. 7º, V**). O e-mail é guardado no SEU ambiente
+(`backups/ufvai_consentimento.json`, com cópia cifrada de resumo SHA-256) e pode ser **eliminado a
+qualquer momento** (LGPD art. 18) pela opção de eliminação de contato da interface; nesses casos ele
+será novamente solicitado na próxima abertura.
+
+**7.2. Telemetria anônima — ativa por padrão (opt-out).** Desde a versão 2.1, a telemetria envia
+exclusivamente contadores anônimos de uso (page_view padrão do Google Analytics 4, **sem cookies**
+`_ga`, sem qualquer conteúdo pessoal ou identificador direto) e vem **ativa por padrão**, com base no
+**legítimo interesse do controlador (LGPD art. 7º, IX)** — melhoria e segurança do Software. Você pode
+**opôr-se a qualquer momento**: desmarcando a caixa de telemetria na tela de Termos, definindo
+`UFVAI_TELEMETRY=0` ou limpando `~/.config/ufvai_consent.json` (direito de oposição, LGPD art. 18,
+§2º). Detalhes: [`TELEMETRY.md`](../TELEMETRY.md) e [`PRIVACY.md`](../PRIVACY.md).
 
 ## 8. Alterações dos termos
 
