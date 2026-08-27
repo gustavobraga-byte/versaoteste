@@ -1,5 +1,34 @@
 # Changelog — PesquisAI
 
+## [0.6.9-6] — 2026-08-25 — 🔧 Offline completo: tudo no .deb + porta blindada (só .deb, Colab inalterado)
+
+### Offline — tudo dentro do .deb (100% offline)
+- **Wheels bundle**: `wheels/` com 27 wheels (cryptography 50, requests, bs4, pyyaml, google-api-python-client + deps, httplib2, etc. — 22 MB) copiados para `/opt/pesquisai/wheels` no `.deb`; `postinst` tenta `pip install --no-index --find-links=/opt/pesquisai/wheels` primeiro (offline), só então tenta `pip` online como fallback. Adeus `pip` sem rede.
+- **Backup dir fix**: `launch_app.start_wrapper_server()` agora detecta `Drive sem escrita` (via `os.access` + `get_default_vault_path()` local) e usa `~/PesquisAI/backups` em vez de `/content/drive/.../backups` (antes ficava no Drive mesmo após fallback do vault). Log agora mostra `~/PesquisAI/backups` offline.
+
+### Offline — porta blindada
+- **Bind `0.0.0.0` + `::`**: `UFVAI_BIND_HOST` padrão agora `0.0.0.0` (antes `127.0.0.1` offline) + listener IPv6 em `::` (antes só `::1` quando `127.0.0.1`). Resolve `localhost → 127.0.1.1` (Ubuntu) e `::1` preferido pelo Firefox/Chromium; `ERR_CONNECTION_REFUSED` por binding parcial eliminado. Segurança mantida por token `X-UFVAI-Token` + CORS same-origin; `UFVAI_BIND_HOST=127.0.0.1` restaura modo localhost-only se desejado.
+- **Tela 8002 liberada com Drive montado**: `_early_loading_screen()` agora checa `import google.colab` (Colab REAL) em vez de `os.path.isdir("/content/drive")`; com Drive montado via rclone/ocamlfuse no `.deb` a tela 8002 volta a subir em <3s (antes ficava suprimida, usuário via tela morta).
+
+### Empacotamento
+- `.deb` **0.6.9-6** (22 MB wheels inclusos, ~23 MB total, Installed-Size ~23000) rebuild com `wheels/` + perms normalizadas + `postinst` offline-first. `__version__` permanece `0.6.9` (Colab inalterado) — pacote `0.6.9-6`.
+
+## [0.6.9-5] — 2026-08-25 — 🔧 Offline harden (só .deb, Colab inalterado)
+
+### Offline — tela instantânea + fast-fail (restaura 0.5.1.9, visual UFVAI)
+- **Tela de carregamento instantânea na porta 8002** (papel #f6f5f0, navy #1f2831, dourado #b29149, logo base64, título UFVAI): sobe em <3s antes de qualquer `apt/pip/git`, abre Chrome --app imediatamente, faz polling de `GET /api/health` via proxy (200 ou 403 com token = vivo) e redireciona para `:8001` com carência de 6s. Flag `~/.ui_already_opened` evita segunda janela do launcher. *Só ativa fora do Colab* — Colab mantém painel único.
+- **Fast-fail offline** (`_network_ok()` TCP 443 2,5s): sem rede, pula `apt-get`/`curl opencode`/`pip install`/`git clone` de skills (usa cache/bundle do .deb), eliminando timeouts de 60s ×N que causavam “demora muito” e `ERR_CONNECTION_REFUSED` por falta de feedback.
+
+### Offline — ttyd e /tmp
+- **`install_ttyd()` checa `which ttyd`/`/usr/local/bin/ttyd` antes**: bundle do .deb já presente → pula `apt`, evita “Instalando ttyd…” desnecessário offline. Fallback para `~/bin/ttyd` se `/usr/local/bin` sem permissão, garante PATH.
+- **`_prepare_ttyd_touch_index()` sem `Permission denied`**: candidatos `~/.cache/ufvai/ttyd_touch_<uid>.html` → `~/PesquisAI/tmp/ttyd_touch.html` → `/tmp/ttyd_touch_<uid>.html` → `/tmp/ttyd_touch.html`; remove stale root-owned antes de escrever; loga debug em vez de warning.
+
+### Offline — memória
+- **`discovery.get_default_vault_path()` fallback offline**: se `PESQUISAI_OBSIDIAN_VAULT` do Drive estiver sem escrita e não estivermos no Colab, usa `~/PesquisAI/vault` (evita `status=read_only` quando o Drive está desmontado ou montado read-only). Também adiciona `~/PesquisAI/vault` como último candidato local (depois de `~/Obsidian/PesquisAI`). *Colab inalterado* — validação de Drive permanece idêntica.
+
+### Empacotamento
+- `.deb` **0.6.9-5** rebuild a partir da fonte com normalização de permissões (dirs 755/files 644/scripts 755) + validação como `nobody`. `__version__` permanece `0.6.9` (Colab inalterado) — versão do pacote é `0.6.9-5`.
+
 ## [0.6.9] — 2026-08-25 — 📜 Termos v2.1: telemetria opt-out · e-mail de ativação · perfil persistente · botão Manual
 
 ### Termos de Uso v2.1 (re-consentimento — `_TV=5`)
