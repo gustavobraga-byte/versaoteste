@@ -10,9 +10,15 @@
  *   "email": "usuario@dominio.br",
  *   "email_sha256": "abc123...",
  *   "environment": "colab" | "local",
- *   "app_version": "0.6.8",
- *   "sent_at": "2026-08-24T21:53:00"
+ *   "app_version": "0.6.9",
+ *   "sent_at": "2026-08-24T21:53:00",
+ *   "flag": "novo_contato" | "usuario_ativo"
  * }
+ *
+ * flag (v0.6.9):
+ *   • "novo_contato"  — primeiro aceite da tela de Termos (opt-in);
+ *   • "usuario_ativo" — reabertura: cada novo acesso do usuário já ativo
+ *     (tela "Bem-vindo de volta" → heartbeat com e-mail + hora + flag).
  * 
  * Configuração (2 min):
  * 1. Abra a planilha: https://docs.google.com/spreadsheets/d/149XGyTfPbGs34Wrb8WHBPC8gmzRQKJzvTEmqXlshvgg/edit
@@ -56,20 +62,24 @@ function doPost(e) {
     var sheet = ss.getSheetByName(SHEET_NAME);
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_NAME);
-      sheet.appendRow(["Data/hora","E-mail","SHA-256","Ambiente","Versão","Produto"]);
+      sheet.appendRow(["Data/hora","E-mail","SHA-256","Ambiente","Versão","Produto","Flag"]);
     }
     if (sheet.getLastRow() === 0) {
-      sheet.appendRow(["Data/hora","E-mail","SHA-256","Ambiente","Versão","Produto"]);
+      sheet.appendRow(["Data/hora","E-mail","SHA-256","Ambiente","Versão","Produto","Flag"]);
     }
 
     var now = new Date();
+    // v0.6.9: flag distingue novo contato (opt-in) de usuário já ativo (reabertura)
+    var flag = String(body.flag || "novo_contato");
+    if (flag !== "novo_contato" && flag !== "usuario_ativo") { flag = "novo_contato"; }
     var row = [
       body.sent_at || Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"),
       email,
       String(body.email_sha256 || ""),
       String(body.environment || ""),
       String(body.app_version || body.version || ""),
-      String(body.product || "ufvai")
+      String(body.product || "ufvai"),
+      flag
     ];
     sheet.appendRow(row);
 

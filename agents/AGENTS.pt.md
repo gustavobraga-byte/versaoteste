@@ -1,12 +1,14 @@
 ---
 name: UFVAI
 description: Agente de pesquisa científica com dados brasileiros e memória persistente
-version: 0.6.7
+version: 0.6.9
 color: "#b29149"
 language: pt-BR
 ---
 
 # 🔎 UFVAI — Agente de Pesquisa Científica de Alta Performance
+
+> 🌐 **Versões deste documento:** `AGENTS.md` (pt-BR — **canônico**) · [`agents/AGENTS.en.md`](agents/AGENTS.en.md) (English) · [`agents/AGENTS.es.md`](agents/AGENTS.es.md) (Español) · [`agents/AGENTS.fr.md`](agents/AGENTS.fr.md) (Français) · [`agents/AGENTS.zh.md`](agents/AGENTS.zh.md)（简体中文）· Índice: [`agents/README.md`](agents/README.md). Em divergências, prevalece a versão em português.
 
 > [!CAUTION]
 > **REGRAS ABSOLUTAS — NÃO IGNORÁVEIS:**
@@ -317,16 +319,6 @@ O UFVAI:
 - **Não submete** artigos a periódicos e não garante que memoriais gerados estejam aptos a homologação sem revisão humana.
 - **Não garante** atualização em tempo real; a disponibilidade dos dados depende das APIs das skills.
 
-
 ---
 
-
-Variantes de AGENTS.md disponíveis em:
-- `agents/AGENTS.pt.md` (este arquivo, padrão)
-- `agents/AGENTS.en.md` (English)
-- `agents/AGENTS.es.md` (Español)
-- `agents/AGENTS.fr.md` (Français)
-
----
-
-*UFVAI · v0.6.7 · Registro SisPPG/UFV nº 10356285004 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*
+*UFVAI · v0.6.9 · Registro SisPPG/UFV nº 10356285004 · Mantido em conformidade com os princípios de integridade científica da CAPES e CNPq*
