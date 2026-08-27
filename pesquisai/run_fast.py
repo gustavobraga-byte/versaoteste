@@ -68,6 +68,190 @@ def _check_bin(name: str) -> bool:
     return False
 
 
+# ── v0.6.9-5: Fast-fail offline + Tela instantânea ─────────────────
+
+def _network_ok(timeout: float = 2.5) -> bool:
+    """Verifica conectividade (TCP 443) sem bloquear offline."""
+    import socket as _sock
+    for _host, _port in (("github.com", 443), ("opencode.ai", 443), ("pypi.org", 443)):
+        try:
+            with _sock.create_connection((_host, _port), timeout=timeout):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+_EARLY_LOADING_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UFVAI</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#f6f5f0;color:#1f2831;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:system-ui,-apple-system,sans-serif}
+  .container{text-align:center;padding:40px;max-width:420px}
+  .logo{height:88px;margin-bottom:20px}
+  .spinner{width:36px;height:36px;border:3px solid #e5e1d6;border-top-color:#b29149;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .title{font-size:26px;font-weight:700;margin-bottom:8px;letter-spacing:-0.02em}
+  .title span{color:#b29149}
+  .subtitle{font-size:13px;color:#857f72;margin-bottom:6px}
+  .status{font-size:14px;color:#4a5560;min-height:18px}
+  .joke{font-size:12px;color:#aaa392;margin-top:14px;min-height:16px}
+  .hint{font-size:11px;color:#aaa392;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="container">
+  {logo_img}
+  <div class="spinner" id="spinner"></div>
+  <div class="title">UFV<span>AI</span></div>
+  <div class="subtitle">Universidade Federal de Viçosa · Inteligência Artificial</div>
+  <div class="status" id="status">Iniciando...</div>
+  <div class="joke" id="joke"></div>
+  <div class="hint">Aguarde — primeira execução pode levar 1–2 min offline</div>
+</div>
+<script>
+(function(){
+  var jokes=["Carregando skills do IBGE...","Consultando dados do DataSUS...","Preparando inteligência científica...","Conectando à memória local...","Aquecendo os neurônios...","Compilando conhecimento...","Sincronizando bases oficiais..."];
+  var i=0, el=document.getElementById('joke'); if(el){el.textContent=jokes[i]; setInterval(function(){i=(i+1)%jokes.length; el.textContent=jokes[i]},2500)}
+  function poll(){
+    fetch('/api/health',{cache:'no-store'}).then(function(r){return r.json().catch(function(){return {ok: r.status===403 || r.ok}})}).then(function(d){
+      if(d && d.ok){ location.href='http://127.0.0.1:'+d.port+'/?_='+Date.now(); }
+      else { document.getElementById('status').textContent='Preparando servidores...'; setTimeout(poll,1200); }
+    }).catch(function(){ setTimeout(poll,1200); });
+  }
+  setTimeout(poll,1500);
+})();
+</script>
+</body>
+</html>"""
+
+_LOADING_PORT: int = 8002
+
+def _open_chrome_app(url: str) -> None:
+    import shutil as _sh
+    import webbrowser as _wb
+    _attempts = []
+    if _sh.which("google-chrome"):
+        _attempts.append(["google-chrome", f"--app={url}", "--no-startup-window", "--class=UFVAI"])
+    if _sh.which("google-chrome-stable"):
+        _attempts.append(["google-chrome-stable", f"--app={url}", "--no-startup-window"])
+    if _sh.which("chromium-browser"):
+        _attempts.append(["chromium-browser", f"--app={url}", "--no-startup-window"])
+    if _sh.which("chromium"):
+        _attempts.append(["chromium", f"--app={url}", "--no-startup-window"])
+    for _cmd in _attempts:
+        try:
+            subprocess.Popen(_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except Exception:
+            continue
+    try:
+        _wb.open(url)
+    except Exception:
+        pass
+
+def _early_loading_screen():
+    """v0.6.9-6: tela instantânea na porta 8002 (visual UFVAI) com proxy /api/health.
+    Só pula no Colab REAL (import google.colab), não quando /content/drive está montado via rclone."""
+    try:
+        import google.colab  # type: ignore  # noqa: F401
+        return None
+    except ImportError:
+        pass
+    if os.environ.get("IN_COLAB", "").strip().lower() in ("1","true","yes"):
+        return None
+    # já existe wrapper? não cria loading
+    import socket as _sock
+    try:
+        with _sock.create_connection(("127.0.0.1", WRAPPER_PORT), timeout=0.5):
+            return None
+    except Exception:
+        pass
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import threading as _th
+    import base64 as _b64
+
+    # mata resquício na 8002
+    subprocess.run(["fuser", "-k", f"{_LOADING_PORT}/tcp"], capture_output=True, timeout=5)
+    time.sleep(0.3)
+
+    _logo_tag = ""
+    for _cand in [os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "logo.svg"),
+                  os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "logo-oficial-288.jpg"),
+                  os.path.join(os.path.dirname(__file__), "assets", "logo.svg")]:
+        if os.path.exists(_cand):
+            try:
+                with open(_cand, "rb") as _f:
+                    _b = _f.read()
+                _mime = "image/svg+xml" if _cand.endswith(".svg") else "image/jpeg"
+                _b64s = _b64.b64encode(_b).decode("ascii")
+                _logo_tag = f'<img class="logo" src="data:{_mime};base64,{_b64s}" alt="UFVAI">'
+                break
+            except Exception:
+                continue
+    if not _logo_tag:
+        _logo_tag = '<div class="title">UFV<span>AI</span></div>'
+
+    _html = _EARLY_LOADING_HTML.replace("{logo_img}", _logo_tag)
+
+    class _H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            # proxy /api/health -> wrapper real
+            if self.path.startswith("/api/health"):
+                import urllib.request as _ur, urllib.error as _ue, json as _js
+                _ok = False
+                try:
+                    _req = _ur.Request(f"http://127.0.0.1:{WRAPPER_PORT}/api/health", headers={"User-Agent":"UFVAI-Loading"})
+                    with _ur.urlopen(_req, timeout=1.2) as _r:
+                        _ok = True
+                except _ue.HTTPError as _e:
+                    # 403 com token = vivo (wrapper exige token)
+                    if _e.code in (403, 401, 200):
+                        _ok = True
+                except Exception:
+                    _ok = False
+                self.send_response(200)
+                self.send_header("Content-Type","application/json")
+                self.send_header("Cache-Control","no-cache")
+                self.end_headers()
+                self.wfile.write(_js.dumps({"ok": _ok, "port": WRAPPER_PORT}).encode())
+                return
+            self.send_response(200)
+            self.send_header("Content-Type","text/html; charset=utf-8")
+            self.send_header("Cache-Control","no-cache")
+            self.end_headers()
+            self.wfile.write(_html.encode("utf-8"))
+        def handle_one_request(self):
+            try: super().handle_one_request()
+            except Exception: pass
+
+    try:
+        _srv = HTTPServer(("0.0.0.0", _LOADING_PORT), _H)
+    except OSError:
+        logger.warning("Não foi possível iniciar tela de carregamento na porta %s", _LOADING_PORT)
+        return None
+    _t = _th.Thread(target=_srv.serve_forever, daemon=True)
+    _t.start()
+    # flag para launcher não abrir segunda janela
+    try:
+        _flag = os.path.join(os.path.expanduser("~"), "PesquisAI", ".ui_already_opened")
+        os.makedirs(os.path.dirname(_flag), exist_ok=True)
+        Path = __import__("pathlib").Path
+        Path(_flag).write_text(str(int(time.time())), encoding="utf-8")
+    except Exception:
+        pass
+    # UFVAI_NO_OPEN evita _auto_open_browser duplicado no launch_app
+    os.environ["UFVAI_NO_OPEN"] = "1"
+    _open_chrome_app(f"http://127.0.0.1:{_LOADING_PORT}")
+    # carência 6s para redirect ganhar corrida mesmo se wrapper subir rápido
+    return _srv
+
+
 # ── Etapa 1: Google Drive ────────────────────────────────────
 
 def setup_drive() -> tuple[str, str]:
@@ -135,6 +319,10 @@ def _install_opencode_if_missing() -> bool:
     """Instala o opencode se não estiver presente."""
     if _check_bin("opencode"):
         return True
+    # v0.6.9-5: fast-fail offline — sem rede, não tenta curl
+    if not _network_ok():
+        logger.info("Sem rede — pulando instalação do opencode (já ausente, segue sem)")
+        return False
 
     for cmd in [
         "curl -fsSL https://opencode.ai/install | bash",
@@ -158,28 +346,53 @@ def _install_system_deps() -> None:
     tasks = list(set(tasks))
 
     if tasks:
-        subprocess.run(["apt-get", "update", "-qq"], capture_output=True, text=True, check=False)
-        r = subprocess.run(
-            ["apt-get", "install", "-y", "-qq", *tasks],
-            capture_output=True, text=True, check=False,
-        )
-        if r.returncode != 0:
-            logger.warning("apt-get falhou (%s) — tentando download manual do ttyd...", tasks)
-            subprocess.run(
-                ["curl", "-fsSL",
-                 "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64",
-                 "-o", "/usr/local/bin/ttyd"],
+        # v0.6.9-5: fast-fail offline — se sem rede e ttyd já bundle, pula apt
+        if not _network_ok():
+            if "ttyd" in tasks and os.path.isfile("/usr/local/bin/ttyd"):
+                logger.info("Sem rede mas ttyd bundle presente — pulando apt-get")
+                tasks = [t for t in tasks if t != "ttyd"]
+                if not tasks:
+                    # só faltava ttyd e já temos
+                    pass
+                else:
+                    logger.info("Sem rede — pulando apt-get para %s", tasks)
+                    tasks = []
+            else:
+                logger.info("Sem rede — pulando apt-get para %s", tasks)
+                tasks = []
+        if tasks:
+            subprocess.run(["apt-get", "update", "-qq"], capture_output=True, text=True, check=False)
+            r = subprocess.run(
+                ["apt-get", "install", "-y", "-qq", *tasks],
                 capture_output=True, text=True, check=False,
             )
-            subprocess.run(["chmod", "+x", "/usr/local/bin/ttyd"],
-                           capture_output=True, text=True, check=False)
+            if r.returncode != 0:
+                logger.warning("apt-get falhou (%s) — tentando download manual do ttyd...", tasks)
+                if _network_ok():
+                    subprocess.run(
+                        ["curl", "-fsSL",
+                         "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64",
+                         "-o", "/usr/local/bin/ttyd"],
+                        capture_output=True, text=True, check=False,
+                    )
+                    subprocess.run(["chmod", "+x", "/usr/local/bin/ttyd"],
+                                   capture_output=True, text=True, check=False)
+                else:
+                    logger.info("Sem rede — pulando download manual do ttyd")
 
     if not _check_bin("uv"):
-        _run("curl -LsSf https://astral.sh/uv/install.sh | sh", check=False)
+        if _network_ok():
+            _run("curl -LsSf https://astral.sh/uv/install.sh | sh", check=False)
+        else:
+            logger.info("Sem rede — pulando instalação do uv")
 
 
 def _install_python_deps() -> None:
     """Instala dependências Python necessárias."""
+    # v0.6.9-5: fast-fail offline — pip sem rede falha rápido e polui log
+    if not _network_ok():
+        logger.info("Sem rede — pulando pip install")
+        return
     subprocess.run(
         ["pip", "install", "--quiet", "--no-cache-dir",
          "google-api-python-client", "google-auth-httplib2",
@@ -415,7 +628,23 @@ def setup_skills() -> None:
 
     Skills essenciais (ESSENTIAL_SKILLS) disparam aviso se falharem.
     Skills opcionais falham silenciosamente.
+    v0.6.9-5: fast-fail offline — sem rede, pula clones (evita timeout 60s ×N)
     """
+    # v0.6.9-5: sem rede, não tenta git (skills já bundle no .deb ou em cache)
+    if not _network_ok():
+        logger.info("Sem rede — pulando clone de skills (usando cache/bundle)")
+        # ainda copia o que já existe em /tmp/skill_*
+        for src, dest_name in SKILL_MAPPINGS:
+            dest = os.path.join(SKILLS_DIR, dest_name)
+            if os.path.exists(src):
+                if os.path.exists(dest):
+                    shutil.rmtree(dest)
+                try:
+                    shutil.copytree(src, dest, dirs_exist_ok=True)
+                except Exception:
+                    pass
+        return
+
     progress(3, 4, "Clonando repositórios de skills (em paralelo)...")
     os.makedirs(SKILLS_DIR, exist_ok=True)
 
@@ -531,7 +760,18 @@ def run() -> None:
     Sequência: Drive → Dependências → Skills → Obsidian vault → Launch.
     v0.6.7: nenhuma saída textual — todo o feedback visual vem do painel
     de boot da logomarca (_BootPanel), do clone até os 100% + botão.
+    v0.6.9-5: offline ganha tela instantânea 8002 (sem alterar Colab).
     """
+    # v0.6.9-5: só offline — tela instantânea antes de tudo (não afeta Colab)
+    _loading_server = None
+    if not os.path.isdir("/content/drive"):
+        try:
+            from .launch_app import IN_COLAB as _ic
+            if not _ic:
+                _loading_server = _early_loading_screen()
+        except Exception:
+            _loading_server = None
+
     progress(0, 4, "Preparando...")
 
     # v0.6.7: o banner textual "🧑‍🔬 PESQUISAI (MODO RÁPIDO)" foi aposentado —
@@ -543,6 +783,15 @@ def run() -> None:
     setup_skills()
     setup_obsidian_vault()
     banner_url = setup_launch(folder_path, drive_url)
+
+    # v0.6.9-5: desliga tela de carregamento após wrapper subir (carência 6s)
+    if _loading_server is not None:
+        try:
+            time.sleep(6)
+            _loading_server.shutdown()
+            _loading_server.server_close()
+        except Exception:
+            pass
 
     # v0.6.3: fora do Colab, mantém o processo vivo para que a interface
     # continue acessível (threads daemon morreriam com o fim de run()).

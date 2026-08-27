@@ -1,6 +1,6 @@
 # UFVAI — Pesquisa científica com integridade
 
-> **UFVAI** é a marca do assistente; o motor/código é o PesquisAI (este repositório). v0.6.0
+> **UFVAI** é a marca do assistente; o motor/código é o PesquisAI (este repositório). v0.6.9
 
 [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
 [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br)
-[![Versão](https://img.shields.io/badge/versão-0.5.1.8-orange.svg)]()
+[![Versão](https://img.shields.io/badge/versão-0.6.9-orange.svg)]()
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
@@ -65,7 +65,7 @@ Sem instalação, pronto em ~2 minutos:
 
 2. No menu do Colab, vá em **Ambiente de execução → Executar tudo** (`Ctrl+F9`)
 
-3. Role até a última célula e clique em **🤖 Abrir o PesquisAI**
+3. Role até a última célula e clique em **🤖 Abrir o UFVAI**
 
 ### Opção 2 — Instalação local
 
@@ -86,8 +86,8 @@ ambientes sem internet, necessidade de sigilo dos dados processados ou com restr
 ### Instalação Rápida
 
 ```bash
-# Baixe e instale com um único comando
-wget https://github.com/gustavobraga-byte/PesquisAI/raw/main/debs/pesquisai_0.5.1.9.deb -O /tmp/pesquisai.deb && \
+# Baixe o pacote .deb mais recente
+wget https://github.com/gustavobraga-byte/PesquisAI/raw/main/debs/pesquisai_0.6.9-offline_amd64.deb -O /tmp/pesquisai.deb && \
 sudo apt install /tmp/pesquisai.deb -y && \
 rm /tmp/pesquisai.deb
 
@@ -103,7 +103,7 @@ pesquisai
 | **RAM** | 4 GB (mín.) · 8 GB+ (recomendado) Usando LLM em núvem|
 | **Disco** | 500 MB livres |
 | **Python** | 3.10+ (instalado como dependência) |
-| **Portas** | `8000` (Interface Web) · `8001` (Terminal TTYD) |
+| **Portas** | `8000` (Terminal TTYD) · `8001` (Interface Web) |
 
 ### LLM Local (Ollama) — Para Offline Total
 
@@ -147,8 +147,8 @@ Configure o PesquisAI para usar o modelo local editando (exemplo com o mistral-s
 ### Liberar Portas no Firewall (em caso de falha)
 
 ```bash
-sudo ufw allow 8000/tcp   # Interface Web
-sudo ufw allow 8001/tcp   # Terminal TTYD
+sudo ufw allow 8000/tcp   # Terminal TTYD
+sudo ufw allow 8001/tcp   # Interface Web
 sudo ufw allow 11434/tcp  # Ollama API (se usar LLM local)
 ```
 
@@ -230,8 +230,8 @@ O PesquisAI **não substitui** o julgamento humano e apresenta as seguintes limi
 **ABNT NBR 6023:2018:**
 
 ```
-BRAGA, Gustavo Bastos. PesquisAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.5.1.9. Viçosa: Universidade Federal de Viçosa, 2026.
+BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
+científica. Versão 0.6.9. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -242,12 +242,12 @@ Verificar autenticidade em: http://sisppg.ufv.br
 **BibTeX:**
 
 ```bibtex
-@software{braga2026pesquisai,
+@software{braga2026ufvai,
   author       = {Gustavo Bastos Braga},
-  title        = {{PesquisAI}: Agente de Intelig{\^e}ncia Artificial
+  title        = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial
                   para Pesquisa Cient{\'\i}fica},
   year         = {2026},
-  version      = {0.5.1.9},
+  version      = {0.6.9},
   institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
   url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
 }
@@ -301,7 +301,6 @@ Desenvolvido por **Gustavo Bastos Braga** na Universidade Federal de Viçosa (UF
 ---
 
 Feito com 💙 para impulsionar a ciência brasileira.
-```
 
 ---
 

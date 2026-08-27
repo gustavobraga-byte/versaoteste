@@ -39,10 +39,73 @@ _ADMIN_CFG_FILE = os.path.expanduser("~/.config/ufvai_telemetry.json")  # v0.6.4
 _PROFILE_FILE = os.path.expanduser("~/.config/ufvai_profile.json")     # v0.6.6
 _MP_URL = "https://www.google-analytics.com/mp/collect"
 
+# v0.6.9-P03: Canal único — webhook UFVAI_CONTACT_ENDPOINT.
+# Google Forms NÃO funciona em fluxo automatizado (reCAPTCHA bloqueia).
+# URL do Forms para envio manual (exibir na UI, não usado pelo código):
+_FORM_VIEW_URL = ("https://docs.google.com/forms/d/e/"
+    "1FAIpQLSd773cm2qDkwpXzbz50IVhGSG7rpC527taTYGsdUes0Lh1s2A/viewform")
+# Webhook do desenvolvedor (Apps Script → Planilha). Ver scripts/webhook-contatos.gs
+_DEFAULT_CONTACT_ENDPOINT = "https://script.google.com/macros/s/AKfycbw8bt3HPH7LNVuy-JiizjOMi4S_xDva0er3-NQ_abSj-LMcQmdpMZx8hSNjQpqz12s/exec"
+
 _FALSEY = ("0", "false", "off", "no")
 
 # v0.6.6: validação simples de e-mail (local-part@domínio.tld)
 _EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
+
+# v0.6.9-P03: domínios temporários / descartáveis bloqueados
+_BLOCKED_DOMAINS = frozenset({
+    "guerrillamail.com", "guerrillamail.de", "guerrillamail.biz",
+    "tempmail.com", "throwaway.email", "temp-mail.org",
+    "fakeinbox.com", "sharklasers.com", "guerrillamailblock.com",
+    "grr.la", "dispostable.com", "yopmail.com", "yopmail.fr",
+    "mailinator.com", "trashmail.com", "trashmail.net",
+    "10minutemail.com", "discard.email", "discardmail.com",
+    "mailexpire.com", "maildrop.cc", "mailnesia.com",
+    "tempail.com", "tempr.email", "tempomail.fr",
+})
+
+
+def _email_domain_valid(addr: str) -> bool:
+    """v0.6.9-P03: valida se o domínio do e-mail existe e aceita mail.
+
+    1) Verifica se o domínio está na lista de bloqueados (temporários).
+    2) Tenta resolver MX records via socket.getaddrinfo (stdlib, sem deps).
+    3) Se nenhum MX encontrar, tenta resolver A/AAAA (alguns domínios
+       aceitam mail sem MX explícito — ex.: domínios pequenos).
+    """
+    import socket
+    domain = addr.split("@")[-1].strip().lower()
+    if not domain:
+        return False
+    # Lista negra de domínios temporários
+    if domain in _BLOCKED_DOMAINS:
+        return False
+    # MX records
+    try:
+        results = socket.getaddrinfo(domain, "smtp", socket.AF_INET, socket.SOCK_STREAM)
+        if results:
+            return True
+    except (socket.gaierror, OSError):
+        pass
+    # Fallback: tenta MX via gethostbyname_ex (mais compatível)
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["nslookup", "-type=mx", domain],
+            capture_output=True, text=True, timeout=3
+        )
+        if "mail exchanger" in out.stdout.lower() or "mx" in out.stdout.lower():
+            return True
+    except Exception:
+        pass
+    # Último recurso: tenta conectar na porta 25 (SMTP)
+    try:
+        s = socket.create_connection((domain, 25), timeout=3)
+        s.close()
+        return True
+    except (socket.timeout, OSError):
+        pass
+    return False
 
 
 def _admin_local_config() -> tuple[str, str]:
@@ -186,9 +249,12 @@ def _contact_endpoint() -> str:
         return url
     try:
         with open(_ADMIN_CFG_FILE, encoding="utf-8") as f:
-            return str(json.load(f).get("contact_endpoint", "") or "").strip()
+            url = str(json.load(f).get("contact_endpoint", "") or "").strip()
+            if url:
+                return url
     except Exception:
-        return ""
+        pass
+    return _DEFAULT_CONTACT_ENDPOINT
 
 
 def contact_status() -> dict:
@@ -228,6 +294,9 @@ def save_contact(email: str) -> tuple[bool, str]:
         return False, "E-mail vazio."
     if not _EMAIL_RE.fullmatch(addr) or len(addr) > 254:
         return False, "E-mail inválido."
+    # v0.6.9-P03: valida domínio (MX records + blacklist temporários)
+    if not _email_domain_valid(addr):
+        return False, "E-mail inválido ou domínio não aceita mensagens."
     sha = hashlib.sha256(addr.encode("utf-8")).hexdigest()
     try:
         os.makedirs(os.path.dirname(_PROFILE_FILE), exist_ok=True)
@@ -241,6 +310,10 @@ def save_contact(email: str) -> tuple[bool, str]:
         os.chmod(_PROFILE_FILE, 0o600)
     except Exception as e:
         return False, f"Falha ao salvar contato: {e}"
+    _contato_log("contato salvo localmente (%s) · ga4_configurada=%s · endpoint=%s"
+                 % (addr.split("@")[1] if "@" in addr else "?",
+                    "sim" if configured() else "nao",
+                    "sim" if _contact_endpoint() else "NAO CONFIGURADO"))
     # Contador ANÔNIMO para o GA4 (sem nenhum dado derivado do e-mail)
     event("contact_optin")
     # Canal direto do desenvolvedor (opcional): envia o endereço real por HTTPS
@@ -256,56 +329,50 @@ def clear_contact() -> None:
         pass
 
 
-_SHEET_ID_COLAB_FALLBACK = "149XGyTfPbGs34Wrb8WHBPC8gmzRQKJzvTEmqXlshvgg"
-_SHEET_NAME_COLAB_FALLBACK = "Contatos UFVAI"
-
-def _forward_contact_direct_sheet(addr: str, sha: str) -> None:
-    """Fallback Colab: escrita direta na planilha via Sheets API.
-
-    Usado quando UFVAI_CONTACT_ENDPOINT não está configurado mas estamos no Colab.
-    Requer que a planilha esteja compartilhada como 'Qualquer pessoa com link - Editor'
-    (feito automaticamente na criação 0.6.8) e que o usuário esteja autenticado no Colab
-    (auth.authenticate_user). Firewall silencioso.
-    """
+def _contato_log(msg: str) -> None:
+    """v0.6.9-offline: auditoria local do fluxo de contato — sem isso um
+    envio fire-and-forget é indistinguível de uma falha silenciosa."""
     try:
-        import gspread  # type: ignore
-        from google.auth import default  # type: ignore
-        creds, _ = default()
-        if not creds or not creds.valid:
-            # tenta refresh silencioso
-            try:
-                from google.auth.transport.requests import Request
-                creds.refresh(Request())
-            except Exception:
-                return
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(_SHEET_ID_COLAB_FALLBACK)
+        d = os.path.expanduser("~/PesquisAI/logs")
         try:
-            ws = sh.worksheet(_SHEET_NAME_COLAB_FALLBACK)
+            os.makedirs(d, exist_ok=True)
+            probe = os.path.join(d, ".w")
+            open(probe, "w").close()
+            os.remove(probe)
         except Exception:
-            ws = sh.sheet1
-        row = [
-            time.strftime("%Y-%m-%d %H:%M:%S"),
-            addr,
-            sha,
-            "colab",
-            _APP_VERSION,
-            "ufvai",
-        ]
-        ws.append_row(row, value_input_option="RAW")
+            d = "/tmp/PesquisAI/logs"
+            os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "contato.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S") + " " + msg + "\n")
     except Exception:
         pass
 
 
-def _forward_contact(addr: str, sha: str) -> None:
-    """POST {email, email_sha256, …} ao endpoint PRÓPRIO do desenvolvedor.
+# v0.6.9-P03: Canal 3 (gspread → planilha world-writable) REMOVIDO.
+# Google Forms (POST) NÃO funciona em fluxo automatizado (reCAPTCHA).
+# Canal único: webhook UFVAI_CONTACT_ENDPOINT (Apps Script → Planilha).
+# Link manual do Forms disponível na UI para envio opcional pelo usuário.
 
-    (v0.6.7) Ativado se UFVAI_CONTACT_ENDPOINT estiver definido no ambiente
-    OU salvo pelo painel Admin (ex.: Apps Script → Planilha Google).
-    (v0.6.8) Fallback Colab: se sem endpoint e em /content, tenta escrita direta
-    via Sheets API (planilha compartilhada como anyone writer). Fire-and-forget.
+
+def _forward_contact(addr: str, sha: str, kind: str = "novo_contato") -> None:
+    """Envia o contato opt-in via webhook (único canal automático).
+
+    O Google Forms tem reCAPTCHA que bloqueia submissões programáticas,
+    então NÃO pode ser usado no fluxo automatizado (tela de abertura).
+    O webhook (UFVAI_CONTACT_ENDPOINT) é o único canal confiável.
+
+    ``kind`` distingue o tipo de registro gravado na planilha:
+      • "novo_contato" — primeiro aceite da tela de Termos (opt-in);
+      • "usuario_ativo" — reabertura: usuário já ativo, cada novo acesso
+        (heartbeat da tela "Bem-vindo de volta" → flag na planilha).
+
+    Fire-and-forget. Se o endpoint não estiver configurado, o contato
+    fica salvo localmente e o log registra que nenhum envio remoto
+    ocorreu (o desenvolvedor deve configurar o endpoint para receber).
     """
     url = _contact_endpoint()
+    _contato_log("forward iniciado (kind=%s) * endpoint=" % kind +
+                 (url[:60] + "..." if len(url) > 60 else (url or "<VAZIO>")))
     if url:
         try:
             payload = {
@@ -315,6 +382,7 @@ def _forward_contact(addr: str, sha: str) -> None:
                 "environment": "colab" if os.path.isdir("/content") else "local",
                 "app_version": _APP_VERSION,
                 "sent_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "flag": kind,
             }
             req = urllib.request.Request(
                 url,
@@ -322,18 +390,35 @@ def _forward_contact(addr: str, sha: str) -> None:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            # v0.6.7: timeout 8 s — Apps Script tem cold start de ~1-3 s;
-            # 3 s abortava envios válidos na primeira execução do dia.
-            urllib.request.urlopen(req, timeout=8).read(16)
+            resp = urllib.request.urlopen(req, timeout=8)
+            body = resp.read(64)
+            _contato_log("forward OK * http=%s * resp=%s" % (getattr(resp, "status", "?"), body[:40]))
             return
-        except Exception:
-            pass
-    # Fallback Colab direto (sem endpoint)
-    if os.path.isdir("/content"):
+        except Exception as e:
+            _contato_log("forward FALHOU * %s: %s" % (type(e).__name__, str(e)[:120]))
+    else:
+        _contato_log("forward PENDENTE: UFVAI_CONTACT_ENDPOINT nao configurado. "
+                     "Contato salvo localmente. Configure o webhook para receber.")
+
+
+def _tel_log(msg: str) -> None:
+    """v0.6.9-offline: auditoria da telemetria (logs/telemetria.log).
+    O event() era totalmente silencioso — impossível distinguir
+    'sem credenciais' de 'falha de rede'."""
+    try:
+        d = os.path.expanduser("~/PesquisAI/logs")
         try:
-            _forward_contact_direct_sheet(addr, sha)
+            os.makedirs(d, exist_ok=True)
+            probe = os.path.join(d, ".w")
+            open(probe, "w").close()
+            os.remove(probe)
         except Exception:
-            pass
+            d = "/tmp/PesquisAI/logs"
+            os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "telemetria.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S") + " " + msg + "\n")
+    except Exception:
+        pass
 
 
 def kill_switch_active() -> bool:
@@ -414,8 +499,20 @@ def event(name: str, params: dict | None = None) -> None:
     """
     try:
         if not enabled():
+            why = []
+            if kill_switch_active():
+                why.append("kill-switch UFVAI_TELEMETRY=0")
+            else:
+                if not configured():
+                    why.append("credenciais ausentes (defina UFVAI_GA_MEASUREMENT_ID e UFVAI_GA_API_SECRET em ~/PesquisAI/config/ufvai.env)")
+                if not consented():
+                    why.append("sem consentimento (caixa GA4 desmarcada)")
+            _tel_log("evento '%s' SUPRIMIDO: %s" % (name, "; ".join(why) or "?"))
             return
         mid, sec = _ga_config()
+        _tel_log("evento '%s' → GA4 %s (debug=%s)" % (
+            name, mid,
+            "sim" if os.environ.get("UFVAI_TELEMETRY_DEBUG", "").strip().lower() in ("1", "true", "yes", "on") else "nao"))
         payload = {
             "client_id": _client_id(),
             "non_personalized_ads": True,
@@ -439,10 +536,42 @@ def event(name: str, params: dict | None = None) -> None:
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                urllib.request.urlopen(req, timeout=3).read(16)
-            except Exception:
-                pass
+                resp = urllib.request.urlopen(req, timeout=3)
+                resp.read(16)
+                _tel_log("evento '%s' ENVIADO http=%s" % (name, getattr(resp, "status", "?")))
+            except Exception as e:
+                _tel_log("evento '%s' FALHOU · %s: %s" % (name, type(e).__name__, str(e)[:120]))
 
         threading.Thread(target=_send, daemon=True).start()
     except Exception:
         pass
+
+
+def notify_active_user() -> None:
+    """v0.6.9: heartbeat — registra cada NOVO ACESSO de usuário já ativo.
+
+    Na reabertura (perfil persistente existente + mesma versão dos Termos),
+    a UI mostra a tela "Bem-vindo de volta" e, ao confirmar, chama este
+    heartbeat: o webhook recebe o e-mail + horário do acesso + flag
+    "usuario_ativo", distinguindo-o do "novo_contato" (primeiro aceite).
+
+    LGPD: finalidade já consentida (art. 7º V — ativação/contato sobre o
+    produto); o e-mail NUNCA vai ao GA4 — apenas ao endpoint do
+    desenvolvedor (UFVAI_CONTACT_ENDPOINT), como no aceite original.
+
+    Fire-and-forget; sem perfil salvo ou sem endpoint → no-op silencioso
+    (apenas auditoria local).
+    """
+    try:
+        prof = _read_profile()
+        addr = str(prof.get("email", ""))
+        if not addr:
+            _contato_log("heartbeat SKIP: sem e-mail salvo (primeiro acesso?)")
+            return
+        threading.Thread(
+            target=_forward_contact,
+            args=(addr, str(prof.get("email_sha256", "")), "usuario_ativo"),
+            daemon=True,
+        ).start()
+    except Exception as e:
+        _contato_log("heartbeat FALHOU: %s" % type(e).__name__)

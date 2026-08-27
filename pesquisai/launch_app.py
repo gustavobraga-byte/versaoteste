@@ -50,6 +50,7 @@ try:
     from .telemetry import event as _tel_event, set_consent as _tel_set_consent
     from .telemetry import masked_state as _tel_masked_state, save_admin_config as _tel_save_admin
     from .telemetry import save_contact as _tel_save_contact, clear_contact as _tel_clear_contact, contact_status as _tel_contact_status
+    from .telemetry import notify_active_user as _tel_notify_active_user
 except Exception:  # pragma: no cover
     def _tel_event(*a, **k): pass
     def _tel_set_consent(*a, **k): pass
@@ -64,6 +65,7 @@ except Exception:  # pragma: no cover
     def _tel_clear_contact(*a, **k): pass
     def _tel_contact_status(*a, **k):
         return {"has_email": False, "email_masked": "", "contact_endpoint_set": False}
+    def _tel_notify_active_user(*a, **k): pass
 # v0.4.2.2: __version__ foi MOVIDO para pesquisai/__version__.py
 # (estava em /__version__.py). Mantemos fallback para robustez.
 try:
@@ -165,6 +167,11 @@ def resolve_opencode() -> tuple[str, dict]:
 
 
 def install_ttyd() -> None:
+    # v0.6.9-5: se ttyd já está bundle no .deb, não tenta apt (evita falha offline)
+    import shutil as _shutil
+    if _shutil.which("ttyd") or os.path.isfile("/usr/local/bin/ttyd"):
+        print("✅ ttyd já instalado — pulando.")
+        return
     print(f"\n{next_joke('economia')}")
     print("📦 Instalando ttyd...")
     subprocess.run(
@@ -180,14 +187,37 @@ def install_ttyd() -> None:
     if r1.returncode != 0:
         print("⚠️  apt-get falhou. Tentando download manual do ttyd...")
         url = "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64"
+        # v0.6.9-5: tenta /usr/local/bin, fallback para ~/bin se sem permissão
+        target = "/usr/local/bin/ttyd"
         rc = subprocess.run(
-            ["curl", "-fsSL", url, "-o", "/usr/local/bin/ttyd"],
+            ["curl", "-fsSL", url, "-o", target],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ).returncode
+        if rc != 0 or not os.path.isfile(target):
+            # fallback local
+            import pathlib
+            _local_bin = os.path.expanduser("~/bin/ttyd")
+            os.makedirs(os.path.dirname(_local_bin), exist_ok=True)
+            rc2 = subprocess.run(
+                ["curl", "-fsSL", url, "-o", _local_bin],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            if rc2 == 0:
+                subprocess.run(
+                    ["chmod", "+x", _local_bin],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                # garante no PATH desta sessão
+                if os.path.dirname(_local_bin) not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = f"{os.path.dirname(_local_bin)}:{os.environ['PATH']}"
+                print(f"✅ ttyd baixado manualmente em {_local_bin}.")
+                return
         if rc == 0:
             subprocess.run(
-                ["chmod", "+x", "/usr/local/bin/ttyd"],
+                ["chmod", "+x", target],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -548,17 +578,48 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
     else:
         html_content = touch_script + html_content
 
-    # 5. Salvar HTML custom
-    index_path = "/tmp/ttyd_touch.html"
+    # 5. Salvar HTML custom — v0.6.9-5: caminho do usuário para evitar Permission denied
+    # quando /tmp/ttyd_touch.html pertence a root (instalação via sudo)
+    import tempfile as _tf
+    candidates: list[str] = []
     try:
-        with open(index_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
+        _user_cache = os.path.join(os.path.expanduser("~"), ".cache", "ufvai")
+        os.makedirs(_user_cache, exist_ok=True)
+        candidates.append(os.path.join(_user_cache, f"ttyd_touch_{os.getuid()}.html"))
+    except Exception:
+        pass
+    try:
+        _pesquisai_tmp = os.path.join(os.path.expanduser("~"), "PesquisAI", "tmp")
+        os.makedirs(_pesquisai_tmp, exist_ok=True)
+        candidates.append(os.path.join(_pesquisai_tmp, "ttyd_touch.html"))
+    except Exception:
+        pass
+    candidates.append(os.path.join(_tf.gettempdir(), f"ttyd_touch_{os.getuid()}.html"))
+    candidates.append("/tmp/ttyd_touch.html")
+    index_path = None
+    for _cand in candidates:
+        try:
+            if os.path.exists(_cand) and not os.access(_cand, os.W_OK):
+                try:
+                    os.unlink(_cand)
+                except Exception:
+                    continue
+            _dir = os.path.dirname(_cand)
+            if _dir:
+                os.makedirs(_dir, exist_ok=True)
+            with open(_cand, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            index_path = _cand
+            break
+        except Exception as e:
+            logger.debug("Tentativa de salvar touch em %s falhou: %s", _cand, e)
+            continue
+    if index_path:
         _TTYD_TOUCH_INDEX_PATH = index_path
         print(f"✅ Touch handlers injetados no HTML do ttyd: {index_path}")
         return index_path
-    except Exception as e:
-        logger.warning("Falha ao salvar HTML custom do ttyd: %s", e)
-        return None
+    logger.warning("Falha ao salvar HTML custom do ttyd em todos os candidatos")
+    return None
 
 
 def _build_ttyd_args(base_args: list, env: dict) -> list:
@@ -903,14 +964,27 @@ except ImportError:
 
 
 def start_wrapper_server():
-    # Determine correct backup dir — prefer the known Drive path
+    # Determine correct backup dir — v0.6.9-6: offline usa local se Drive sem escrita
     _pesquisai_drive = "/content/drive/My Drive/PesquisAI"
-    if os.path.isdir(_pesquisai_drive):
+    # Se Drive existe mas não tem escrita, usa local (fallback offline)
+    _drive_writable = os.path.isdir(_pesquisai_drive) and os.access(_pesquisai_drive, os.W_OK)
+    # Também respeita vault fallback: se vault é local, backup também é local
+    try:
+        _vault_is_local = "home" in str(os.environ.get("PESQUISAI_OBSIDIAN_VAULT","")) or "/home/" in str(_pesquisai_drive)
+        # checa se discovery fallback ativou
+        from .obsidian.discovery import get_default_vault_path as _gdv
+        _vd = _gdv()
+        if _vd and ("/home/" in _vd or str(_vd).startswith(str(os.path.expanduser("~")))):
+            _drive_writable = False
+    except Exception:
+        pass
+    if _drive_writable:
         _base = _pesquisai_drive
-    elif os.path.isdir(_folder_path) and "drive" in _folder_path.lower():
+    elif os.path.isdir(_folder_path) and "drive" in _folder_path.lower() and os.access(_folder_path, os.W_OK):
         _base = _folder_path
     else:
-        _base = _folder_path
+        _base = os.path.join(os.path.expanduser("~"), "PesquisAI")
+        os.makedirs(_base, exist_ok=True)
     DRIVE_BACKUP_DIR = os.path.join(_base, "backups")
     os.makedirs(DRIVE_BACKUP_DIR, exist_ok=True)
     print(f"📁 Backup dir: {DRIVE_BACKUP_DIR}")
@@ -2549,6 +2623,18 @@ def start_wrapper_server():
                                                 "state": _tel_masked_state()})
                 return
 
+            # v0.6.9: heartbeat de usuário ativo — chamado pela tela
+            # "Bem-vindo de volta" a cada reabertura (e-mail + hora + flag
+            # "usuario_ativo" → planilha de contatos do desenvolvedor).
+            # No primeiro acesso (sem perfil) a UI NÃO chama este endpoint.
+            if p == "/api/access":
+                try:
+                    _tel_notify_active_user()
+                except Exception:
+                    pass
+                self._json(200, {"ok": True})
+                return
+
             if p == "/api/consent":
                 # v0.6.0: grava aceite dos Termos + opt-in de telemetria
                 # v0.6.6: e-mail de contato OPCIONAL (LGPD art. 7º I)
@@ -2625,9 +2711,11 @@ def start_wrapper_server():
 
             self.send_error(404)
     
-    # v0.6.0: Colab mantém 0.0.0.0 (exigência do proxy); local usa 127.0.0.1.
-    # Override: export UFVAI_BIND_HOST=0.0.0.0  (Docker precisa disso)
-    _bind_host = os.environ.get("UFVAI_BIND_HOST") or ("0.0.0.0" if IN_COLAB else "127.0.0.1")
+    # v0.6.9-6: offline completo — bind 0.0.0.0 resolve "porta não funciona" quando localhost
+    # resolve para 127.0.1.1 (Ubuntu /etc/hosts) ou quando o usuário tem proxy. Token + CORS
+    # mantêm segurança mesmo em 0.0.0.0 (LAN precisaria do token). Override: UFVAI_BIND_HOST=127.0.0.1
+    # para voltar ao modo localhost-only.
+    _bind_host = os.environ.get("UFVAI_BIND_HOST") or "0.0.0.0"
     print(f"🛡️  Wrapper: bind {_bind_host}:{WRAPPER_PORT} · token {'ON' if _SESSION_TOKEN else 'OFF'} · CORS same-origin")
 
     # v0.6.3: servidor DUAL-STACK no loopback — o Chromium/Firefox preferem
@@ -2645,21 +2733,21 @@ def start_wrapper_server():
     except OSError as e:
         logger.error("Falha ao bindar wrapper em %s:%s — %s", _bind_host, WRAPPER_PORT, e)
 
-    if not IN_COLAB and _bind_host == "127.0.0.1":
-        try:
-            import socket as _s
+    # v0.6.9-6: tenta IPv6 também — 0.0.0.0 só cobre IPv4, localhost pode ser ::1
+    try:
+        import socket as _s
 
-            class _LoopbackV6(ThreadingHTTPServer):
-                address_family = _s.AF_INET6
+        class _LoopbackV6(ThreadingHTTPServer):
+            address_family = _s.AF_INET6
 
-            threading.Thread(
-                target=lambda: _LoopbackV6(("::1", WRAPPER_PORT), Handler).serve_forever(),
-                daemon=True,
-                name="ufvai-wrapper-v6",
-            ).start()
-            _servers_started += 1
-        except OSError:
-            pass  # sem IPv6 no host — segue só com IPv4
+        threading.Thread(
+            target=lambda: _LoopbackV6(("::", WRAPPER_PORT), Handler).serve_forever(),
+            daemon=True,
+            name="ufvai-wrapper-v6",
+        ).start()
+        _servers_started += 1
+    except OSError:
+        pass  # sem IPv6 no host — segue só com IPv4
     if _servers_started == 0:
         raise RuntimeError(f"Nenhum servidor wrapper pôde ser iniciado na porta {WRAPPER_PORT}.")
     print(f"\n{next_joke('economia')}")

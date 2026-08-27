@@ -3415,6 +3415,75 @@ def create_wrapper_html(
     </div>
   </div>
 </div>
+
+<!-- ═══ v0.6.9 — Bem-vindo de volta (usuário já ativo na reabertura) ═══ -->
+<style>
+  #welcome-overlay{position:fixed;inset:0;z-index:99998;display:none;align-items:center;
+    justify-content:center;background:rgba(10,13,17,.93);backdrop-filter:blur(6px);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;padding:16px;
+    overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  #welcome-overlay .w-card{max-width:440px;width:100%;background:#141c24;border:1px solid #b29149;
+    border-radius:14px;padding:28px 30px;color:#e8e6e0;box-shadow:0 20px 60px rgba(0,0,0,.5);
+    text-align:center;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;
+    -webkit-overflow-scrolling:touch;margin:auto;}
+  #welcome-overlay .w-logo{width:96px;height:96px;border-radius:50%;border:2px solid rgba(178,145,73,.55);
+    box-shadow:0 4px 18px rgba(0,0,0,.45);background:#fff;object-fit:cover;margin:0 auto 12px;display:block;}
+  #welcome-overlay .w-brand{font-family:"Montserrat","Syne",sans-serif;font-size:26px;letter-spacing:-0.02em;}
+  #welcome-overlay .w-brand b{font-weight:700}#welcome-overlay .w-brand em{font-style:normal;font-weight:600;color:#b29149}
+  #welcome-overlay .w-title{font-size:18px;font-weight:600;margin:10px 0 4px;color:#e8e6e0;}
+  #welcome-overlay .w-sub{font-size:12px;color:#9a9790;line-height:1.5;margin-bottom:16px;}
+  #welcome-overlay .w-email{display:inline-block;background:rgba(178,145,73,.12);border:1px solid rgba(178,145,73,.4);
+    border-radius:8px;padding:10px 18px;font-size:15px;font-weight:600;color:#F0E4C3;margin:4px 0 6px;word-break:break-all;}
+  #welcome-overlay .w-note{font-size:10.5px;color:#7d7a72;line-height:1.45;margin:6px 0 18px;}
+  #welcome-overlay .w-actions{display:flex;flex-direction:column;gap:9px;}
+  #welcome-overlay button{padding:12px 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;
+    border:1px solid transparent;transition:.15s;width:100%;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+  #welcome-overlay .w-ok{background:linear-gradient(135deg,#D1A705,#b29149);color:#141c24;border:none;min-height:46px;}
+  #welcome-overlay .w-switch{background:transparent;color:#9a9790;border-color:rgba(154,151,144,.35);font-weight:500;min-height:44px;}
+  @media (max-width:640px){
+    #welcome-overlay{padding:10px;padding-left:max(10px,env(safe-area-inset-left));
+      padding-right:max(10px,env(safe-area-inset-right));align-items:flex-start;
+      -webkit-text-size-adjust:100%;text-size-adjust:100%;}
+    #welcome-overlay .w-card{padding:20px 16px;padding-bottom:calc(20px + env(safe-area-inset-bottom));
+      border-radius:12px;max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px);}
+    #welcome-overlay .w-logo{width:72px !important;height:72px !important;}
+    #welcome-overlay .w-brand{font-size:21px;}
+    #welcome-overlay .w-title{font-size:16px;}
+    #welcome-overlay .w-email{font-size:14px;}
+  }
+  @media (max-width:400px){
+    #welcome-overlay{padding:8px;}
+    #welcome-overlay .w-card{padding:16px 12px;}
+    #welcome-overlay .w-logo{width:60px !important;height:60px !important;}
+    #welcome-overlay .w-brand{font-size:19px;}
+  }
+  @media (max-height:520px){
+    #welcome-overlay{align-items:flex-start;}
+    #welcome-overlay .w-card{padding:14px 16px;max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);}
+    #welcome-overlay .w-logo{width:44px !important;height:44px !important;margin-bottom:6px !important;}
+    #welcome-overlay .w-title{font-size:15px;margin-top:6px;}
+    #welcome-overlay .w-sub{margin-bottom:10px;}
+    #welcome-overlay .w-actions{gap:6px;}
+  }
+</style>
+<div id="welcome-overlay" role="dialog" aria-modal="true" aria-label="Bem-vindo de volta">
+  <div class="w-card">
+    <img src="assets/logo-oficial-288.jpg" alt="UFVAI — Universidade Federal de Viçosa"
+         onerror="this.style.display='none'" class="w-logo" />
+    <div class="w-brand"><b>UFV</b><em>AI</em></div>
+    <div class="w-sub" style="font-size:11px;color:#9a9790;margin-bottom:8px;">Pesquisa científica com integridade · UFV/DER · v{__VERSION__}</div>
+    <div class="w-title">👋 Bem-vindo de volta! / Welcome back!</div>
+    <div class="w-sub">Continue sua pesquisa de onde parou.<br>
+      <span style="opacity:.75">Pick up your research where you left off.</span></div>
+    <div class="w-email" id="w-email">—</div>
+    <div class="w-note">🔒 Seu e-mail de ativação — guardado no seu Drive (backups/ufvai_consentimento.json)
+      · Your activation e-mail — stored in your Drive (backups/ufvai_consentimento.json).</div>
+    <div class="w-actions">
+      <button class="w-ok" id="w-ok-btn">Continuar como este usuário / Continue as this user</button>
+      <button class="w-switch" id="w-switch-btn">Se não é você, alterar e-mail / Not you? Change e-mail</button>
+    </div>
+  </div>
+</div>
 <script>
 (function(){
   try{
@@ -3427,6 +3496,7 @@ def create_wrapper_html(
         btn=document.getElementById("t-accept-btn"),
         an=document.getElementById("t-analytics"),
         em=document.getElementById("t-email"),
+        profAnalytics=null,  // v0.6.9: prefs do perfil p/ o fluxo "Se não é você"
         err=null;
     function _validMail(v){return !!v && /^[^@\\s]{1,64}@[^@\\s]+\\.[^@\\s]{2,}$/.test(v);}
     function _updateBtn(){
@@ -3508,14 +3578,54 @@ def create_wrapper_html(
     });
     // ── v0.6.9: PRÉ-PREENCHIMENTO — perfil persistente (backups/ufvai_consentimento.json) ──
     try{
+      // v0.6.9: overlay "Bem-vindo de volta" — referências
+      var wov=document.getElementById("welcome-overlay");
+      var wOk=document.getElementById("w-ok-btn");
+      var wSwitch=document.getElementById("w-switch-btn");
+      var wEmail=document.getElementById("w-email");
+      function _showWelcome(email){
+        if(!wov) return false;
+        try{ if(wEmail) wEmail.textContent=email||"—"; }catch(e){}
+        wov.style.display="flex";
+        return true;
+      }
+      function _hideWelcome(){
+        try{ if(wov) wov.style.display="none"; }catch(e){}
+      }
+      // "Continuar" → heartbeat de acesso ativo (e-mail + hora + flag) e fecha
+      if(wOk){
+        wOk.addEventListener("click",function(){
+          try{ fetch("/api/access",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).catch(function(){}); }catch(e){}
+          _hideWelcome();
+          if(_autofillTimer){ clearInterval(_autofillTimer); _autofillTimer=null; }
+        });
+      }
+      // "Se não é você" → abre os Termos com o campo de e-mail editável
+      if(wSwitch){
+        wSwitch.addEventListener("click",function(){
+          _hideWelcome();
+          if(em && wEmail){ var cur=wEmail.textContent||""; if(!em.value && cur && cur!=="—") em.value=cur; }
+          if(an && typeof profAnalytics!=="undefined"){ an.checked=!!profAnalytics; }
+          if(chk){ chk.checked=true; }
+          ov.style.display="flex";
+          _updateBtn();
+          try{ if(em) setTimeout(function(){ em.focus(); em.select(); },260); }catch(e){}
+        });
+      }
       fetch("/api/consent").then(function(r){return r.json();}).then(function(d){
         var prof=(d&&d.profile)||{};
-        // Já aceitou ESTA versão (perfil sobrevive à sessão)? → pula a tela direto
+        profAnalytics=prof.analytics;
+        // Já aceitou ESTA versão (perfil sobrevive à sessão)?
+        // v0.6.9: em vez de pular direto, mostra "Bem-vindo de volta" com o
+        // e-mail do usuário + opção "Se não é você" (e registra o acesso na planilha).
         if(prof.accepted && prof.terms_version===_TV){
           localStorage.setItem("ufvai_terms_version",_TV);
           localStorage.setItem("ufvai_analytics", prof.analytics?"1":"0");
           if(prof.analytics && typeof window._ufvaiGaStart==="function"){ try{ window._ufvaiGaStart(); }catch(e){} }
-          return; // overlay nem é exibido
+          if(!_showWelcome(prof.email)){
+            return; // sem overlay (fallback): segue sem exibir nada
+          }
+          return;
         }
         // Sessão anterior (versão antiga dos Termos): pré-preenche e só confirma
         if(prof.email && em && !em.value){ em.value=prof.email; }

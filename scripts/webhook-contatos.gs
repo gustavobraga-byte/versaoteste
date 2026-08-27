@@ -1,8 +1,22 @@
 /**
- * Google Apps Script — Webhook de Contatos UFVAI v0.6.9-P03
+ * Google Apps Script — Webhook de Contatos UFVAI v0.6.9
  *
- * Este script recebe POSTs do UFVAI (opt-in de contato) e grava
- * na planilha "Contatos UFVAI" do seu Google Drive.
+ * Este script recebe POSTs do UFVAI (opt-in de contato + heartbeat de
+ * acesso ativo) e grava na planilha "Contatos UFVAI" do seu Google Drive.
+ *
+ * Payload esperado:
+ *   {
+ *     "product": "ufvai",
+ *     "email": "usuario@dominio.br",
+ *     "email_sha256": "abc123...",
+ *     "environment": "colab" | "local",
+ *     "app_version": "0.6.9",
+ *     "sent_at": "2026-08-24T21:53:00",
+ *     "flag": "novo_contato" | "usuario_ativo"
+ *   }
+ *   flag "novo_contato"  → primeiro aceite da tela de Termos (opt-in);
+ *   flag "usuario_ativo" → reabertura: cada novo acesso do usuário já
+ *   ativo (tela "Bem-vindo de volta" → e-mail + hora + flag na planilha).
  *
  * SEGURANÇA:
  * - Não usa planilha compartilhada (removido P0 #3)
@@ -57,7 +71,7 @@ function doPost(e) {
         "Email SHA-256",
         "Ambiente",
         "Versão",
-        "IP (removido)",
+        "Flag",
       ]);
     }
 
@@ -68,6 +82,11 @@ function doPost(e) {
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // v0.6.9: flag distingue novo contato (opt-in) de usuário já ativo
+    // (reabertura — tela "Bem-vindo de volta" → email + hora + flag)
+    var flag = String(data.flag || "novo_contato");
+    if (flag !== "novo_contato" && flag !== "usuario_ativo") { flag = "novo_contato"; }
+
     // Grava a linha (sem IP por privacidade)
     sheet.appendRow([
       data.sent_at || new Date().toISOString(),
@@ -75,7 +94,7 @@ function doPost(e) {
       data.email_sha256 || "",
       data.environment || "",
       data.app_version || "",
-      "",  // IP não é coletado
+      flag,
     ]);
 
     return ContentService.createTextOutput(
@@ -95,6 +114,6 @@ function doPost(e) {
  */
 function doGet() {
   return ContentService.createTextOutput(
-    JSON.stringify({ ok: true, service: "UFVAI Contact Webhook", version: "0.6.9-P03" })
+    JSON.stringify({ ok: true, service: "UFVAI Contact Webhook", version: "0.6.9" })
   ).setMimeType(ContentService.MimeType.JSON);
 }
