@@ -24,6 +24,33 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
+  v0.6.14 — 🐛 Fix IP localhost + todo acesso logado na planilha
+            • IP LOCALHOST FIX: _get_client_ip() agora aceita IP enviado pelo
+              cliente (via JS ipify → POST /api/consent e /api/access) e o
+              prefere quando for público — corrige Colab onde o proxy NÃO
+              injeta X-Forwarded-For e o servidor via só 127.0.0.1. Fallback
+              mantém headers (X-Forwarded-For, X-Real-IP etc.). Log de headers
+              quando IP ainda é privado para diagnóstico.
+            • TODO ACESSO NA PLANILHA: frontend agora busca IP público via
+              https://api.ipify.org?format=json (CORS) no carregamento e o
+              envia junto ao heartbeat; /api/access aceita {"ip": "..."} e
+              registra flag "usuario_ativo" em TODO carregamento de usuário
+              já registrado (antes só no clique "Continuar"). Backend também
+              registra heartbeat automaticamente no GET /api/consent quando
+              detecta revisita (perfil já aceito).
+  v0.6.13 — 🐛 IP real do cliente + heartbeat "usuario_ativo" na revisita
+            • IP: _get_client_ip() agora percorre a cadeia X-Forwarded-For
+              da DIREITA para a esquerda, saltando IPs privados/loopback
+              (127.0.0.1, 10.x, 172.16-31.x, 192.168.x) e devolve o
+              primeiro IP PÚBLICO — no Colab o proxy do Google injeta o IP
+              real do navegador; antes caía em client_address=127.0.0.1.
+              Headers extra: X-Real-IP, CF-Connecting-IP, True-Client-IP,
+              X-Forwarded, Forwarded (RFC 7239).
+            • REVISITA: telemetry._read_profile() agora cai no backup
+              persistente (Drive/~/PesquisAI backups/ufvai_consentimento.json)
+              quando o ~/.config efêmero perdeu o e-mail — o heartbeat
+              /api/access (flag "usuario_ativo") voltava SKIP e não gravava
+              a revisita do usuário já registrado na planilha.
   v0.6.9 — 📜 Termos v2.1: telemetria opt-out + e-mail obrigatório +
             perfil persistente + botão Manual
             • TELEMETRIA OPT-OUT (LGPD art. 7º IX): caixa vem MARCADA
@@ -277,13 +304,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.12"
+__version__: str = "0.6.14"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-09-01"
-__codename__: str = "Fix preview responsivo — altura/flex mobile + live update"
+__codename__: str = "Fix IP localhost + todo acesso logado"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

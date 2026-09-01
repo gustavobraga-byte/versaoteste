@@ -288,12 +288,51 @@ def contact_status() -> dict:
     }
 
 
+def _persisted_profile_path() -> str | None:
+    """v0.6.13: caminho do perfil PERSISTENTE (backups/ufvai_consentimento.json).
+
+    Espelha a lógica de launch_app._consent_backup_file(): no Colab o
+    arquivo vive no Google Drive (sobrevive ao reset da VM); offline vive
+    em ~/PesquisAI/backups/. Retorna None em caso de falha.
+    """
+    try:
+        base = ("/content/drive/My Drive/PesquisAI"
+                if os.path.isdir("/content/drive/My Drive")
+                else os.path.expanduser("~/PesquisAI"))
+        return os.path.join(base, "backups", "ufvai_consentimento.json")
+    except Exception:
+        return None
+
+
 def _read_profile() -> dict:
+    """Perfil de contato persistente.
+
+    v0.6.13: o ~/.config é efêmero no Colab (reset da VM apaga). Se o
+    arquivo local não tiver e-mail (usuário já registrado REVISITANDO uma
+    sessão nova), cai no backup persistente do Drive — corrige o heartbeat
+    ``/api/access`` (flag "usuario_ativo") que ficava sem e-mail e pulava
+    a gravação na planilha em toda revisita.
+    """
+    prof: dict = {}
     try:
         with open(_PROFILE_FILE, encoding="utf-8") as f:
-            return json.load(f)
+            prof = json.load(f) or {}
     except Exception:
-        return {}
+        prof = {}
+    if not prof.get("email"):
+        try:
+            bpath = _persisted_profile_path()
+            if bpath and os.path.isfile(bpath):
+                with open(bpath, encoding="utf-8") as f:
+                    backup = json.load(f) or {}
+                if backup.get("email"):
+                    prof.setdefault("email", str(backup.get("email", "")).lower())
+                    prof.setdefault("email_sha256", str(backup.get("email_sha256", "")))
+                    if not prof.get("name"):
+                        prof["name"] = str(backup.get("name", "") or backup.get("nome", ""))
+        except Exception:
+            pass
+    return prof
 
 
 def _valid_name(name: str) -> bool:

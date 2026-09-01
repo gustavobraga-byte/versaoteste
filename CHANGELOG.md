@@ -1,5 +1,36 @@
 # Changelog — PesquisAI
 
+## [0.6.14] — 2026-09-01 — 🐛 Fix IP localhost (ipify client-side) + todo acesso logado
+
+### 🐛 IP ainda registrava 127.0.0.1 (localhost do Colab)
+- **Causa raiz (confirmada em produção 2026-09-01 19:21):** `GET /api/access` e `POST /api/consent` liam `X-Forwarded-For`/`X-Real-IP`/`Forwarded`, mas o proxy do Google Colab **não injeta** esses headers na conexão `localhost:8001` — `candidates=[]` → fallback `handler.client_address[0]` = `127.0.0.1`. O `contato.log` provou: `ip=127.0.0.1` em `novo_contato` e `forward iniciado … ip=127.0.0.1`.
+- **Fix `launch_app.py`:** `_get_client_ip(handler, client_ip=None)` agora aceita IP enviado pelo cliente (parâmetro `client_ip`). Quando o IP do cliente for público (`!_is_private_ip()`), é **preferido** sobre a cadeia de headers. `POST /api/access` e `POST /api/consent` extraem `ip`/`client_ip`/`clientIp` do JSON do body e passam a `_get_client_ip(self, client_ip=_body_ip)`. Log de diagnóstico quando IP ainda é privado (`logger.warning` com `candidates`+`headers`+`client_address`).
+- **Fix frontend `launch_app_responsive_v041.py`:** captura IP público via `https://api.ipify.org?format=json` (CORS, sem chave) no carregamento (`__UFVAI_CLIENT_IP__`), fallback `https://ipinfo.io/json` após 1,8s. `_post()` (Termos) e `_heartbeat()` (`/api/access`) agora enviam `payload.ip = __UFVAI_CLIENT_IP__` quando disponível. Sem IP, backend ainda usa headers (offline/local).
+
+### 🐛 Todo acesso de usuário já registrado deve ir para a planilha (flag `usuario_ativo`)
+- **Causa:** `fetch("/api/access", {body:"{}"})` só era chamado no **clique** do botão "Continuar" do overlay "Bem-vindo de volta". Se o usuário apenas recarregasse a página sem clicar (ou se o JS falhasse), nenhum heartbeat era enviado. Requisito do projeto: **todo acesso** (cada carregamento da UI) deve gerar linha na planilha com `flag=usuario_ativo`.
+- **Fix frontend:** `_heartbeat()` extraído (envia `ip` do cliente). No `fetch("/api/consent")` que detecta `prof.accepted && prof.terms_version===_TV` (usuário já ativo), após `_showWelcome()` dispara ` _heartbeat()` imediatamente **e** `setTimeout(_heartbeat, 2500)` (segunda tentativa após ipify resolver). O clique em "Continuar" também chama `_heartbeat()` (idempotente — duas linhas por acesso são aceitáveis; anti-abuso `MAX_ROWS=5000`).
+- **Fix backend `launch_app.py`:** `POST /api/access` agora lê `ip` do body e o repassa a `notify_active_user(_cip)`; `POST /api/consent` idem. `telemetry._read_profile()` já cai no backup persistente (fix v0.6.13), então mesmo com `~/.config` efêmero o heartbeat encontra o e-mail.
+
+### Outros (bump)
+- Bump `0.6.13 → 0.6.14` em `pesquisai/__version__.py` (`__version__`, `__release_date__="2026-09-01"`, `__codename__="Fix IP localhost + todo acesso logado"`), `pyproject.toml`, `AGENTS.md` e `agents/AGENTS.*.md` (5 idiomas), `README.md`/`MANUAL.md` badges.
+- Apps Script `APPS_SCRIPT_PLANILHA_CONTATO.gs` inalterado (já trata `name`+`ip`+`flag`); planilha já tem 8 colunas.
+
+## [0.6.13] — 2026-09-01 — 🐛 IP real do cliente + heartbeat "usuario_ativo" na revisita
+
+### 🐛 IP coletado era 127.0.0.1 (localhost do Colab)
+- **Causa:** `_get_client_ip()` lia `X-Forwarded-For` pegando o PRIMEIRO item da cadeia e, sem header, caía em `handler.client_address[0]` = `127.0.0.1` (conexão local do proxy do Google). A planilha registrava sempre `127.0.0.1`.
+- **Fix `launch_app.py`:** novo `_get_client_ip()` v0.6.13 percorre a cadeia `X-Forwarded-For` da **DIREITA para a esquerda**, saltando IPs privados/loopback via helper `_is_private_ip()` (prefixos IPv4 privados 10./172.16-31./192.168., link-local 169.254., CGNAT 100.64., reservados + IPv6 `::1`/`fe80:`/ULA `fc`/`fd`), devolvendo o **primeiro IP público** — o proxy do Google Colab injeta o IP real do navegador nessa cadeia.
+- **Headers extras:** `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`, `X-Forwarded`, `X-Cluster-Client-IP` e `Forwarded` (RFC 7239 `for=`); fallback em cadeia → `client_address`. Nunca retorna vazio (se tudo for privado, devolve o primeiro candidato).
+
+### 🐛 Revisita de usuário já registrado não gravava na planilha
+- **Causa:** o e-mail ficava em `~/.config/ufvai_profile.json` (efêmero — reset da VM do Colab apaga). Em sessão nova, o GET `/api/consent` achava o usuário no backup persistente (`backups/ufvai_consentimento.json` no Drive) e mostrava "Bem-vindo de volta", mas o heartbeat `POST /api/access` → `telemetry.notify_active_user()` lia só o perfil efêmero → e-mail vazio → `SKIP` → nada gravado.
+- **Fix `telemetry.py`:** novo `_persisted_profile_path()` (espelha `launch_app._consent_backup_file()`: `/content/drive/My Drive/PesquisAI/backups/ufvai_consentimento.json` no Colab · `~/PesquisAI/backups/` offline) e `_read_profile()` agora **cai no backup persistente** quando o perfil local não tem e-mail — preenche `email`, `email_sha256` e `name`. `notify_active_user()` (flag `usuario_ativo`) volta a gravar a revisita na planilha; `_forward_contact` também se beneficia.
+
+### Outros (bump)
+- Bump `0.6.12 → 0.6.13` em `pesquisai/__version__.py` (`__version__`, `__release_date__="2026-09-01"`, `__codename__="IP real do cliente + heartbeat usuario_ativo na revisita"`), `pyproject.toml`, `AGENTS.md` e `agents/AGENTS.*.md` (5 idiomas), `README.md`/`MANUAL.md` badges.
+- Sem mudanças de frontend (`launch_app_responsive_v041.py` inalterado) nem Apps Script (`webhook-contatos.gs` já trata flag `usuario_ativo`).
+
 ## [0.6.12] — 2026-09-01 — 📱 Fix preview responsivo
 
 ### 📱 Memória — preview no mobile

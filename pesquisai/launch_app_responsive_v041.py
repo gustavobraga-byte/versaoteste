@@ -3571,8 +3571,15 @@ def create_wrapper_html(
 </div>
 <script>
 (function(){
+  // v0.6.14: captura IP público via ipify (CORS) — corrige Colab localhost (proxy sem XFF)
+  var __UFVAI_CLIENT_IP__ = "";
+  try {
+    fetch("https://api.ipify.org?format=json", {cache:"no-store"}).then(function(r){return r.json();}).then(function(j){ if(j && j.ip) __UFVAI_CLIENT_IP__ = String(j.ip).trim(); }).catch(function(){});
+    setTimeout(function(){ if(!__UFVAI_CLIENT_IP__) fetch("https://ipinfo.io/json", {cache:"no-store"}).then(function(r){return r.json();}).then(function(j){ if(j && j.ip) __UFVAI_CLIENT_IP__ = String(j.ip).trim(); }).catch(function(){}); }, 1800);
+  } catch(e){}
   try{
     // v0.6.10: termos v6 → re-consentimento (nome+email obrigatórios, IP capturado)
+    // v0.6.14: __UFVAI_CLIENT_IP__ enviado junto a /api/consent e /api/access
     var _TV="6";
     var ov=document.getElementById("terms-overlay");
     if(!ov) return;
@@ -3596,9 +3603,16 @@ def create_wrapper_html(
         var payload={accepted:accepted,analytics:analytics,terms_version:_TV};
         if(contactEmail!==undefined) payload.contact_email=contactEmail;
         if(contactName!==undefined) payload.contact_name=contactName;
+        if(__UFVAI_CLIENT_IP__) payload.ip=__UFVAI_CLIENT_IP__;
         fetch("/api/consent",{method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify(payload)}).catch(function(){});
+      }catch(e){}
+    }
+    function _heartbeat(){
+      try{
+        var p={}; if(__UFVAI_CLIENT_IP__) p.ip=__UFVAI_CLIENT_IP__;
+        fetch("/api/access",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).catch(function(){});
       }catch(e){}
     }
     function _showErr(msg){
@@ -3703,9 +3717,10 @@ def create_wrapper_html(
         try{ if(wov) wov.style.display="none"; }catch(e){}
       }
       // "Continuar" → heartbeat de acesso ativo (e-mail + hora + flag + IP) e fecha
+      // v0.6.14: envia IP do cliente (ipify) quando disponível; todo acesso já foi logado automaticamente ao mostrar o welcome
       if(wOk){
         wOk.addEventListener("click",function(){
-          try{ fetch("/api/access",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).catch(function(){}); }catch(e){}
+          try{ _heartbeat(); }catch(e){}
           _hideWelcome();
           if(_autofillTimer){ clearInterval(_autofillTimer); _autofillTimer=null; }
         });
@@ -3749,6 +3764,8 @@ def create_wrapper_html(
           if(!_showWelcome(prof.email, profName)){
             return; // sem overlay (fallback): segue sem exibir nada
           }
+          // v0.6.14: TODO acesso de usuário já registrado → registra automaticamente na planilha (flag usuario_ativo + IP)
+          try{ _heartbeat(); setTimeout(function(){ _heartbeat(); }, 2500); }catch(e){}
           return;
         }
         // Sessão anterior (versão antiga dos Termos): pré-preenche nome+e-mail e só confirma

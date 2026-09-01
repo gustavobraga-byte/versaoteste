@@ -764,20 +764,107 @@ def _read_consent_profile() -> dict:
     return prof
 
 
-def _get_client_ip(handler) -> str:
-    """v0.6.10: extrai IP real do cliente (X-Forwarded-For > X-Real-IP > remote_addr).
+_PRIVATE_IP_PREFIXES: tuple[str, ...] = (
+    "0.", "10.", "100.64.", "127.", "169.254.",
+    "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.",
+    "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.",
+    "172.28.", "172.29.", "172.30.", "172.31.",
+    "192.0.0.", "192.0.2.", "192.168.", "198.18.", "198.19.",
+    "198.51.100.", "203.0.113.",
+)
 
-    Para Colab (proxy Google) o IP visto é interno; ainda útil como métrica
-    de ativação distinta. Não é PII sensível sem geolocalização.
+
+def _is_private_ip(ip: str) -> bool:
+    """True se o IP for loopback/privado/reservado (IPv4 ou IPv6).
+
+    v0.6.13: usado para percorrer a cadeia X-Forwarded-For saltando os
+    proxies internos (127.0.0.1, 10.x, 172.16-31.x, 192.168.x) e devolver
+    o PRIMEIRO IP público = o endpoint real do navegador do usuário.
     """
+    ip = (ip or "").strip().lower().rstrip(".")
+    if not ip:
+        return True
+    if ":" in ip:  # IPv6
+        return ip in ("::", "::1") or ip.startswith(("fe80:", "fc", "fd"))
+    return ip.startswith(_PRIVATE_IP_PREFIXES)
+
+
+def _normalize_ip_token(token: str) -> str:
+    """Normaliza um item de cabeçalho IP para só o endereço.
+
+    Trata: '1.2.3.4', '1.2.3.4:8080' (IPv4+porta), '[2804:431::1]',
+    '[2804:431::1]:4567' (IPv6+porta) e '2804:431::1' (IPv6 puro).
+    """
+    t = (token or "").strip().strip("\"'\t ")
+    if not t:
+        return ""
+    if t.startswith("["):  # IPv6 entre colchetes, com/sem porta
+        end = t.find("]")
+        return t[1:end] if end != -1 else t.strip("[]")
+    if t.count(":") == 1:  # IPv4:porta (e não IPv6 puro, que tem 2+ ':')
+        t = t.split(":")[0]
+    return t.strip()
+
+
+def _get_client_ip(handler, client_ip: str | None = None) -> str:
+    """v0.6.14: extrai o IP REAL do usuário que está acessando.
+
+    v0.6.14: prioriza IP enviado pelo cliente (via JS ipify) quando for
+    público — corrige Colab onde o proxy NÃO injeta X-Forwarded-For e o
+    servidor via só 127.0.0.1/localhost. Se o IP do cliente for privado/
+    ausente, recorre à cadeia de headers.
+
+    Cadeia de headers (fallback):
+      1) X-Forwarded-For — "cliente, proxy1, proxy2" (direita→esquerda, pula privados)
+      2) X-Real-IP / CF-Connecting-IP / True-Client-IP / X-Forwarded /
+         X-Cluster-Client-IP / Forwarded (RFC 7239)
+      3) client_address (no Colab costuma ser 127.0.0.1)
+
+    Sempre devolve algo (nunca vazio).
+    """
+    # v0.6.14: IP enviado pelo frontend (ipify) tem prioridade quando público
     try:
-        xf = handler.headers.get("X-Forwarded-For", "") or ""
-        if xf:
-            # formato "client, proxy1, proxy2" — pega o primeiro
-            return xf.split(",")[0].strip().split(":")[0].strip()
-        xr = handler.headers.get("X-Real-IP", "") or ""
-        if xr:
-            return xr.strip().split(":")[0].strip()
+        if client_ip:
+            cip = _normalize_ip_token(str(client_ip))
+            if cip and not _is_private_ip(cip):
+                return cip
+    except Exception:
+        pass
+    try:
+        candidates: list[str] = []
+        # 1) X-Forwarded-For: "1.2.3.4, 10.0.0.1, 127.0.0.1"
+        for part in (handler.headers.get("X-Forwarded-For", "") or "").split(","):
+            p = _normalize_ip_token(part)
+            if p:
+                candidates.append(p)
+        # 2) headers de proxy/CDN de valor único
+        for hname in ("X-Real-IP", "CF-Connecting-IP", "True-Client-IP",
+                      "X-Forwarded", "X-Cluster-Client-IP"):
+            v = handler.headers.get(hname, "") or ""
+            if v:
+                p = _normalize_ip_token(v.split(",")[0])
+                if p:
+                    candidates.append(p)
+        # 3) Forwarded (RFC 7239): "for=1.2.3.4;proto=https"
+        for seg in (handler.headers.get("Forwarded", "") or "").split(";"):
+            seg = seg.strip()
+            if seg.lower().startswith("for="):
+                p = _normalize_ip_token(seg.split("=", 1)[1])
+                if p:
+                    candidates.append(p)
+        # da direita para a esquerda (mais confiável primeiro), pulando privados
+        for ip in reversed(candidates):
+            if not _is_private_ip(ip):
+                return ip
+        if candidates:
+            # tudo privado → devolve o primeiro da cadeia + log de diagnóstico
+            try:
+                # loga headers para debug do caso localhost (só quando ainda é privado)
+                _hdr_debug = {k: handler.headers.get(k, "") for k in ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "Forwarded")}
+                logger.warning("IP debug: candidates=%s headers=%s client_address=%s", candidates, _hdr_debug, getattr(handler, "client_address", "?"))
+            except Exception:
+                pass
+            return candidates[0]
         return handler.client_address[0] if hasattr(handler, "client_address") else ""
     except Exception:
         return ""
@@ -2666,10 +2753,14 @@ def start_wrapper_server():
             # "Bem-vindo de volta" a cada reabertura (e-mail + hora + flag
             # "usuario_ativo" → planilha de contatos do desenvolvedor).
             # v0.6.10: encaminha IP para a planilha.
+            # v0.6.14: aceita IP enviado pelo cliente (ipify) e garante
+            # que TODO acesso de usuário já registrado seja logado.
             # No primeiro acesso (sem perfil) a UI NÃO chama este endpoint.
             if p == "/api/access":
                 try:
-                    _cip = _get_client_ip(self)
+                    # v0.6.14: IP pode vir do body (cliente ipify) — preferido quando público
+                    _body_ip = str(body.get("ip") or body.get("client_ip") or body.get("clientIp") or "").strip() if isinstance(body, dict) else ""
+                    _cip = _get_client_ip(self, client_ip=_body_ip)
                     _tel_notify_active_user(_cip)
                 except Exception:
                     pass
@@ -2692,7 +2783,9 @@ def start_wrapper_server():
                 contact_msg = ""
                 cemail = str(body.get("contact_email") or body.get("email") or "").strip()
                 cname = str(body.get("contact_name") or body.get("name") or body.get("nome") or "").strip()
-                cip = _get_client_ip(self)
+                # v0.6.14: IP pode vir do body (cliente ipify) — preferido quando público
+                _body_ip2 = str(body.get("ip") or body.get("client_ip") or body.get("clientIp") or "").strip()
+                cip = _get_client_ip(self, client_ip=_body_ip2)
                 if accepted and not cemail:
                     return self._json(400, {
                         "ok": False,

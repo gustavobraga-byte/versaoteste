@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
 [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br)
-[![Versão](https://img.shields.io/badge/versão-0.6.12-orange.svg)]()
+[![Versão](https://img.shields.io/badge/versão-0.6.13-orange.svg)]()
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
@@ -178,6 +178,13 @@ O PesquisAI opera por módulos especializados (*skills*). Cada skill conecta o a
 
 ---
 
+## 🆕 Novidades v0.6.13 — 🐛 IP real + heartbeat "usuario_ativo" na revisita
+
+- **IP real do cliente:** `_get_client_ip()` agora percorre a cadeia `X-Forwarded-For` da direita para a esquerda, **saltando IPs privados/loopback** (`127.0.0.1`, `10.x`, `172.16-31.x`, `192.168.x`), e devolve o primeiro IP **público**. No Colab o proxy do Google injeta o IP real do navegador — antes a planilha registrava `127.0.0.1`. Headers extras: `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`, `X-Forwarded`, `Forwarded` (RFC 7239).
+- **Revisita registrada na planilha:** `telemetry._read_profile()` agora cai no **backup persistente** (`backups/ufvai_consentimento.json` — Drive no Colab · `~/PesquisAI/backups/` offline) quando o `~/.config` efêmero da VM perdeu o e-mail. O heartbeat `POST /api/access` de quem **já é usuário** volta a gravar a flag **`usuario_ativo`** a cada reabertura (antes dava `SKIP` e nada era salvo).
+
+### Histórico anterior
+
 ## 🆕 Novidades v0.6.12 — Memória BM25 cache + Nome+IP + Responsiva mobile
 
 **Versão 0.6.12** — pacote offline `pesquisai_0.6.10-offline_amd64.deb` — todas as entregas abaixo já estão nesta build.
@@ -267,7 +274,7 @@ O PesquisAI **não substitui** o julgamento humano e apresenta as seguintes limi
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.6.12. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.6.13. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
