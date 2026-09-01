@@ -63,7 +63,7 @@ Sem a flag DEBUG, os eventos vão para **Relatórios → Tempo real** (até algu
 | E-mails **somente** via opt-in de contato (Passo 9) — nunca pelo GA4 | E-mail no GA4 (proibido pelos Termos do Google) |
 
 ### Passo 8 — Conformidade LGPD (resumo operacional)
-- **Base legal (v0.6.9):** **legítimo interesse (art. 7º, IX)** — contadores anônimos sem cookies,
+- **Base legal (v0.6.10 — desde v0.6.9):** **legítimo interesse (art. 7º, IX)** — contadores anônimos sem cookies,
   ativa por padrão, com direito de oposição a qualquer momento (art. 18, §2º) via caixa da tela de
   Termos ou `UFVAI_TELEMETRY=0`; até a v0.6.8 era consentimento opt-in (art. 7º, I);
 - **Identificador:** UUID aleatório gerado localmente (`~/.config/ufvai_cid`), sem tabela de ligação
@@ -83,7 +83,7 @@ usuário. Desde a v0.6.6, a tela de Termos oferece um campo **opcional** de e-ma
 |---|---|---|
 | Usuário digita o e-mail e clica "Aceitar" | `~/.config/ufvai_profile.json` (chmod 600, com SHA-256 + carimbo) na máquina dele | Consentimento explícito — LGPD art. 7º I |
 | Evento `contact_optin` (contador SEM conteúdo) | GA4 — quantos usuários autorizaram contato | Termos do GA4 permitem; nenhum dado pessoal sai |
-| O endereço em si chega até você | SOMENTE se você configurar a **URL de contato** (painel 📊 Telemetria desde a v0.6.7, ou `UFVAI_CONTACT_ENDPOINT`). POST JSON: `{product, email, email_sha256, environment, app_version, sent_at}` | Consentimento com finalidade declarada |
+| O endereço em si chega até você | SOMENTE se você configurar a **URL de contato** (painel 📊 Telemetria desde a v0.6.7, ou `UFVAI_CONTACT_ENDPOINT`). POST JSON: `{product, email, name, email_sha256, ip, environment, app_version, sent_at, flag}` (`flag=novo_contato|usuario_ativo`) | Consentimento com finalidade declarada |
 
 ⚠️ **Nunca** envie o e-mail (bruto ou com hash) para o Google Analytics — viola os Termos do
 Google e pode derrubar sua propriedade. O canal do e-mail é separado do canal analítico.
@@ -137,12 +137,12 @@ O usuário pode revogar a qualquer momento: apagando o campo na tela de Termos, 
 
 | Aspecto | Como é |
 |---|---|
-| **Padrão (v0.6.9)** | ✅ **Ativa por padrão (opt-out)** — contadores anônimos, sem cookies; o usuário pode se opor a qualquer momento (`UFVAI_TELEMETRY=0` ou desmarcar a caixa na tela de Termos) — LGPD art. 7º IX + art. 18 §2º |
-| **Canais (v0.6.9)** | 🖥️ **gtag.js client-side** (`page_view` padrão, SEM cookie `_ga`, gate: aceite dos Termos v2.1 e não-oposição) + 📡 **Measurement Protocol server-side** (eventos do app) |
+| **Padrão (v0.6.10)** | ✅ **Ativa por padrão (opt-out)** — contadores anônimos, sem cookies; o usuário pode se opor a qualquer momento (`UFVAI_TELEMETRY=0` ou desmarcar a caixa na tela de Termos) — LGPD art. 7º IX + art. 18 §2º |
+| **Canais (v0.6.10)** | 🖥️ **gtag.js client-side** (`page_view` padrão, SEM cookie `_ga`, gate: aceite dos Termos v2.1 e não-oposição) + 📡 **Measurement Protocol server-side** (eventos do app) |
 | **Configuração pela UI** | Painel **📊 Telemetria (Admin)** na barra superior — cola ID + Secret + URL de contato (v0.6.7) sem editar arquivos (grava `~/.config/ufvai_telemetry.json`, chmod 600) |
 | **Consentimento/oposição** | Caixa de telemetria na tela de Termos (marcada = ativa); desmarcá-la ou `UFVAI_TELEMETRY=0` desliga (opt-out) |
 | **Tecnologia** | GA4 **Measurement Protocol** (envio *server-side*, sem cookies no navegador) |
-| **Conteúdo enviado** | Nome do evento + parâmetros não-pessoais (tabela §3); client-side limitado ao `page_view` padrão (evento custom `ufvai_session` removido na v0.6.9) |
+| **Conteúdo enviado** | Nome do evento + parâmetros não-pessoais (tabela §3); client-side limitado ao `page_view` padrão (evento custom `ufvai_session` removido na v0.6.9; v0.6.10 adiciona `name`+`ip` e flag por acesso) |
 | **O que NUNCA vai** | Prompts, respostas da IA, notas do vault, caminhos de arquivo, chaves de API, e-mails, IDs de conta Google |
 | **Identificador** | UUID aleatório gerado localmente (`~/.config/ufvai_cid`) — não é vinculado a ninguém |
 | **Kill-switch global** | `export UFVAI_TELEMETRY=0` desliga mesmo com consentimento ativo |
@@ -255,12 +255,12 @@ def enabled() -> bool:
 
 ## 5. Dois canais, uma única condição de aceite (v0.6.4 · revisado v0.6.9)
 
-Desde a v0.6.4 o UFVAI usa **canal duplo**, condicionado à mesma tela de Termos. Desde a **v0.6.9**
+Desde a v0.6.4 o UFVAI usa **canal duplo**, condicionado à mesma tela de Termos. Desde a **v0.6.10** (v0.6.9 já tinha opt-out)
 o canal client-side é limitado ao `page_view` padrão (**sem** evento custom e **sem** cookie `_ga`):
 
 | Canal | O que envia | Quando dispara |
 |---|---|---|
-| 🖥️ **gtag.js client-side** (`G-CMVTFP2M6F`) | Apenas `page_view` padrão — **sem cookie `_ga`** (`analytics_storage:'denied'`) e **sem** `ufvai_session` (removido na v0.6.9) | Após aceite dos Termos (versão vigente) **sem** oposição à telemetria; recarregar mantém o estado salvo |
+| 🖥️ **gtag.js client-side** (`G-CMVTFP2M6F`) | Apenas `page_view` padrão — **sem cookie `_ga`** (`analytics_storage:'denied'`) e **sem** `ufvai_session` (removido na v0.6.9; v0.6.10 adiciona `name`+`ip` e flag por acesso) | Após aceite dos Termos (versão vigente) **sem** oposição à telemetria; recarregar mantém o estado salvo |
 | 📡 **MP server-side** (mesmo ID) | Eventos de aplicação (`app_started`, backups, provedores…) via Python | A cada evento, se `enabled()` |
 
 O gtag usa `anonymize_ip:true`. Com oposição registrada (caixa desmarcada), **nenhum script do

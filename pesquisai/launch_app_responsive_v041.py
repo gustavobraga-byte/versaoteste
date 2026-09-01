@@ -354,6 +354,32 @@ RESPONSIVE_CSS: str = """
       * { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
           transition-duration: .001ms !important; scroll-behavior: auto !important; }
     }
+
+  /* === v0.6.10: Memória UFVAI responsiva (mobile + tablet) === */
+  @media (max-width: 767px) {
+    #memory-overlay > div { width: 95vw !important; max-width: 95vw !important; height: 92vh !important; max-height: 92vh !important; flex-direction: column !important; }
+    #memory-sidebar { width: 100% !important; max-height: 38vh; border-right: none !important; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    #memory-editor-pane { flex: 1; min-height: 0; }
+    #memory-editor-body { flex-direction: column !important; }
+    #memory-list { -webkit-overflow-scrolling: touch; }
+    #memory-search-input { font-size: 14px !important; padding: 8px 10px !important; }
+    #memory-note-meta { flex-wrap: wrap; }
+    #memory-editor, #memory-preview { padding: 12px !important; font-size: 13px !important; }
+    #memory-overlay .modal-title { font-size: 14px !important; }
+  }
+  @media (max-width: 479px) {
+    #memory-overlay > div { width: 100vw !important; max-width: 100vw !important; height: 100vh !important; max-height: 100vh !important; border-radius: 0 !important; }
+    #memory-sidebar { max-height: 42vh; }
+  }
+  @media (max-width: 380px) {
+    #memory-sidebar { max-height: 44vh; }
+    #memory-list { font-size: 11px !important; }
+  }
+  /* Touch: alvos ≥44px no mobile */
+  @media (max-width: 767px) {
+    .mem-note-item, .mem-folder-card { min-height: 44px; }
+    #memory-btn-save, #memory-btn-delete, #memory-overlay .modal-close { min-height: 44px; min-width: 44px; }
+  }
   </style>
 """
 
@@ -2461,17 +2487,24 @@ def create_wrapper_html(
           if (matches.length) filtered.push({ folder: folder.folder, notes: matches });
         }
         const total = filtered.reduce((s, f) => s + f.notes.length, 0);
-        if (cnt) cnt.textContent = total + " " + (dict["memory.notes_count"] || "notas");
+        if (cnt) {
+          if (total > _memorySearchLimit) cnt.textContent = Math.min(total, _memorySearchLimit) + " de " + total + " " + (dict["memory.notes_count"] || "notas") + " · paginado";
+          else cnt.textContent = total + " " + (dict["memory.notes_count"] || "notas");
+        }
         if (total === 0) {
           list.innerHTML = '<div class="modal-empty" style="padding:14px;font-size:11.5px;">' +
             (dict["memory.no_results"] || "Nenhum resultado para '" + escapeHtml(q) + "'.") + '</div>';
           return;
         }
         let html = "";
+        let _shown = 0;
         for (const folder of filtered) {
+          if (_shown >= _memorySearchLimit) break;
           const label = folder.folder || "📁 (raiz)";
-          html += '<div class="mem-folder-label">' + escapeHtml(label) + '</div>';
+          html += '<div class="mem-folder-label">' + escapeHtml(label) + ' (' + folder.notes.length + ')</div>';
           for (const n of folder.notes) {
+            if (_shown >= _memorySearchLimit) break;
+            _shown++;
             const active = (_memoryCurrent && _memoryCurrent.path === n.path) ? " active" : "";
             const human  = n.is_pesquisai_generated ? "" : " human";
             const tagHtml = (n.tags || []).slice(0, 3).map(t =>
@@ -2483,6 +2516,9 @@ def create_wrapper_html(
                     (tagHtml ? '<div style="margin-top:3px;">' + tagHtml + '</div>' : '') +
                     '</div>';
           }
+        }
+        if (total > _memorySearchLimit) {
+          html += '<div style="padding:10px;text-align:center;"><button onclick="_loadMoreMemoryResults()" class="modal-close" style="width:auto;padding:6px 14px;font-size:11px;">Mostrar mais (' + (total - _memorySearchLimit) + ' restantes)</button></div>';
         }
         list.innerHTML = html;
         return;
@@ -2683,12 +2719,45 @@ def create_wrapper_html(
 
     // ── Busca ──────────────────────────────────────────────────────
     let _searchDebounce = null;
+    let _memorySearchLimit = 50; // v0.6.10: paginação para vaults grandes (evita renderizar 1000+ divs)
     function searchMemory(q) {
       if (_searchDebounce) clearTimeout(_searchDebounce);
       _searchDebounce = setTimeout(() => {
         _memorySearch = q;
+        _memorySearchLimit = 50; // reseta paginação a cada nova busca
         renderMemorySidebar();
-      }, 150);
+        // v0.6.10: para queries ≥3 chars, tenta BM25 server-side (ranking melhor que substring)
+        if ((q||"").trim().length >= 3) {
+          fetch(BASE + "/api/obsidian/search?q=" + encodeURIComponent(q) + "&limit=20")
+            .then(r=>r.json()).then(d=>{
+              if (d && Array.isArray(d.results) && d.results.length) {
+                // renderiza resultados BM25 como lista plana (ranking já ordenado)
+                const list = document.getElementById("memory-list");
+                const cnt  = document.getElementById("memory-count");
+                const dict = I18N[_currentLang] || I18N["pt_BR"];
+                if (!list) return;
+                if (cnt) cnt.textContent = d.results.length + " " + (dict["memory.notes_count"] || "notas") + " · BM25";
+                let html = '<div class="mem-folder-label">🔎 BM25 — top ' + d.results.length + '</div>';
+                for (const r of d.results.slice(0, 20)) {
+                  const n = r.note || r;
+                  const active = (_memoryCurrent && _memoryCurrent.path === n.path) ? " active" : "";
+                  const tagHtml = (n.tags || []).slice(0,3).map(t=>'<span style="display:inline-block;font-size:9px;padding:0 4px;background:var(--accent-dim);color:var(--accent);border-radius:2px;margin-right:2px;">#'+escapeHtml(String(t).replace(/^#/,""))+'</span>').join("");
+                  html += '<div class="mem-note-item'+active+'" data-path="'+encodeURIComponent(n.path)+'" onclick="loadMemoryNote(decodeURIComponent(this.dataset.path))">'
+                       + '<div class="mem-note-title">' + escapeHtml(n.title || n.path) + '</div>'
+                       + '<div class="mem-note-path">' + escapeHtml(n.path) + ' · score ' + (r.score!=null?Number(r.score).toFixed(2):"") + '</div>'
+                       + (r.snippet?'<div style="font-size:10.5px;color:var(--ink-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(r.snippet)+'</div>':"")
+                       + (tagHtml?'<div style="margin-top:3px;">'+tagHtml+'</div>':"")
+                       + '</div>';
+                }
+                list.innerHTML = html;
+              }
+            }).catch(()=>{});
+        }
+      }, 200);
+    }
+    function _loadMoreMemoryResults(){
+      _memorySearchLimit += 50;
+      renderMemorySidebar();
     }
 
     // ── Carregar nota no editor ───────────────────────────────────
@@ -3393,20 +3462,31 @@ def create_wrapper_html(
          Opcionais ANTES do obrigatório (ordem crescente de exigência, v0.6.8) -->
     <label class="t-check"><input type="checkbox" id="t-analytics" checked>
       <span>Estatísticas anônimas de uso — <b>ativas por padrão</b> &nbsp;<span style="opacity:.7">(Anonymous usage stats — on by default, no cookies, no content. Desmarque para não contribuir / uncheck to opt out — LGPD art. 18 §2º; kill-switch UFVAI_TELEMETRY=0)</span></span></label>
-    <label class="t-check" style="display:block">
-      <span style="display:block;margin-bottom:4px">E-mail para contato/ativação — <b>obrigatório</b>
-        <span style="opacity:.7">(E-mail for contact/activation — <b>required</b>)</span></span>
-      <input type="email" id="t-email" placeholder="nome@dominio.br"
-             autocomplete="email" spellcheck="false"
-             style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;font-size:13px;
-                    background:#0f151c;border:1px solid rgba(178,145,73,.35);color:#e8e6e0;outline:none;">
-      <span style="display:block;font-size:10.5px;opacity:.65;margin-top:5px;line-height:1.45">
-        🔒 LGPD — usado para ativação do UFVAI e contato sobre o produto (art. 7º V), guardado localmente
-        (chmod 600) e em backups/ufvai_consentimento.json no SEU Drive; cifrado em trânsito.
-        O Google Analytics <b>nunca</b> recebe seu endereço (apenas um contador anônimo).
-        Você pode apagar a qualquer momento (art. 18).<br>
-        Used to activate UFVAI and contact you about it; stored locally and in YOUR Drive; never sent to Google Analytics.</span>
-    </label>
+    <!-- v0.6.10: Nome ao lado do e-mail (flex row: lado a lado no desktop, coluna no mobile) -->
+    <div class="t-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:2px;">
+      <label class="t-check" style="flex:1 1 160px;display:block;min-width:140px;margin:0;">
+        <span style="display:block;margin-bottom:4px;font-size:12px;font-weight:600">Nome — <b>obrigatório</b>
+          <span style="opacity:.7;font-weight:400">(Name — <b>required</b>)</span></span>
+        <input type="text" id="t-name" placeholder="Seu nome"
+               autocomplete="name" spellcheck="false"
+               style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;font-size:13px;
+                      background:#0f151c;border:1px solid rgba(178,145,73,.35);color:#e8e6e0;outline:none;">
+      </label>
+      <label class="t-check" style="flex:1.2 1 180px;display:block;min-width:160px;margin:0;">
+        <span style="display:block;margin-bottom:4px;font-size:12px;font-weight:600">E-mail — <b>obrigatório</b>
+          <span style="opacity:.7;font-weight:400">(E-mail — <b>required</b>)</span></span>
+        <input type="email" id="t-email" placeholder="nome@dominio.br"
+               autocomplete="email" spellcheck="false"
+               style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;font-size:13px;
+                      background:#0f151c;border:1px solid rgba(178,145,73,.35);color:#e8e6e0;outline:none;">
+      </label>
+    </div>
+    <span style="display:block;font-size:10.5px;opacity:.65;margin:2px 0 6px;line-height:1.45">
+      🔒 LGPD — nome e e-mail para ativação do UFVAI e contato sobre o produto (art. 7º V), guardados localmente
+      (chmod 600) e em backups/ufvai_consentimento.json no SEU Drive; cifrados em trânsito. IP armazenado para métrica de ativação.
+      O Google Analytics <b>nunca</b> recebe seu nome/e-mail/IP (apenas contador anônimo).
+      Você pode apagar a qualquer momento (art. 18).<br>
+      Name and e-mail to activate UFVAI and contact you; stored locally and in YOUR Drive; never sent to Google Analytics.</span>
     <label class="t-check"><input type="checkbox" id="t-accept">
       <span>Li e aceito os Termos de Uso e a Licença MIT &nbsp;<span style="opacity:.7">(I have read and accept the Terms of Use and the MIT License)</span></span></label>
     <div class="t-actions">
@@ -3487,26 +3567,30 @@ def create_wrapper_html(
 <script>
 (function(){
   try{
-    // v0.6.9: termos v5 → re-consentimento (telemetria ativa por padrão/opt-out,
-    // e-mail OBRIGATÓRIO, perfil persistente em backups/ufvai_consentimento.json)
-    var _TV="5";
+    // v0.6.10: termos v6 → re-consentimento (nome+email obrigatórios, IP capturado)
+    var _TV="6";
     var ov=document.getElementById("terms-overlay");
     if(!ov) return;
     var chk=document.getElementById("t-accept"),
         btn=document.getElementById("t-accept-btn"),
         an=document.getElementById("t-analytics"),
         em=document.getElementById("t-email"),
-        profAnalytics=null,  // v0.6.9: prefs do perfil p/ o fluxo "Se não é você"
-        err=null;
+        nm=document.getElementById("t-name"),
+        profAnalytics=null,  // v0.6.10: prefs do perfil p/ o fluxo "Se não é você"
+        err=null, errName=null;
     function _validMail(v){return !!v && /^[^@\\s]{1,64}@[^@\\s]+\\.[^@\\s]{2,}$/.test(v);}
+    function _validName(v){ v=(v||"").trim(); return v.length>=2 && v.length<=100 && /^[A-Za-zÀ-ÿÀ-ÿ\\s'\\-]{2,100}$/.test(v); }
     function _updateBtn(){
-      // v0.6.9: e-mail OBRIGATÓRIO — habilita só com Termos aceitos + e-mail válido
-      btn.disabled=!(chk.checked && _validMail((em.value||"").trim()));
+      // v0.6.10: NOME + E-MAIL obrigatórios — habilita só com Termos aceitos + ambos válidos
+      var okMail=_validMail((em&&em.value||"").trim());
+      var okName=_validName((nm&&nm.value||"").trim());
+      btn.disabled=!(chk.checked && okMail && okName);
     }
-    function _post(accepted, analytics, contactEmail){
+    function _post(accepted, analytics, contactEmail, contactName){
       try{
         var payload={accepted:accepted,analytics:analytics,terms_version:_TV};
         if(contactEmail!==undefined) payload.contact_email=contactEmail;
+        if(contactName!==undefined) payload.contact_name=contactName;
         fetch("/api/consent",{method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify(payload)}).catch(function(){});
@@ -3516,17 +3600,26 @@ def create_wrapper_html(
       if(!err){
         err=document.createElement("div");
         err.style.cssText="font-size:11px;color:#e07b5f;margin-top:4px;";
-        em.parentNode.appendChild(err);
+        var p=em?em.parentNode:null; if(p) p.appendChild(err); else ov.appendChild(err);
       }
       err.textContent=msg||"";
     }
+    function _showErrName(msg){
+      if(!errName){
+        errName=document.createElement("div");
+        errName.style.cssText="font-size:11px;color:#e07b5f;margin-top:4px;";
+        var p=nm?nm.parentNode:null; if(p) p.appendChild(errName); else ov.appendChild(errName);
+      }
+      errName.textContent=msg||"";
+    }
     chk.addEventListener("change",_updateBtn);
-    em.addEventListener("input",function(){ if(err) err.textContent=""; _updateBtn(); });
-    // v0.6.9: MOBILE — autofill do celular preenche o e-mail SEM disparar "input";
+    if(em) em.addEventListener("input",function(){ if(err) err.textContent=""; _updateBtn(); });
+    if(nm) nm.addEventListener("input",function(){ if(errName) errName.textContent=""; _updateBtn(); });
+    // v0.6.10: MOBILE — autofill do celular preenche nome/e-mail SEM disparar "input";
     // sem isso o botão ficaria desabilitado e o usuário não conseguiria clicar.
     // Cobrimos com change/blur + verificação periódica leve (só com overlay visível).
-    em.addEventListener("change",_updateBtn);
-    em.addEventListener("blur",_updateBtn);
+    if(em){ em.addEventListener("change",_updateBtn); em.addEventListener("blur",_updateBtn); }
+    if(nm){ nm.addEventListener("change",_updateBtn); nm.addEventListener("blur",_updateBtn); }
     var _autofillTimer=null;
     function _ensureAutofillWatch(){
       if(_autofillTimer) return;
@@ -3536,7 +3629,7 @@ def create_wrapper_html(
       },400);
     }
     _ensureAutofillWatch();
-    // v0.6.9: MOBILE — teclado virtual não pode cobrir o campo/botão: rola até o
+    // v0.6.10: MOBILE — teclado virtual não pode cobrir o campo/botão: rola até o
     // elemento focado (visualViewport quando disponível; fallback scrollIntoView).
     function _reveal(elm,delay){
       try{ setTimeout(function(){
@@ -3548,22 +3641,27 @@ def create_wrapper_html(
         }
       },delay||250); }catch(e){}
     }
-    em.addEventListener("focus",function(){ _reveal(em,300); });   // aguarda teclado subir
+    if(em) em.addEventListener("focus",function(){ _reveal(em,300); });
+    if(nm) nm.addEventListener("focus",function(){ _reveal(nm,300); });
     if(btn) btn.addEventListener("focus",function(){ _reveal(btn,150); });
     if(window.visualViewport){
       try{
         window.visualViewport.addEventListener("resize",function(){
-          if(document.activeElement===em) _reveal(em,60);
+          var ae=document.activeElement;
+          if(ae===em || ae===nm) _reveal(ae,60);
         });
       }catch(e){}
     }
     btn.addEventListener("click",function(){
       var v=(em&&em.value||"").trim();
+      var vn=(nm&&nm.value||"").trim();
+      if(!_validName(vn)){ _showErrName("Nome obrigatório — informe seu nome (2–100 letras). / Name required — enter your name (2–100 letters)."); try{nm.focus();}catch(e){} return; }
+      if(errName) errName.textContent="";
       if(!_validMail(v)){ _showErr("E-mail obrigatório — informe um e-mail válido para continuar. / E-mail required — enter a valid e-mail to continue."); try{em.focus();}catch(e){} return; }
       if(err) err.textContent="";
       localStorage.setItem("ufvai_terms_version",_TV);
       localStorage.setItem("ufvai_analytics", an.checked?"1":"0");
-      _post(true, an.checked, v);
+      _post(true, an.checked, v, vn);
       ov.style.display="none";
       if(_autofillTimer){ clearInterval(_autofillTimer); _autofillTimer=null; }
       // v0.6.9: telemetria ativa por padrão — liga o GA se NÃO desmarcada (opt-out)
@@ -3576,23 +3674,30 @@ def create_wrapper_html(
         'A interface permanecerá bloqueada. Feche esta aba para encerrar.<br><br>'+
         '<span style="opacity:.75">You declined the Terms of Use — the UI stays locked. Close this tab to exit.</span></p></div>';
     });
-    // ── v0.6.9: PRÉ-PREENCHIMENTO — perfil persistente (backups/ufvai_consentimento.json) ──
+    // ── v0.6.10: PRÉ-PREENCHIMENTO — perfil persistente (backups/ufvai_consentimento.json) ──
     try{
-      // v0.6.9: overlay "Bem-vindo de volta" — referências
+      // v0.6.10: overlay "Bem-vindo de volta" — referências (nome + e-mail)
       var wov=document.getElementById("welcome-overlay");
       var wOk=document.getElementById("w-ok-btn");
       var wSwitch=document.getElementById("w-switch-btn");
       var wEmail=document.getElementById("w-email");
-      function _showWelcome(email){
+      function _showWelcome(email, name){
         if(!wov) return false;
-        try{ if(wEmail) wEmail.textContent=email||"—"; }catch(e){}
+        try{
+          var txt="";
+          if(name && email) txt=name + " — " + email;
+          else if(email) txt=email;
+          else if(name) txt=name;
+          else txt="—";
+          if(wEmail) wEmail.textContent=txt;
+        }catch(e){}
         wov.style.display="flex";
         return true;
       }
       function _hideWelcome(){
         try{ if(wov) wov.style.display="none"; }catch(e){}
       }
-      // "Continuar" → heartbeat de acesso ativo (e-mail + hora + flag) e fecha
+      // "Continuar" → heartbeat de acesso ativo (e-mail + hora + flag + IP) e fecha
       if(wOk){
         wOk.addEventListener("click",function(){
           try{ fetch("/api/access",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).catch(function(){}); }catch(e){}
@@ -3600,34 +3705,49 @@ def create_wrapper_html(
           if(_autofillTimer){ clearInterval(_autofillTimer); _autofillTimer=null; }
         });
       }
-      // "Se não é você" → abre os Termos com o campo de e-mail editável
+      // "Se não é você" → abre os Termos com os campos nome/e-mail editáveis
       if(wSwitch){
         wSwitch.addEventListener("click",function(){
           _hideWelcome();
-          if(em && wEmail){ var cur=wEmail.textContent||""; if(!em.value && cur && cur!=="—") em.value=cur; }
+          var wTxt=(wEmail&&wEmail.textContent)||"";
+          // tenta separar nome — email quando exibido como "Nome — email"
+          var curEmail=wTxt, curName="";
+          if(wTxt.indexOf(" — ")!==-1){ var parts=wTxt.split(" — "); curName=parts[0]||""; curEmail=parts[1]||""; }
+          else if(wTxt.indexOf("@")!==-1){ curEmail=wTxt; }
+          else if(wTxt!=="—"){ curName=wTxt; }
+          if(nm && !nm.value && curName) nm.value=curName;
+          if(em && !em.value && curEmail && curEmail!=="—") em.value=curEmail;
+          // fallback: busca direto do profile carregado
+          try{
+            if(nm && profName && !nm.value) nm.value=profName;
+            if(em && (d&&d.profile&&d.profile.email) && !em.value) em.value=d.profile.email;
+          }catch(e){}
           if(an && typeof profAnalytics!=="undefined"){ an.checked=!!profAnalytics; }
           if(chk){ chk.checked=true; }
           ov.style.display="flex";
           _updateBtn();
-          try{ if(em) setTimeout(function(){ em.focus(); em.select(); },260); }catch(e){}
+          try{ if(nm && !nm.value) setTimeout(function(){ nm.focus(); },260);
+               else if(em) setTimeout(function(){ em.focus(); em.select(); },260); }catch(e){}
         });
       }
+      var profName=""; // para uso no switch
       fetch("/api/consent").then(function(r){return r.json();}).then(function(d){
         var prof=(d&&d.profile)||{};
         profAnalytics=prof.analytics;
+        profName=(prof.name||prof.nome||"");
         // Já aceitou ESTA versão (perfil sobrevive à sessão)?
-        // v0.6.9: em vez de pular direto, mostra "Bem-vindo de volta" com o
-        // e-mail do usuário + opção "Se não é você" (e registra o acesso na planilha).
+        // v0.6.10: mostra "Bem-vindo de volta" com nome + e-mail
         if(prof.accepted && prof.terms_version===_TV){
           localStorage.setItem("ufvai_terms_version",_TV);
           localStorage.setItem("ufvai_analytics", prof.analytics?"1":"0");
           if(prof.analytics && typeof window._ufvaiGaStart==="function"){ try{ window._ufvaiGaStart(); }catch(e){} }
-          if(!_showWelcome(prof.email)){
+          if(!_showWelcome(prof.email, profName)){
             return; // sem overlay (fallback): segue sem exibir nada
           }
           return;
         }
-        // Sessão anterior (versão antiga dos Termos): pré-preenche e só confirma
+        // Sessão anterior (versão antiga dos Termos): pré-preenche nome+e-mail e só confirma
+        if(profName && nm && !nm.value){ nm.value=profName; }
         if(prof.email && em && !em.value){ em.value=prof.email; }
         if(an && typeof prof.analytics!=="undefined"){ an.checked=!!prof.analytics; }
         if(chk){ chk.checked=true; }
@@ -3667,9 +3787,9 @@ def create_wrapper_html(
   }
   window._ufvaiGaStart=_start;
   try{
-    // v0.6.9: opt-out — inicia se o aceite da versão atual existir E o usuário
+    // v0.6.10: opt-out — inicia se o aceite da versão atual existir E o usuário
     // NÃO tiver desativado as estatísticas ("0"). undefined/"1" = ativo.
-    if(localStorage.getItem("ufvai_terms_version")==="5" &&
+    if(localStorage.getItem("ufvai_terms_version")==="6" &&
        localStorage.getItem("ufvai_analytics")!=="0"){
       setTimeout(_start,1200); // deixa a UI carregar primeiro
     }

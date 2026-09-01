@@ -1,6 +1,6 @@
 # UFVAI — Pesquisa científica com integridade
 
-> **UFVAI** é a marca do assistente; o motor/código é o PesquisAI (este repositório). v0.6.9
+> **UFVAI** é a marca do assistente; o motor/código é o PesquisAI (este repositório). v0.6.10
 
 [![Abrir no Colab](https://img.shields.io/badge/Clique_aqui-Comece_a_usar-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 
@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
 [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br)
-[![Versão](https://img.shields.io/badge/versão-0.6.9-orange.svg)]()
+[![Versão](https://img.shields.io/badge/versão-0.6.10-orange.svg)]()
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
@@ -87,7 +87,7 @@ ambientes sem internet, necessidade de sigilo dos dados processados ou com restr
 
 ```bash
 # Baixe o pacote .deb mais recente
-wget https://github.com/gustavobraga-byte/PesquisAI/raw/main/debs/pesquisai_0.6.9-offline_amd64.deb -O /tmp/pesquisai.deb && \
+wget https://github.com/gustavobraga-byte/PesquisAI/raw/main/debs/pesquisai_0.6.10-offline_amd64.deb -O /tmp/pesquisai.deb && \
 sudo apt install /tmp/pesquisai.deb -y && \
 rm /tmp/pesquisai.deb
 
@@ -178,6 +178,42 @@ O PesquisAI opera por módulos especializados (*skills*). Cada skill conecta o a
 
 ---
 
+## 🆕 Novidades v0.6.10 — Memória BM25 cache + Nome+IP + Responsiva mobile
+
+**Versão 0.6.10** — pacote offline `pesquisai_0.6.10-offline_amd64.deb` — todas as entregas abaixo já estão nesta build.
+
+### 📜 Termos de Uso v2.1 → v6 (re-consentimento `_TV=6`)
+- **Telemetria opt-out (LGPD art. 7º IX):** caixa vem **marcada por padrão** e é **ativa** sem cookie (`analytics_storage:'denied'` — sem `_ga`); oposição a qualquer momento via caixa ou `UFVAI_TELEMETRY=0`.
+- **E-mail de ativação obrigatório (LGPD art. 7º V):** `POST /api/consent` devolve **400** sem e-mail válido; eliminação mantida (art. 18).
+- **Coleta resumida:** canal client-side limitado ao `page_view` padrão — evento custom `ufvai_session` removido.
+
+### 🔐 Perfil persistente e pré-preenchimento
+- Arquivo `backups/ufvai_consentimento.json` (Colab: Drive · offline: `~/PesquisAI/backups/`) guarda `{email, name, email_sha256, ip, analytics, terms_version, accepted_at, app_version}`.
+- `GET /api/consent` inclui `"profile"` → frontend **pré-preenche** e-mail/checkboxes; se mesma versão já aceita, **pula a tela**.
+
+### 👋 Tela "Bem-vindo de volta" (reabertura)
+- Ao reabrir, se `profile.accepted && profile.terms_version === "6"` (perfil sobrevive à sessão), exibe overlay **"Bem-vindo de volta!"** com Nome + e-mail:
+  - e-mail persistido em destaque (`#w-email`);
+  - botão **"Continuar como este usuário"** → dispara `POST /api/access` (heartbeat) e fecha;
+  - botão **"Se não é você, alterar e-mail"** → abre os Termos com campo editável pré-preenchido, checkbox restaurado e foco no e-mail.
+- Responsiva (mobile/tablet, `env(safe-area-inset)`, `visualViewport`) e acessível (`role=dialog`, `aria-modal`).
+
+### 📊 Cada novo acesso → planilha de contatos
+- **Webhook único** `UFVAI_CONTACT_ENDPOINT` (Apps Script → Planilha Google):
+  - `https://script.google.com/macros/s/AKfycbxel3-_75htD3b5bd0HEPLSCWHSj79CR_Tf4IH6sEWscBlhF3jOjcNBaKbCuffcWskH/exec`
+  - Payload: `{product, email, email_sha256, environment, app_version, sent_at, flag}`.
+  - `flag = "novo_contato"` (primeiro aceite) ou `"usuario_ativo"` (cada reabertura via Bem-vindo de volta).
+  - Sheet: `Contatos` com colunas `Timestamp | Email | Email SHA-256 | Ambiente | Versão | Flag` · limite anti-abuso 1000 linhas · sem IP por privacidade.
+- **Heartbeat** `telemetry.notify_active_user()` → `POST /api/access` → `_forward_contact(..., "usuario_ativo")` (fire-and-forget, logs em `~/PesquisAI/logs/contato.log` e `telemetria.log`).
+- Configuração: painel **📊 Telemetria (Admin)** → campo **✉️ URL de contato** ou `UFVAI_CONTACT_ENDPOINT` em env/`ufvai.env`. Apps Script em `scripts/webhook-contatos.gs` (SPREADSHEET_ID já preenchido).
+
+### 🖥️ Outros v0.6.7–v0.6.10
+- **Painel único (Colab):** todo feedback visual pelo `_BootPanel` (barra contínua tema UFVAI papel/navy/dourado, logo base64); prints verbosos suprimidos.
+- **Botão 📘 Manual** ao lado do Dashboard de Saúde; rota `GET /api/manual` serve `MANUAL.md` local (fallback GitHub); modal com Recarregar/Ver fonte.
+- **Offline completo:** wheels bundle no `.deb` (offline-first `pip --no-index`), bind `0.0.0.0` + `::` (resolve `127.0.1.1`/`::1` Ubuntu), tela 8002 instantânea mesmo com Drive montado via rclone, fallback vault `~/PesquisAI/vault` quando Drive read-only.
+
+---
+
 ## 🗺️ Roadmap
 
 | Fase | Período | Foco |
@@ -231,7 +267,7 @@ O PesquisAI **não substitui** o julgamento humano e apresenta as seguintes limi
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.6.9. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.6.10. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -247,7 +283,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
   title        = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial
                   para Pesquisa Cient{\'\i}fica},
   year         = {2026},
-  version      = {0.6.9},
+  version      = {0.6.10},
   institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
   url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
 }

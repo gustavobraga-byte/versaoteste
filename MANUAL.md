@@ -1,6 +1,6 @@
 # 📘 Manual do UFVAI
 
-> **Agente de Pesquisa Científica de Alta Performance · v0.6.9 · Agosto 2026**
+> **Agente de Pesquisa Científica de Alta Performance · v0.6.10 · Setembro 2026**
 > Registro SisPPG/UFV nº 10356285004 · Universidade Federal de Viçosa
 
 ---
@@ -527,7 +527,7 @@ Após o aceite, você acessa a interface com **terminal interativo do agente**, 
 Para usar **sem internet e sem Colab** (requisito de privacidade máxima — nada sai da sua máquina):
 
 ```bash
-sudo dpkg -i pesquisai_0.6.9-offline_amd64.deb   # ou versão mais recente
+sudo dpkg -i pesquisai_0.6.10-offline_amd64.deb   # ou versão mais recente
 ufvai                                       # abre a interface (UI 8001 · terminal 8000)
 ```
 
@@ -845,7 +845,7 @@ Todos os arquivos gerados são salvos **exclusivamente** nesses locais — nunca
 **Solução:**
 ```bash
 sudo apt install python3-pip        # resolve o Depends
-sudo dpkg -i pesquisai_0.6.9-offline_amd64.deb
+sudo dpkg -i pesquisai_0.6.10-offline_amd64.deb
 ```
 Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já estar presente é suficiente).
 
@@ -861,7 +861,7 @@ Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já e
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.6.9. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.6.10. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -872,7 +872,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
 **Formato simplificado (nota de rodapé):**
 
 ```
-UFVAI, versão 0.6.9, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
+UFVAI, versão 0.6.10, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 ```
 
@@ -901,7 +901,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 | **Tipo** | Software / Computer Program |
 | **Autor** | Braga, Gustavo Bastos |
 | **Título** | UFVAI: agente de inteligência artificial para pesquisa científica |
-| **Versão** | 0.6.9 |
+| **Versão** | 0.6.10 |
 | **Ano** | 2026 |
 | **Instituição** | Universidade Federal de Viçosa (UFV) |
 | **URL** | https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/ |
@@ -917,7 +917,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 author = {Gustavo Bastos Braga},
 title = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial para Pesquisa Cient{\'\i}fica},
 year = {2026},
-version = {0.6.9},
+version = {0.6.10},
 institution = {Universidade Federal de Vi{\c{c}}osa (UFV)},
 url = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/},
 note = {Acessado em: DD m{\^e}s AAAA}
@@ -974,7 +974,7 @@ Ethics (COPE).
 
 Referência da ferramenta:
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para
-pesquisa científica. Versão 0.6.9. Viçosa: UFV, 2026. Disponível em:
+pesquisa científica. Versão 0.6.10. Viçosa: UFV, 2026. Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Registro SisPPG/UFV nº 10356285004 — http://sisppg.ufv.br
 ```
@@ -1139,7 +1139,7 @@ A telemetria anônima vem **ativa por padrão** e só envia quando **os dois req
 
 Sem qualquer um deles, **nada é enviado**. Desde a v2.1 dos Termos o canal client-side envia apenas o `page_view` padrão, **sem cookie `_ga`** e sem evento customizado; o Google Analytics nunca recebe conteúdo das suas pesquisas, API keys ou dados pessoais, com `anonymize_ip`. E-mails **nunca** vão para o GA4.
 
-#### E-mail de ativação obrigatório (v0.6.9)
+#### E-mail de ativação obrigatório (v0.6.9 → v0.6.10: + campo Nome e IP na planilha)
 
 - O campo de e-mail na tela de Termos é **obrigatório** para aceitar os Termos (finalidade: ativação/contato sobre o UFVAI — art. 7º V); sem um e-mail válido, o aceite é recusado;
 - Gravação no SEU ambiente: `backups/ufvai_consentimento.json` (no Colab: no seu Drive; offline: `~/PesquisAI/backups/`) com resumo SHA-256 — permite pré-preencher a tela nas reaberturas;
@@ -1260,6 +1260,7 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
+| **0.6.10** | 01/09/2026 | Memória BM25 com cache em disco + paginação; Termos v6 com campo **Nome** ao lado do e-mail e **IP** capturado (planilha 8 cols + flag `usuario_ativo` por acesso); memória responsiva mobile; bump version |
 | **0.6.9** | 25/08/2026 | Termos v2.1: telemetria opt-out sem cookies (art. 7º IX); e-mail de ativação obrigatório (art. 7º V); perfil persistente em `backups/` com pré-preenchimento/pulo da tela; botão 📘 Manual + rota `/api/manual`; tela de Termos responsiva; logs do Colab fora do Drive (`/tmp/ufvai-logs/`); correção DebugView (`debug_mode`) |
 | **0.6.8** | 24/08/2026 | Canal de contato via planilha Google + Apps Script (`UFVAI_CONTACT_ENDPOINT`); rebuild `.deb` 0.6.8-2 com launcher estável |
 | **0.6.7** | 23/08/2026 | Painel de boot contínuo no tema da logomarca (Colab); botão final com logo embutida; URL de contato configurável pelo painel Admin |
@@ -1297,5 +1298,5 @@ O UFVAI usa estes marcadores para indicar o nível de confiança:
 
 ---
 
-*Documentação atualizada: Agosto 2026*  
-*UFVAI v0.6.9 · Registro SisPPG/UFV nº 10356285004*
+*Documentação atualizada: Setembro 2026*  
+*UFVAI v0.6.10 · Registro SisPPG/UFV nº 10356285004*

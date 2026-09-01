@@ -45,7 +45,8 @@ _MP_URL = "https://www.google-analytics.com/mp/collect"
 _FORM_VIEW_URL = ("https://docs.google.com/forms/d/e/"
     "1FAIpQLSd773cm2qDkwpXzbz50IVhGSG7rpC527taTYGsdUes0Lh1s2A/viewform")
 # Webhook do desenvolvedor (Apps Script → Planilha). Ver scripts/webhook-contatos.gs
-_DEFAULT_CONTACT_ENDPOINT = "https://script.google.com/macros/s/AKfycbw8bt3HPH7LNVuy-JiizjOMi4S_xDva0er3-NQ_abSj-LMcQmdpMZx8hSNjQpqz12s/exec"
+# v0.6.10 (01/09): endpoint atualizado (solicitação usuário)
+_DEFAULT_CONTACT_ENDPOINT = "https://script.google.com/macros/s/AKfycbxel3-_75htD3b5bd0HEPLSCWHSj79CR_Tf4IH6sEWscBlhF3jOjcNBaKbCuffcWskH/exec"
 
 _FALSEY = ("0", "false", "off", "no")
 
@@ -261,14 +262,26 @@ def contact_status() -> dict:
     """Estado mascarado do contato — nunca expõe o e-mail completo."""
     prof = _read_profile()
     email = str(prof.get("email", ""))
+    name = str(prof.get("name", "") or prof.get("nome", ""))
     masked = ""
     if email and "@" in email:
         loc, _, dom = email.partition("@")
         masked = (loc[:2] + "***@" + dom) if len(loc) > 2 else "***@" + dom
+    # nome mascarado: primeiras 2 letras + ***
+    name_masked = ""
+    if name:
+        parts = name.strip().split()
+        if len(parts) >= 2:
+            name_masked = parts[0][:2] + "*** " + parts[-1][:1] + "***"
+        else:
+            name_masked = name[:2] + "***"
     curl = _contact_endpoint()
     return {
         "has_email": bool(email),
         "email_masked": masked,
+        "has_name": bool(name),
+        "name_masked": name_masked,
+        "name": name,  # v0.6.10: expõe nome mascarado? aqui nome completo só para /api/consent autenticado
         "contact_endpoint_set": bool(curl),
         "contact_endpoint_source": ("env" if os.environ.get("UFVAI_CONTACT_ENDPOINT", "").strip()
                                     else ("file" if curl else "")),
@@ -283,9 +296,22 @@ def _read_profile() -> dict:
         return {}
 
 
-def save_contact(email: str) -> tuple[bool, str]:
-    """Grava o e-mail localmente (chmod 600) com hash SHA-256 e encaminha ao
+def _valid_name(name: str) -> bool:
+    """v0.6.10: valida nome — 2–100 chars, letras/espaços acentuados."""
+    n = str(name or "").strip()
+    if len(n) < 2 or len(n) > 100:
+        return False
+    # permite letras (incl. acentos), espaços, hífen, apóstrofo
+    return bool(re.fullmatch(r"[A-Za-zÀ-ÿÀ-ÿ\s'\-]{2,100}", n))
+
+
+def save_contact(email: str, name: str | None = None, ip: str | None = None) -> tuple[bool, str]:
+    """Grava o e-mail+nome localmente (chmod 600) com hash SHA-256 e encaminha ao
     endpoint do desenvolvedor, se configurado. Dispara contador anônimo no GA4.
+
+    v0.6.10: ``name`` é armazenado no perfil e enviado à planilha ao lado do
+    e-mail (mesmo consentimento art. 7º V). ``ip`` é efêmero — vai só ao webhook,
+    não persiste no arquivo local.
 
     Retorna (ok, mensagem).
     """
@@ -297,27 +323,49 @@ def save_contact(email: str) -> tuple[bool, str]:
     # v0.6.9-P03: valida domínio (MX records + blacklist temporários)
     if not _email_domain_valid(addr):
         return False, "E-mail inválido ou domínio não aceita mensagens."
+    # v0.6.10: nome opcional mas, se fornecido, deve ser válido; para ativação
+    # nova passamos a exigir nome (validado no handler)
+    cname = str(name or "").strip() if name is not None else ""
+    if name is not None and name != "":
+        if not _valid_name(cname):
+            return False, "Nome inválido — use 2 a 100 letras."
     sha = hashlib.sha256(addr.encode("utf-8")).hexdigest()
     try:
         os.makedirs(os.path.dirname(_PROFILE_FILE), exist_ok=True)
+        # preserva campos antigos se já existirem (ex.: ip não persiste)
+        existing = {}
+        try:
+            with open(_PROFILE_FILE, "r", encoding="utf-8") as rf:
+                existing = json.load(rf)
+        except Exception:
+            existing = {}
+        # atualiza com novos dados
+        payload_local = {
+            "email": addr,
+            "email_sha256": sha,
+            "name": cname or str(existing.get("name", "") or existing.get("nome", "")),
+            "purpose": "contato/novidades UFVAI (consentimento art. 7º V)",
+            "consent_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        # normaliza chave legado 'nome' → 'name'
+        if "nome" in existing and not payload_local.get("name"):
+            payload_local["name"] = str(existing.get("nome", ""))
         with open(_PROFILE_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "email": addr,
-                "email_sha256": sha,
-                "purpose": "contato/novidades UFVAI (consentimento art. 7º I)",
-                "consent_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            }, f)
+            json.dump(payload_local, f, ensure_ascii=False)
         os.chmod(_PROFILE_FILE, 0o600)
     except Exception as e:
         return False, f"Falha ao salvar contato: {e}"
-    _contato_log("contato salvo localmente (%s) · ga4_configurada=%s · endpoint=%s"
+    _contato_log("contato salvo localmente (%s · %s) · ga4_configurada=%s · endpoint=%s · ip=%s"
                  % (addr.split("@")[1] if "@" in addr else "?",
+                    (cname[:20] + "…") if cname else "sem-nome",
                     "sim" if configured() else "nao",
-                    "sim" if _contact_endpoint() else "NAO CONFIGURADO"))
-    # Contador ANÔNIMO para o GA4 (sem nenhum dado derivado do e-mail)
+                    "sim" if _contact_endpoint() else "NAO CONFIGURADO",
+                    ip or "—"))
+    # Contador ANÔNIMO para o GA4 (sem nenhum dado derivado do e-mail/nome/ip)
     event("contact_optin")
     # Canal direto do desenvolvedor (opcional): envia o endereço real por HTTPS
-    threading.Thread(target=_forward_contact, args=(addr, sha), daemon=True).start()
+    # v0.6.10: encaminha nome e ip juntos
+    threading.Thread(target=_forward_contact, args=(addr, sha, "novo_contato", cname, ip or ""), daemon=True).start()
     return True, "Contato registrado com sucesso."
 
 
@@ -354,7 +402,7 @@ def _contato_log(msg: str) -> None:
 # Link manual do Forms disponível na UI para envio opcional pelo usuário.
 
 
-def _forward_contact(addr: str, sha: str, kind: str = "novo_contato") -> None:
+def _forward_contact(addr: str, sha: str, kind: str = "novo_contato", name: str = "", ip: str = "") -> None:
     """Envia o contato opt-in via webhook (único canal automático).
 
     O Google Forms tem reCAPTCHA que bloqueia submissões programáticas,
@@ -366,19 +414,33 @@ def _forward_contact(addr: str, sha: str, kind: str = "novo_contato") -> None:
       • "usuario_ativo" — reabertura: usuário já ativo, cada novo acesso
         (heartbeat da tela "Bem-vindo de volta" → flag na planilha).
 
+    v0.6.10: ``name`` e ``ip`` são enviados juntos (nome ao lado do e-mail;
+    IP capturado do X-Forwarded-For/remote_addr). O IP é coletado com
+    finalidade de segurança/métrica de ativação (art. 7º V) e NUNCA vai ao GA4.
+
     Fire-and-forget. Se o endpoint não estiver configurado, o contato
     fica salvo localmente e o log registra que nenhum envio remoto
     ocorreu (o desenvolvedor deve configurar o endpoint para receber).
     """
     url = _contact_endpoint()
-    _contato_log("forward iniciado (kind=%s) * endpoint=" % kind +
+    _contato_log("forward iniciado (kind=%s · nome=%s · ip=%s) * endpoint=" % (kind, (name[:12] + "…") if name else "—", ip or "—") +
                  (url[:60] + "..." if len(url) > 60 else (url or "<VAZIO>")))
     if url:
         try:
+            # tenta obter nome/ip do perfil se não vieram nos args
+            if not name or not ip:
+                try:
+                    prof = _read_profile()
+                    if not name:
+                        name = str(prof.get("name", "") or prof.get("nome", ""))
+                except Exception:
+                    pass
             payload = {
                 "product": "ufvai",
                 "email": addr,
                 "email_sha256": sha,
+                "name": str(name or "").strip(),
+                "ip": str(ip or "").strip(),
                 "environment": "colab" if os.path.isdir("/content") else "local",
                 "app_version": _APP_VERSION,
                 "sent_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -547,7 +609,7 @@ def event(name: str, params: dict | None = None) -> None:
         pass
 
 
-def notify_active_user() -> None:
+def notify_active_user(ip: str | None = None) -> None:
     """v0.6.9: heartbeat — registra cada NOVO ACESSO de usuário já ativo.
 
     Na reabertura (perfil persistente existente + mesma versão dos Termos),
@@ -555,8 +617,11 @@ def notify_active_user() -> None:
     heartbeat: o webhook recebe o e-mail + horário do acesso + flag
     "usuario_ativo", distinguindo-o do "novo_contato" (primeiro aceite).
 
+    v0.6.10: ``ip`` capturado da requisição (X-Forwarded-For) é encaminhado
+    junto ao webhook para métrica de ativação geográfica/segurança.
+
     LGPD: finalidade já consentida (art. 7º V — ativação/contato sobre o
-    produto); o e-mail NUNCA vai ao GA4 — apenas ao endpoint do
+    produto); o e-mail/nome/ip NUNCA vão ao GA4 — apenas ao endpoint do
     desenvolvedor (UFVAI_CONTACT_ENDPOINT), como no aceite original.
 
     Fire-and-forget; sem perfil salvo ou sem endpoint → no-op silencioso
@@ -565,12 +630,13 @@ def notify_active_user() -> None:
     try:
         prof = _read_profile()
         addr = str(prof.get("email", ""))
+        name = str(prof.get("name", "") or prof.get("nome", ""))
         if not addr:
             _contato_log("heartbeat SKIP: sem e-mail salvo (primeiro acesso?)")
             return
         threading.Thread(
             target=_forward_contact,
-            args=(addr, str(prof.get("email_sha256", "")), "usuario_ativo"),
+            args=(addr, str(prof.get("email_sha256", "")), "usuario_ativo", name, ip or ""),
             daemon=True,
         ).start()
     except Exception as e:

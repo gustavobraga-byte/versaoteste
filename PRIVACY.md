@@ -32,7 +32,7 @@ A telemetria **não inclui**: prompts, respostas, nomes de arquivos/projetos, co
 endereços de e-mail, identificadores de conta. Desde a v2.1 dos Termos **nenhum cookie `_ga` é
 criado** (o gtag roda com `analytics_storage:'denied'` e só envia o `page_view` padrão).
 Detalhamento completo: [`TELEMETRY.md`](TELEMETRY.md). O e-mail de **ativação obrigatória**
-(v0.6.9, LGPD art. 7º V — antes opcional na v0.6.6) segue regras próprias — ver seção abaixo;
+(v0.6.10 — nome+e-mail obrigatórios, IP capturado; v0.6.9 apenas e-mail; antes opcional na v0.6.6) segue regras próprias — ver seção abaixo;
 ele também **nunca** vai para o Google Analytics e pode ser eliminado a qualquer momento
 (LGPD art. 18).
 
@@ -42,7 +42,7 @@ Na primeira abertura da interface é exibida a tela de aceite dos Termos de Uso 
 licença MIT). O aceite é registrado localmente (`~/.config/ufvai_consent.json`) e a telemetria,
 se você autorizar, também.
 
-## E-mail de contato (v0.6.6 — totalmente opcional)
+## E-mail e nome de contato (v0.6.10 — obrigatórios para ativação)
 
 A tela de Termos oferece um campo **opcional** para você deixar seu e-mail. Regras:
 

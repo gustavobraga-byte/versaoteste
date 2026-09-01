@@ -727,7 +727,9 @@ def _consent_backup_file():
 
 
 def _read_consent_profile() -> dict:
-    """v0.6.9: lê o perfil persistente (backup do Drive → fallback local)."""
+    """v0.6.9: lê o perfil persistente (backup do Drive → fallback local).
+    v0.6.10: inclui ``name``/``nome`` e compatibilidade legada.
+    """
     prof: dict = {}
     bpath = _consent_backup_file()
     if bpath and os.path.isfile(bpath):
@@ -742,9 +744,32 @@ def _read_consent_profile() -> dict:
                 local = json.load(fh) or {}
             prof.setdefault("email", local.get("email", ""))
             prof.setdefault("email_sha256", local.get("email_sha256", ""))
+            prof.setdefault("name", local.get("name", "") or local.get("nome", ""))
         except Exception:
             pass
+    # normaliza nome legado
+    if not prof.get("name") and prof.get("nome"):
+        prof["name"] = prof.get("nome", "")
     return prof
+
+
+def _get_client_ip(handler) -> str:
+    """v0.6.10: extrai IP real do cliente (X-Forwarded-For > X-Real-IP > remote_addr).
+
+    Para Colab (proxy Google) o IP visto é interno; ainda útil como métrica
+    de ativação distinta. Não é PII sensível sem geolocalização.
+    """
+    try:
+        xf = handler.headers.get("X-Forwarded-For", "") or ""
+        if xf:
+            # formato "client, proxy1, proxy2" — pega o primeiro
+            return xf.split(",")[0].strip().split(":")[0].strip()
+        xr = handler.headers.get("X-Real-IP", "") or ""
+        if xr:
+            return xr.strip().split(":")[0].strip()
+        return handler.client_address[0] if hasattr(handler, "client_address") else ""
+    except Exception:
+        return ""
 
 
 def _ttyd_log_file():
@@ -1862,6 +1887,9 @@ def start_wrapper_server():
                     prof = _read_consent_profile()
                     state["profile"] = {
                         "email": str(prof.get("email", "")),
+                        "name": str(prof.get("name", "") or prof.get("nome", "")),
+                        "nome": str(prof.get("name", "") or prof.get("nome", "")),
+                        "ip": str(prof.get("ip", "")),
                         "analytics": bool(prof.get("analytics", True)),
                         "accepted": bool(prof.get("accepted", False)),
                         "terms_version": str(prof.get("terms_version", "")),
@@ -2626,10 +2654,12 @@ def start_wrapper_server():
             # v0.6.9: heartbeat de usuário ativo — chamado pela tela
             # "Bem-vindo de volta" a cada reabertura (e-mail + hora + flag
             # "usuario_ativo" → planilha de contatos do desenvolvedor).
+            # v0.6.10: encaminha IP para a planilha.
             # No primeiro acesso (sem perfil) a UI NÃO chama este endpoint.
             if p == "/api/access":
                 try:
-                    _tel_notify_active_user()
+                    _cip = _get_client_ip(self)
+                    _tel_notify_active_user(_cip)
                 except Exception:
                     pass
                 self._json(200, {"ok": True})
@@ -2644,21 +2674,32 @@ def start_wrapper_server():
                 #            execução do serviço; eliminação art. 18 mantida);
                 #         (c) perfil persistente em backups/ufvai_consentimento.json
                 #            (sobrevive à sessão → pré-preenche a tela nas reaberturas).
+                # v0.6.10: (d) NOME obrigatório ao lado do e-mail; (e) IP capturado.
                 accepted = bool(body.get("accepted", False))
                 analytics = bool(body.get("analytics", True))  # v0.6.9: opt-out (default ativo)
-                terms_version = str(body.get("terms_version") or "5").strip()
+                terms_version = str(body.get("terms_version") or "6").strip()
                 contact_msg = ""
-                cemail = str(body.get("contact_email") or "").strip()
+                cemail = str(body.get("contact_email") or body.get("email") or "").strip()
+                cname = str(body.get("contact_name") or body.get("name") or body.get("nome") or "").strip()
+                cip = _get_client_ip(self)
                 if accepted and not cemail:
                     return self._json(400, {
                         "ok": False,
                         "error": "E-mail obrigatório: informe um e-mail válido para ativar o UFVAI.",
                     })
-                if cemail:
-                    _ok, contact_msg = _tel_save_contact(cemail)
+                if accepted and not cname:
+                    return self._json(400, {
+                        "ok": False,
+                        "error": "Nome obrigatório: informe seu nome para ativar o UFVAI.",
+                    })
+                if cemail or cname:
+                    # valida nome quando vier
+                    if cname and len(cname) < 2:
+                        return self._json(400, {"ok": False, "error": "Nome inválido — use 2 a 100 letras."})
+                    _ok, contact_msg = _tel_save_contact(cemail, cname, cip)
                     if not _ok:
                         return self._json(400, {"ok": False, "error": contact_msg})
-                elif "contact_email" in body:
+                elif "contact_email" in body or "contact_name" in body:
                     _tel_clear_contact()  # campo esvaziado → eliminação (art. 18)
                 cpath = os.path.expanduser("~/.config/ufvai_consent.json")
                 try:
@@ -2672,12 +2713,16 @@ def start_wrapper_server():
                 except Exception:
                     pass
                 # v0.6.9: perfil persistente (Drive/offline) p/ pré-preenchimento
+                # v0.6.10: inclui nome e ip (LGPD art. 7º V)
                 try:
                     bpath = _consent_backup_file()
                     if bpath and accepted and cemail:
                         json.dump({
                             "email": cemail.lower(),
                             "email_sha256": hashlib.sha256(cemail.lower().encode("utf-8")).hexdigest(),
+                            "name": cname.strip(),
+                            "nome": cname.strip(),
+                            "ip": cip,
                             "analytics": analytics,
                             "accepted": True,
                             "terms_version": terms_version,

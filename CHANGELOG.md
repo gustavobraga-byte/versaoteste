@@ -1,5 +1,24 @@
 # Changelog — PesquisAI
 
+## [0.6.10] — 2026-09-01 — 🚀 Memória otimizada + nome+IP + responsiva mobile
+
+### Memória — otimização para muitas notas (backend BM25 + cache)
+- **Cache em disco** (`vault/embeddings_cache/bm25_cache.json`, JSON atômico, 3,8 MB para 247 notas): `Searcher.rebuild()` tenta `HIT` validando `mtime`+`size` por arquivo com tolerância 1s para FUSE do Drive; `HIT` carrega 247 notas em ~0,2s sem re-tokenizar (~145k tokens) vs `MISS` 1–2s. Stats inclui `cache_hit`.
+- **Frontend memória**: paginação (`_memorySearchLimit` 50 → “Mostrar mais (X restantes)”), debounce 150→200 ms, e busca BM25 server-side para `q≥3` (`GET /api/obsidian/search?q=&limit=20` com snippet/score) mesclada ao filtro substring cliente; ranking BM25 (título 3.0 > tag 2.5 > wikilink 2.0 > corpo 1.0) superior ao `includes()` puro.
+- **Responsiva mobile** (requisito 2026-09-01): `#memory-overlay` com media `@768px` (sidebar 300px → 100% / 38vh, coluna única, borda inferior), `@479px` (100vw/100vh sem radius), alvos ≥44px, debounce e `visualViewport` para teclado não cobrir campo.
+
+### Tela de Termos — campo Nome ao lado do e-mail + IP
+- **Layout** flex row `t-row` (Nome `flex:1 1 160px` + E-mail `flex:1.2 1 180px`, `flex-wrap:wrap`): lado a lado no desktop, coluna no mobile; nota LGPD atualizada para “nome e e-mail + IP”.
+- **Validação** `_validName` (2–100, letras acentuadas/espaço/'/-) e `_validMail`; `btn` habilita só com `chk && okMail && okName`; autofill-watch cobre ambos; `visualViewport` revela campo focado; erros separados (`err` vs `errName`).
+- **JS** `var _TV="6"` (TV 5→6 força re-consentimento), `_post(accepted,analytics,contactEmail,contactName)` com `contact_name`, `profName` no `fetch /api/consent` (pré-preenche `t-name`+`t-email`), `welcome` exibe “Nome — e-mail” e `Se não é você` devolve ambos; GA `localStorage("ufvai_terms_version")==="6"`.
+- **Backend** `telemetry.py`: `contact_status()` expõe `has_name`/`name_masked`, `_valid_name()`, `save_contact(email,name,ip)` grava `name` em `ufvai_profile.json` e encaminha `name`+`ip` via `_forward_contact(...,name,ip)` (+fallback lê perfil), `notify_active_user(ip)`; `launch_app.py`: helper `_get_client_ip` (X-Forwarded-For > X-Real-IP > remote_addr), `_read_consent_profile()` normaliza `name`/`nome`, `/api/access` captura IP, `/api/consent` exige `contact_name` quando `accepted`, valida e grava `name`/`ip` em `backups/ufvai_consentimento.json` (além de `email_sha256`), GET expõe `profile.name/nome/ip`.
+- **Planilha** Apps Script v0.6.10: cabeçalho 6→8 cols `Timestamp | Email | Nome | Email SHA-256 | Ambiente | Versão | Flag | IP`; `appendRow` com `name`/`ip`; migração automática (insere col Nome após Email e IP no fim se cabeçalho antigo), freeze + estilo navy #1F3864, `MAX_ROWS` 1000→5000; payload `{name,ip}` no `telemetry._forward_contact`.
+
+### Outros
+- `pyproject.toml` / `__version__.py` bump 0.6.9→0.6.10 (codename + release_date 2026-09-01), `__version__` usado no badge da UI.
+- `vault/embeddings_cache/bm25_cache.json` já validado (247 notas, 19k df).
+
+
 ## [0.6.9-6] — 2026-08-25 — 🔧 Offline completo: tudo no .deb + porta blindada (só .deb, Colab inalterado)
 
 ### Offline — tudo dentro do .deb (100% offline)

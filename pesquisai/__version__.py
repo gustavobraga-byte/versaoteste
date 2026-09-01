@@ -277,13 +277,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.9"
+__version__: str = "0.6.10"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-08-25"
-__codename__: str = "Termos v2.1: telemetria opt-out + e-mail de ativação + perfil persistente + botão Manual"
+__release_date__: str = "2026-09-01"
+__codename__: str = "Memória otimizada (BM25 cache + paginação) + nome ao lado do e-mail + IP na planilha + memória responsiva mobile"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
