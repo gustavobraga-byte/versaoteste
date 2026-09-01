@@ -1,5 +1,15 @@
 # Changelog — PesquisAI
 
+## [0.6.16] — 2026-09-01 — 🐛 Fix retorno: 1 linha por clique (remove heartbeat duplicado)
+
+### 🐛 No retorno o e-mail era enviado 2-3 vezes (linha duplicada na planilha)
+- **Causa raiz (v0.6.14):** ao detectar `prof.accepted && prof.terms_version===_TV` (usuário já registrado), o frontend disparava `_heartbeat()` imediato **+** `setTimeout(_heartbeat, 2500)` (duas linhas `usuario_ativo`) **e** o clique em "Continuar" disparava terceiro `_heartbeat()` — 2-3 linhas por retorno.
+- **Fix frontend `launch_app_responsive_v041.py`:** removidos os dois disparos automáticos ao exibir `welcome-overlay`; `POST /api/access` (flag `usuario_ativo` + IP) agora só é chamado no **clique** em "Continuar". Novo guard `var _heartbeatSent=false` em `_heartbeat()` impede duplo clique acidental — exatamente **1 linha por retorno**, conforme solicitado: "basta uma vez quando o usuário clicar no retorno".
+- **Backend `launch_app.py` / `telemetry.py`:** inalterados — já aceitam `ip` do cliente (ipify) e gravam `flag=usuario_ativo`; Apps Script `APPS_SCRIPT_PLANILHA_CONTATO.gs` já com 8 colunas.
+
+### Outros (bump)
+- Bump `0.6.15 → 0.6.16` em `pesquisai/__version__.py` (`__version__`, `__codename__="Retorno registra 1 linha apenas no clique"`), `pyproject.toml`, `CHANGELOG.md`.
+
 ## [0.6.15] — 2026-09-01 — 🐛 Prompt inicial respeita idioma detectado do sistema/navegador
 
 ### 🐛 Prompt inicial sempre em português, mesmo com sistema/navegador em inglês

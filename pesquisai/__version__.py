@@ -24,6 +24,13 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
+  v0.6.16 — 🐛 Fix retorno: heartbeat único apenas no clique "Continuar"
+             • BUG v0.6.14: ao exibir "Bem-vindo de volta" o frontend disparava
+               _heartbeat() imediato + setTimeout 2,5s + clique → 2-3 linhas
+               "usuario_ativo" por retorno na planilha.
+             • FIX: removidos os dois disparos automáticos; /api/access agora
+               só é chamado no clique "Continuar". Guard _heartbeatSent impede
+               duplo clique. Planilha registra exatamente 1 linha por retorno.
   v0.6.15 — 🐛 Prompt inicial respeita idioma detectado do sistema/navegador
             • BUG: _current_lang="pt_BR" fixo impedia _detect_system_lang() de
               rodar (truthy → nunca caía no `if not _current_lang`). ttyd
@@ -322,13 +329,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.15"
+__version__: str = "0.6.16"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-09-01"
-__codename__: str = "Prompt inicial respeita idioma detectado"
+__codename__: str = "Retorno registra 1 linha apenas no clique"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

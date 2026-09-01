@@ -3622,8 +3622,11 @@ def create_wrapper_html(
           body:JSON.stringify(payload)}).catch(function(){});
       }catch(e){}
     }
+    var _heartbeatSent=false;
     function _heartbeat(){
       try{
+        if(_heartbeatSent) return;
+        _heartbeatSent=true;
         var p={}; if(__UFVAI_CLIENT_IP__) p.ip=__UFVAI_CLIENT_IP__;
         fetch("/api/access",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).catch(function(){});
       }catch(e){}
@@ -3729,8 +3732,7 @@ def create_wrapper_html(
       function _hideWelcome(){
         try{ if(wov) wov.style.display="none"; }catch(e){}
       }
-      // "Continuar" → heartbeat de acesso ativo (e-mail + hora + flag + IP) e fecha
-      // v0.6.14: envia IP do cliente (ipify) quando disponível; todo acesso já foi logado automaticamente ao mostrar o welcome
+      // "Continuar" → heartbeat de acesso ativo (e-mail + hora + flag + IP) — v0.6.16: APENAS no clique
       if(wOk){
         wOk.addEventListener("click",function(){
           try{ _heartbeat(); }catch(e){}
@@ -3777,8 +3779,7 @@ def create_wrapper_html(
           if(!_showWelcome(prof.email, profName)){
             return; // sem overlay (fallback): segue sem exibir nada
           }
-          // v0.6.14: TODO acesso de usuário já registrado → registra automaticamente na planilha (flag usuario_ativo + IP)
-          try{ _heartbeat(); setTimeout(function(){ _heartbeat(); }, 2500); }catch(e){}
+          // v0.6.16: heartbeat APENAS no clique "Continuar" (não automático ao exibir o welcome)
           return;
         }
         // Sessão anterior (versão antiga dos Termos): pré-preenche nome+e-mail e só confirma
