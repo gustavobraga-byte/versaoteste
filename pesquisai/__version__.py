@@ -277,13 +277,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.10"
+__version__: str = "0.6.12"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-09-01"
-__codename__: str = "Memória otimizada (BM25 cache + paginação) + nome ao lado do e-mail + IP na planilha + memória responsiva mobile"
+__codename__: str = "Fix preview responsivo — altura/flex mobile + live update"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

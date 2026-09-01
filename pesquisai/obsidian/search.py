@@ -34,7 +34,8 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .links import _normalize_title
-from .models import Note, NoteMetadata, SearchResult, TagIndex
+import datetime as _dt
+from .models import Note, NoteMetadata, SearchResult, TagIndex, _parse_date
 from .vault import Vault
 
 logger = logging.getLogger("pesquisai.obsidian.search")
@@ -302,8 +303,8 @@ class Searcher:
                 try:
                     meta = NoteMetadata(
                         title=str(info.get("title", "")),
-                        created=str(info.get("created", "")),
-                        updated=str(info.get("updated", "")),
+                        created=_parse_date(info.get("created", "")) or _dt.date.today(),
+                        updated=_parse_date(info.get("updated", "")) or _dt.date.today(),
                         author=str(info.get("author", "")),
                         created_by=str(info.get("created_by", "")),
                         source=str(info.get("source", "")),

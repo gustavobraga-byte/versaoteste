@@ -359,13 +359,18 @@ RESPONSIVE_CSS: str = """
   @media (max-width: 767px) {
     #memory-overlay > div { width: 95vw !important; max-width: 95vw !important; height: 92vh !important; max-height: 92vh !important; flex-direction: column !important; }
     #memory-sidebar { width: 100% !important; max-height: 38vh; border-right: none !important; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-    #memory-editor-pane { flex: 1; min-height: 0; }
-    #memory-editor-body { flex-direction: column !important; }
+    #memory-editor-pane { flex: 1; min-height: 0; display:flex; flex-direction:column; }
+    #memory-editor-body { flex-direction: column !important; flex:1; min-height:0; overflow:hidden; }
     #memory-list { -webkit-overflow-scrolling: touch; }
     #memory-search-input { font-size: 14px !important; padding: 8px 10px !important; }
     #memory-note-meta { flex-wrap: wrap; }
     #memory-editor, #memory-preview { padding: 12px !important; font-size: 13px !important; }
+    #memory-editor { min-height: 120px; flex: 1 1 40% !important; }
+    #memory-preview { min-height: 150px; flex: 1 1 60% !important; overflow-y:auto !important; -webkit-overflow-scrolling:touch; display:block !important; }
     #memory-overlay .modal-title { font-size: 14px !important; }
+    /* v0.6.12 fix: garante preview visível no mobile mesmo quando em modo preview */
+    #memory-editor-body #memory-preview[style*="display: none"] { display:none !important; }
+    #memory-editor-body #memory-preview:not([style*="display: none"]) { display:block !important; }
   }
   @media (max-width: 479px) {
     #memory-overlay > div { width: 100vw !important; max-width: 100vw !important; height: 100vh !important; max-height: 100vh !important; border-radius: 0 !important; }
@@ -2876,7 +2881,7 @@ def create_wrapper_html(
     // ── Editor: input → dirty ─────────────────────────────────────
     function onEditorInput() {
       if (!_memoryDirty) { _memoryDirty = true; markDirty(); }
-      if (_memoryTab === "split") renderPreview();
+      if (_memoryTab === "split" || _memoryTab === "preview") renderPreview();
     }
 
     function markDirty() {

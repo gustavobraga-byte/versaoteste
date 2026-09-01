@@ -1,5 +1,26 @@
 # Changelog — PesquisAI
 
+## [0.6.12] — 2026-09-01 — 📱 Fix preview responsivo
+
+### 📱 Memória — preview no mobile
+- **Bug:** preview markdown não aparecia no responsivo (`max-width: 767px`) — `#memory-preview` tinha `display:none` + `flex:1` mas sem `min-height`/`overflow` adequado no layout `flex-direction: column`, ficando com altura 0 em `#memory-editor-body` (`min-height:0`).
+- **Fix CSS `launch_app_responsive_v041.py`:** `@media (max-width:767px)` agora define `#memory-editor-pane {flex:1; min-height:0; display:flex; flex-direction:column}`, `#memory-editor-body {flex:1; min-height:0; overflow:hidden}`, `#memory-editor {min-height:120px; flex:1 1 40%}`, `#memory-preview {min-height:150px; flex:1 1 60% !important; overflow-y:auto !important; display:block !important}` + regras para garantir visibilidade.
+- **Fix JS:** `onEditorInput()` agora atualiza live preview também em `preview` (`if (_memoryTab === "split" || _memoryTab === "preview") renderPreview()`), antes só em `split` — digitar no mobile com aba Preview agora reflete instantaneamente.
+
+
+## [0.6.11] — 2026-09-01 — 🐛 Hotfix memória — isoformat cache BM25
+
+### 🐛 Correção crítica — `AttributeError: 'str' object has no attribute 'isoformat'` (Minha memória não carregava)
+- **Causa:** `pesquisai/obsidian/search.py` `Searcher._load_from_cache()` reconstruía `NoteMetadata` com `created=str(...)` / `updated=str(...)` (string) em vez de `date`. Ao exibir a árvore da memória (`GET /api/obsidian/status?include=tree` e `/api/obsidian/tree`/`/note`), `launch_app.py` chamava `note.metadata.updated.isoformat()` e quebrava quando o cache BM25 estava ativo (`cache HIT`).
+- **Fix `search.py`:** `import datetime as _dt` + `from .models import _parse_date`; agora `created=_parse_date(...) or _dt.date.today()` e `updated=_parse_date(...) or _dt.date.today()` — converte ISO `YYYY-MM-DD` e também ISO datetime `YYYY-MM-DDTHH:MM:SS±TZ` corretamente.
+- **Fix `models.py` `_parse_date`:** robustez para ISO 8601 completo — tenta `date.fromisoformat`, `datetime.fromisoformat`, depois formatos legados `%Y-%m-%d` etc.; aceita `date`, `datetime` e `str`; `datetime` → `.date()`.
+- **Fix `launch_app.py` / `pesquisai/launch_app.py` (defensivo):** novo helper `_safe_isoformat(v)` que aceita `str` (cache antigo), `date`, `datetime` e `None`; trocadas 4 ocorrências de `note.metadata.updated.isoformat() if ... else None` por `_safe_isoformat(...)` para nunca mais quebrar mesmo com cache stale.
+- **Cache:** `vault/embeddings_cache/bm25_cache.json` (3,9 MB, 248 notas) regenerado com `date` correto; validado `type=date`, `isoformat()` OK, `cache_hit=True` (~0,2s) e inválido stale removido. Hot-patch aplicado no kernel vivo via `jupyter_client` sem reiniciar o Colab.
+
+### Outros (bump)
+- Bump `0.6.10 → 0.6.11` em `pesquisai/__version__.py` (`__version__`, `__release_date__="2026-09-01"`, `__codename__="Hotfix memória — isoformat cache BM25 + _parse_date ISO robusto"`), `pyproject.toml`, `AGENTS.md` e `agents/AGENTS.*.md` (5 idiomas), `README.md`/`MANUAL.md` badges.
+
+
 ## [0.6.10] — 2026-09-01 — 🚀 Memória otimizada + nome+IP + responsiva mobile
 
 ### Memória — otimização para muitas notas (backend BM25 + cache)

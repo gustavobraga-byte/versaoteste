@@ -46,6 +46,17 @@ if IN_COLAB:
     _builtins.print = _silent_print
 from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
+
+def _safe_isoformat(v):
+    """Converte date/datetime/str para ISO string de forma segura (fix v0.6.10 cache BM25)."""
+    if v is None:
+        return None
+    if isinstance(v, str):
+        return v
+    try:
+        return v.isoformat()
+    except Exception:
+        return str(v)
 try:
     from .telemetry import event as _tel_event, set_consent as _tel_set_consent
     from .telemetry import masked_state as _tel_masked_state, save_admin_config as _tel_save_admin
@@ -1674,7 +1685,7 @@ def start_wrapper_server():
                                         "title": note.metadata.title,
                                         "tags": list(note.tags)[:6],
                                         "length": len(note.body or ""),
-                                        "updated": note.metadata.updated.isoformat() if note.metadata.updated else None,
+                                        "updated": _safe_isoformat(note.metadata.updated),
                                         "is_pesquisai_generated": note.is_pesquisai_generated,
                                     })
                                 for folder in sorted(folders_data):
@@ -1738,8 +1749,8 @@ def start_wrapper_server():
                         "tags": list(note.tags),
                         "wikilinks": list(note.wikilinks),
                         "is_pesquisai_generated": note.is_pesquisai_generated,
-                        "created": note.metadata.created.isoformat() if note.metadata.created else None,
-                        "updated": note.metadata.updated.isoformat() if note.metadata.updated else None,
+                        "created": _safe_isoformat(note.metadata.created),
+                        "updated": _safe_isoformat(note.metadata.updated),
                         "body": note.body,
                         "raw": raw,
                         "metadata": note.metadata.to_dict(),
@@ -1780,7 +1791,7 @@ def start_wrapper_server():
                             "title": note.metadata.title,
                             "tags": list(note.tags)[:6],
                             "length": len(note.body or ""),
-                            "updated": note.metadata.updated.isoformat() if note.metadata.updated else None,
+                            "updated": _safe_isoformat(note.metadata.updated),
                             "is_pesquisai_generated": note.is_pesquisai_generated,
                         })
                     # Ordena pastas e notas

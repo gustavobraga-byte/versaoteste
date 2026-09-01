@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)]()
 [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br)
-[![Versão](https://img.shields.io/badge/versão-0.6.10-orange.svg)]()
+[![Versão](https://img.shields.io/badge/versão-0.6.12-orange.svg)]()
 
 > Ecossistema de agentes de IA para acelerar a pesquisa científica.
 
@@ -178,9 +178,9 @@ O PesquisAI opera por módulos especializados (*skills*). Cada skill conecta o a
 
 ---
 
-## 🆕 Novidades v0.6.10 — Memória BM25 cache + Nome+IP + Responsiva mobile
+## 🆕 Novidades v0.6.12 — Memória BM25 cache + Nome+IP + Responsiva mobile
 
-**Versão 0.6.10** — pacote offline `pesquisai_0.6.10-offline_amd64.deb` — todas as entregas abaixo já estão nesta build.
+**Versão 0.6.12** — pacote offline `pesquisai_0.6.10-offline_amd64.deb` — todas as entregas abaixo já estão nesta build.
 
 ### 📜 Termos de Uso v2.1 → v6 (re-consentimento `_TV=6`)
 - **Telemetria opt-out (LGPD art. 7º IX):** caixa vem **marcada por padrão** e é **ativa** sem cookie (`analytics_storage:'denied'` — sem `_ga`); oposição a qualquer momento via caixa ou `UFVAI_TELEMETRY=0`.
@@ -267,7 +267,7 @@ O PesquisAI **não substitui** o julgamento humano e apresenta as seguintes limi
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.6.10. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.6.12. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
