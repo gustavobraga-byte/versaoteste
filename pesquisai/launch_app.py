@@ -92,7 +92,9 @@ _env: dict | None = None
 _drive_url: str = "https://drive.google.com/drive/my-drive"
 _folder_path: str = "/content"
 # v0.4.2.2: idioma atual persistido pelo backend (cookie + endpoint)
-_current_lang: str = "pt_BR"
+# v0.6.15: inicia vazio para que _detect_system_lang() seja consultado na
+# 1ª execução (antes caía sempre em "pt_BR" porque _current_lang era truthy).
+_current_lang: str = ""
 _LANG_COOKIE_FILE: str = os.path.expanduser("~/.config/pesquisai_lang")
 # v0.6.0: token de sessão da UI + rate limit simples (segurança)
 _SESSION_TOKEN: str | None = None
@@ -700,6 +702,55 @@ def _persist_lang(lang: str) -> None:
         pass
 
 
+def _ensure_lang_initialized() -> str:
+    """v0.6.15: garante que _current_lang esteja resolvido ANTES do 1º ttyd.
+
+    Ordem: cookie file (≈ escolha explícita do usuário) > PESQUISAI_LANG env
+    > detecção do sistema (_detect_system_lang). Persiste o resultado para
+    tornar a próxima execução determinística. Idempotente — pode ser chamada
+    em launch() e em start_wrapper_server() sem efeitos colaterais.
+    """
+    global _current_lang
+    # Se já está válido, respeita (evita re-detectar após escolha do usuário)
+    if _current_lang and _current_lang in _LANG_MAP.values():
+        return _current_lang
+    try:
+        if os.path.exists(_LANG_COOKIE_FILE):
+            with open(_LANG_COOKIE_FILE, "r", encoding="utf-8") as f:
+                content = (f.read() or "").strip()
+            if content:
+                short = content.split("_")[0].lower()
+                _current_lang = _LANG_MAP.get(short, content if content in _LANG_MAP.values() else "pt_BR")
+                # normaliza e garante persistência
+                try:
+                    _short2 = (_current_lang or "pt").split("_")[0].lower()
+                    _current_lang = _LANG_MAP.get(_short2, _current_lang if _current_lang in _LANG_MAP.values() else "pt_BR")
+                except Exception:
+                    _current_lang = "pt_BR"
+                _persist_lang(_current_lang)
+                return _current_lang
+        if os.environ.get("PESQUISAI_LANG"):
+            env_lang = str(os.environ["PESQUISAI_LANG"]).strip()
+            short = env_lang.split("_")[0].lower()
+            _current_lang = _LANG_MAP.get(short, env_lang if env_lang in _LANG_MAP.values() else "pt_BR")
+            _persist_lang(_current_lang)
+            return _current_lang
+        # Nenhuma preferência salva → detecta do sistema
+        _current_lang = _detect_system_lang()
+        print(f"🌐 Idioma detectado do sistema: {_current_lang}")
+        _persist_lang(_current_lang)
+        # normaliza
+        try:
+            _short = (_current_lang or "pt").split("_")[0].lower()
+            _current_lang = _LANG_MAP.get(_short, _current_lang if _current_lang in _LANG_MAP.values() else "pt_BR")
+        except Exception:
+            _current_lang = "pt_BR"
+        return _current_lang
+    except Exception:
+        _current_lang = "pt_BR"
+        return _current_lang
+
+
 def _wait_port_open(port: int, timeout_s: float = 10.0) -> bool:
     """v0.6.1: aguarda uma porta TCP local aceitar conexões.
 
@@ -1201,26 +1252,16 @@ def start_wrapper_server():
         print(f"🔑 Config do OpenCode restaurada do Drive.")
     
     # v0.4.2.2: restaura idioma persistido (cookie/arquivo)
-    # v0.6.1: se não houver preferência salva nem env, DETECTA o idioma do
-    # sistema ($LANG/LC_ALL/LANGUAGE ou locale) e inicia nele, persistindo.
+    # v0.6.15: helper garante detecção ANTES do ttyd (antes bug _current_lang="pt_BR" truthy)
     global _current_lang
     try:
-        if os.path.exists(_LANG_COOKIE_FILE):
-            with open(_LANG_COOKIE_FILE, "r", encoding="utf-8") as f:
-                _current_lang = (f.read() or "").strip()
-        if not _current_lang and os.environ.get("PESQUISAI_LANG"):
-            _current_lang = os.environ["PESQUISAI_LANG"]
-        if not _current_lang:
-            _current_lang = _detect_system_lang()
-            print(f"🌐 Idioma detectado do sistema: {_current_lang}")
-        # Persiste para tornar determinístico nas próximas execuções
-        _persist_lang(_current_lang)
-    except Exception:
-        _current_lang = "pt_BR"
-    # Normaliza (aceita "pt", "en_US" etc.) e valida
-    try:
-        _short = (_current_lang or "pt").split("_")[0].lower()
-        _current_lang = _LANG_MAP.get(_short, _current_lang if _current_lang in _LANG_MAP.values() else "pt_BR")
+        _ensure_lang_initialized()
+        # Normaliza (aceita "pt", "en_US" etc.) e valida - garante mesmo se helper já normalizou
+        try:
+            _short = (_current_lang or "pt").split("_")[0].lower()
+            _current_lang = _LANG_MAP.get(_short, _current_lang if _current_lang in _LANG_MAP.values() else "pt_BR")
+        except Exception:
+            _current_lang = "pt_BR"
     except Exception:
         _current_lang = "pt_BR"
     print(f"🌐 Idioma inicial: {_current_lang}")
@@ -3406,6 +3447,13 @@ def launch():
     # carregamento; begin() é idempotente e NÃO zera a barra.
     boot = get_boot_panel()
     boot.begin()
+    # v0.6.15: idioma do prompt inicial deve respeitar detecção do sistema
+    # (antes _current_lang="pt_BR" truthy impedia _detect_system_lang(); ttyd
+    # sempre iniciava em pt). Garante detecção ANTES do 1º start_ttyd.
+    try:
+        _ensure_lang_initialized()
+    except Exception:
+        pass
     
     try:
         boot.active("Localizando o núcleo opencode", 82)

@@ -24,6 +24,24 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
+  v0.6.15 — 🐛 Prompt inicial respeita idioma detectado do sistema/navegador
+            • BUG: _current_lang="pt_BR" fixo impedia _detect_system_lang() de
+              rodar (truthy → nunca caía no `if not _current_lang`). ttyd
+              sempre iniciava em pt_BR mesmo com LANG=en_US ou navegador em
+              inglês. launch() chamava start_ttyd() ANTES de start_wrapper_server()
+              que faria a detecção — ordem errada.
+            • FIX backend `launch_app.py`: _current_lang inicia "" (vazio);
+              novo helper _ensure_lang_initialized() (cookie file > PESQUISAI_LANG
+              env > _detect_system_lang() > persiste) chamado em launch() ANTES
+              do 1º ttyd e em start_wrapper_server() (idempotente). _build_ttyd_cmd
+              agora cai em _detect_system_lang() quando _current_lang vazio.
+              Normalização _LANG_MAP e _persist_lang garantidas.
+            • FIX frontend `launch_app_responsive_v041.py`: window.load agora
+              compara `GET /api/lang` (backend) com `getCurrentLang()` (navegador
+              via navigator.language/cookie). Se divergir e LANGS válido, chama
+              automaticamente `setLang(_currentLang)` uma vez por sessão
+              (sessionStorage "ufvai_lang_synced") — corrige instalações antigas
+              onde backend ficou preso em pt_BR.
   v0.6.14 — 🐛 Fix IP localhost + todo acesso logado na planilha
             • IP LOCALHOST FIX: _get_client_ip() agora aceita IP enviado pelo
               cliente (via JS ipify → POST /api/consent e /api/access) e o
@@ -304,13 +322,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.14"
+__version__: str = "0.6.15"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-09-01"
-__codename__: str = "Fix IP localhost + todo acesso logado"
+__codename__: str = "Prompt inicial respeita idioma detectado"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

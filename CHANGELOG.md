@@ -1,5 +1,16 @@
 # Changelog — PesquisAI
 
+## [0.6.15] — 2026-09-01 — 🐛 Prompt inicial respeita idioma detectado do sistema/navegador
+
+### 🐛 Prompt inicial sempre em português, mesmo com sistema/navegador em inglês
+- **Causa raiz:** `_current_lang = "pt_BR"` fixo (truthy) → `_build_ttyd_cmd(lang=None)` fazia `PESQUISAI_LANG or _current_lang or _detect_system_lang()` e **nunca** alcançava `_detect_system_lang()`. `launch()` chamava `start_ttyd()` **antes** de `start_wrapper_server()` que faria a detecção — ordem errada. No Colab `LANG=en_US.UTF-8` (confirmado `env | grep LANG`), mas ttyd iniciava `Olá! (Dica: ...)` em pt.
+- **Fix backend `launch_app.py`:** `_current_lang` inicia `""` (vazio) para permitir detecção; novo helper `_ensure_lang_initialized()` (prioridade: `~/.config/pesquisai_lang` > `PESQUISAI_LANG` env > `_detect_system_lang()` > persiste) chamado em `launch()` **antes** do 1º `start_ttyd()` e em `start_wrapper_server()` (idempotente). `_build_ttyd_cmd` agora detecta corretamente quando `_current_lang` vazio. Normalização via `_LANG_MAP` e `print("🌐 Idioma detectado")` mantidos.
+- **Fix frontend `launch_app_responsive_v041.py`:** `window.load` compara `GET /api/lang` (backend) com `getCurrentLang()` (navegador: `?lang` > cookie > `localStorage` > `navigator.language`). Se divergir e `LANGS` válido, chama automaticamente `setLang(_currentLang)` uma vez por sessão (`sessionStorage "ufvai_lang_synced"`) — corrige instalações antigas onde backend ficou preso em `pt_BR` por causa do bug. UI já ficava correta (via `applyLang`), mas terminal precisava do restart para saudação.
+
+### Outros (bump)
+- Bump `0.6.14 → 0.6.15` em `pesquisai/__version__.py` (`__version__`, `__codename__="Prompt inicial respeita idioma detectado"`), `pyproject.toml`, `AGENTS.md` e `agents/AGENTS.*.md` (5 idiomas), `README.md`/`MANUAL.md` badges.
+- Frontend ipify (0.6.14) preservado; detecção de idioma independe de IP.
+
 ## [0.6.14] — 2026-09-01 — 🐛 Fix IP localhost (ipify client-side) + todo acesso logado
 
 ### 🐛 IP ainda registrava 127.0.0.1 (localhost do Colab)

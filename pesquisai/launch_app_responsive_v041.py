@@ -3321,6 +3321,19 @@ def create_wrapper_html(
       // 1. Aplica idioma (síncrono, sem flash)
       applyLang(_currentLang);
       buildLangMenu();
+      // v0.6.15: sincroniza prompt inicial com idioma detectado do navegador
+      // Se backend ainda está em pt_BR (bug pré-0.6.15) e frontend detectou en/es/fr/zh, reinicia ttyd automaticamente
+      try {
+        fetch(BASE + "/api/lang").then(r=>r.json()).then(d=>{
+          const backendLang = d.lang;
+          if(backendLang && backendLang !== _currentLang && LANGS[_currentLang]) {
+            if(!sessionStorage.getItem("ufvai_lang_synced")) {
+              sessionStorage.setItem("ufvai_lang_synced", "1");
+              setLang(_currentLang);
+            }
+          }
+        }).catch(()=>{});
+      } catch(e){}
       // 2. Carrega tema
       loadInitialTheme();
       // 3. Aplica keys no ambiente
