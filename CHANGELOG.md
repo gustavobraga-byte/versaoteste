@@ -1,5 +1,18 @@
 # Changelog — PesquisAI
 
+## [0.6.17] — 2026-09-01 — ⚡ Memória abre instantânea via menu (singleton + warm-up + prefetch)
+
+### ⚡ O carregamento da memória demorava muito a cada abertura do menu
+- **Causa raiz:** cada request `/api/obsidian*` criava um `ObsidianMemory.from_env()` **novo** (6 pontos em `launch_app.py`) → `Searcher` novo → revalidação `mtime`/`size` de todas as notas via Drive FUSE + re-parse do cache BM25 (3,8 MB) + árvore iterada 2× (`include=tree`) + `LinkIndex` reconstruído a cada `stats()`. Qualquer mudança de arquivo (autopilot grava daily constantemente) invalidava o cache → re-leitura + re-tokenização completa. Cache do frontend: só 5 s.
+- **Fix backend `launch_app.py` (singleton stale-while-revalidate):** nova camada module-level `_get_memory()` — 1 instância em RAM compartilhada entre requests (índice BM25/LinkIndex construídos 1×); 1ª construção protegida por lock (sem build duplo do warm-up + request); após `_MEM_TTL=30s` devolve dados correntes imediatamente e dispara `_kick_memory_rebuild()` em background (menu **nunca** bloqueia esperando o Drive). Os 6 endpoints (`/api/obsidian`, `/note` GET+POST, `/tree`, `/search`, `/tags`) agora usam o singleton.
+- **Warm-up no boot:** `_warm_memory_async()` em `launch()` pré-aquece o índice em thread daemon assim que o servidor sobe — o 1º clique no menu já encontra o índice em RAM.
+- **Escritas convergem em background:** save/create/delete de nota agora disparam `_kick_memory_rebuild()` (antes: `invalidate()` deixava o próximo acesso lento; agora a leitura seguinte serve índice stale e converge em background).
+- **Fix frontend `launch_app_responsive_v041.py`:** cache do menu 5 s → **120 s** com stale-while-revalidate (>30 s revalida silenciosamente) + **prefetch fire-and-forget** de `/api/obsidian?include=tree` no `window load` (aquece servidor e popula o cache local) → abertura instantânea do menu.
+- **Compatibilidade:** endpoints, payload e behavior inalterados; apenas tempo de resposta (µs vs. segundos). Vault desativado (`DISABLED`/`NO_VAULT`) retorna rápido como antes.
+
+### Outros (bump)
+- Bump `0.6.16 → 0.6.17` em `pesquisai/__version__.py` (`__version__`, `__codename__="Memória abre instantânea via menu (singleton + warm-up)"`), `pyproject.toml`, `CHANGELOG.md`.
+
 ## [0.6.16] — 2026-09-01 — 🐛 Fix retorno: 1 linha por clique (remove heartbeat duplicado)
 
 ### 🐛 No retorno o e-mail era enviado 2-3 vezes (linha duplicada na planilha)

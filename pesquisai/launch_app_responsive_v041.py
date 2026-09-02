@@ -2328,9 +2328,10 @@ def create_wrapper_html(
         list.innerHTML = '<div class="modal-empty" style="padding:14px;">' +
           (dict["ui.loading"] || "Carregando…") + '</div>';
       }
-      // v0.5.1.8: cache de 5s — evita nova requisição se cache for recente
+      // v0.6.17: cache de 120s + stale-while-revalidate — abertura instantânea
+      // (render imediato do cache; se >30s, revalida em background sem bloquear)
       const now = Date.now();
-      if (!force && _memoryCache.tree && (now - _memoryCache.ts) < 5000) {
+      if (!force && _memoryCache.tree && (now - _memoryCache.ts) < 120000) {
         _memoryStatus = _memoryCache.status;
         _memoryTree = _memoryCache.tree;
         renderMemoryHeader(_memoryCache.status, dict);
@@ -2340,6 +2341,14 @@ def create_wrapper_html(
             const lastDaily = findLastDaily();
             if (lastDaily) loadMemoryNote(lastDaily.path);
           }
+        }
+        // v0.6.17: stale-while-revalidate — cache >30s atualiza em background
+        if (now - _memoryCache.ts > 30000) {
+          fetch(BASE + "/api/obsidian?include=tree").then(r=>r.json()).then(d=>{
+            if (d && d.ok) {
+              _memoryCache = { tree: d.tree || [], status: d, ts: Date.now() };
+            }
+          }).catch(()=>{});
         }
         return;
       }
@@ -3342,6 +3351,16 @@ def create_wrapper_html(
       //    (terms-overlay, com a logomarca oficial UFVAI) é a única abertura.
       // 5. v0.6.5: conecta o terminal (com splash) só quando /api/ttyd_ready
       bootTerminal();
+      // 6. v0.6.17: pré-aquece a memória (fire-and-forget) — o servidor constrói
+      //    o índice BM25 em background E popula o cache local; o 1º clique no
+      //    menu da memória abre instantâneo (sem esperar o Drive FUSE)
+      try {
+        fetch(BASE + "/api/obsidian?include=tree").then(r=>r.json()).then(d=>{
+          if (d && d.ok) {
+            _memoryCache = { tree: d.tree || [], status: d, ts: Date.now() };
+          }
+        }).catch(()=>{});
+      } catch(e){}
     });
     window.addEventListener("beforeunload", () => { _stopSessionsPoll(); });
   </script>

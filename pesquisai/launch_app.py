@@ -1137,6 +1137,124 @@ except ImportError:
 
 
 
+# ═══════════════════════════════════════════════════════════════
+# v0.6.17 — Singleton de memória p/ abertura instantânea via menu
+# ═══════════════════════════════════════════════════════════════
+# Problema: cada request /api/obsidian/* criava um ObsidianMemory novo
+# → Searcher novo → revalidação mtime/size de todas as notas no Drive
+# FUSE + re-parse do cache BM25 + re-iteração da árvore (inclusive
+# 2× com include=tree) = segundos de espera a cada abertura do menu.
+# Solução: 1 instância em RAM compartilhada entre requests (índice
+# BM25/LinkIndex construídos 1×), warm-up em background no boot e
+# revalidação stale-while-revalidate após _MEM_TTL s.
+_MEM_SINGLETON = None
+_MEM_LOCK = threading.Lock()
+_MEM_BUILT_TS = 0.0
+_MEM_REBUILDING = False
+_MEM_TTL = 30.0  # s — janela antes de disparar revalidação em background
+
+
+def _get_memory(*, refresh: bool = False):
+    """Retorna a instância única de ObsidianMemory (v0.6.17).
+
+    - 1ª chamada: cria a instância e constrói o índice sincronamente.
+    - Chamadas seguintes: devolve o objeto em RAM (instantâneo, µs).
+    - Após _MEM_TTL s: devolve os dados correntes (stale) imediatamente
+      e dispara rebuild em background (stale-while-revalidate) — o menu
+      NUNCA bloqueia esperando o Drive.
+    - refresh=True: invalida e reconstrói sincronamente (uso pós-escrita
+      crítica; o save de nota usa rebuild em background em vez disto).
+    """
+    global _MEM_SINGLETON, _MEM_BUILT_TS
+    from pesquisai.obsidian import ObsidianMemory, ObsidianMemoryStatus
+    with _MEM_LOCK:
+        if _MEM_SINGLETON is None:
+            _MEM_SINGLETON = ObsidianMemory.from_env()
+        mem = _MEM_SINGLETON
+    if mem.status != ObsidianMemoryStatus.READY:
+        return mem
+    now = time.time()
+    if refresh or _MEM_BUILT_TS == 0.0:
+        # Construção síncrona apenas na 1ª vez (ou refresh explícito).
+        # Lock evita build duplo concorrente (warm-up thread + 1º request):
+        # requests seguintes esperam a 1ª construção e depois são instantâneos.
+        with _MEM_LOCK:
+            if _MEM_BUILT_TS == 0.0 or refresh:
+                try:
+                    searcher = mem._searcher
+                    if searcher is not None:
+                        if refresh:
+                            searcher.invalidate()
+                        searcher._ensure_built()  # type: ignore[attr-defined]
+                    _MEM_BUILT_TS = time.time()
+                except Exception:  # noqa: BLE001
+                    pass
+    elif now - _MEM_BUILT_TS > _MEM_TTL:
+        _kick_memory_rebuild()
+    return mem
+
+
+def _kick_memory_rebuild() -> None:
+    """Dispara rebuild do índice BM25 em background (1 por vez)."""
+    global _MEM_REBUILDING, _MEM_BUILT_TS
+    with _MEM_LOCK:
+        if _MEM_REBUILDING:
+            return
+        _MEM_REBUILDING = True
+
+    def _worker() -> None:
+        global _MEM_REBUILDING, _MEM_BUILT_TS
+        try:
+            mem = _MEM_SINGLETON
+            if mem is not None and mem._searcher is not None:
+                mem._searcher.invalidate()
+                mem._searcher._ensure_built()  # type: ignore[attr-defined]
+                _MEM_BUILT_TS = time.time()
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            _MEM_REBUILDING = False
+
+    threading.Thread(target=_worker, daemon=True, name="ufvai-memory-rebuild").start()
+
+
+def _warm_memory_async() -> None:
+    """v0.6.17: pré-aquece o índice da memória em background no boot.
+
+    Quando o usuário abrir o menu da memória, o índice já está em RAM
+    → abertura instantânea (sem esperar o Drive FUSE).
+    """
+    def _worker() -> None:
+        try:
+            _get_memory()
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=_worker, daemon=True, name="ufvai-memory-warm").start()
+
+
+def _iter_memory_notes(mem, *, subdir=None):
+    """v0.6.17: itera notas em RAM (índice quente) em vez de reler o Drive.
+
+    O Searcher mantém todas as notas carregadas (``_notes``); usar essa
+    cópia evita re-ler ~250 arquivos via FUSE a cada renderização da
+    árvore (era o gargalo restante mesmo com o singleton). Fallback:
+    ``vault.iter_notes()`` (comportamento antigo) se o índice estiver frio.
+    """
+    searcher = getattr(mem, "_searcher", None)
+    notes = getattr(searcher, "_notes", None) if searcher is not None else None
+    if getattr(searcher, "_built", False) and notes:
+        prefix = (subdir.rstrip("/") + "/") if subdir else ""
+        for path in sorted(notes):
+            if prefix and not path.startswith(prefix):
+                continue
+            yield notes[path]
+        return
+    vault = getattr(mem, "_vault", None)
+    if vault is not None:
+        yield from vault.iter_notes(subdir=subdir)
+
+
 def start_wrapper_server():
     # Determine correct backup dir — v0.6.9-6: offline usa local se Drive sem escrita
     _pesquisai_drive = "/content/drive/My Drive/PesquisAI"
@@ -1714,7 +1832,7 @@ def start_wrapper_server():
                 }
                 try:
                     from pesquisai.obsidian import ObsidianMemory, ObsidianMemoryStatus
-                    mem = ObsidianMemory.from_env()
+                    mem = _get_memory()
                     if mem.status == ObsidianMemoryStatus.DISABLED:
                         result["status"] = "disabled"
                         result["message"] = (
@@ -1805,7 +1923,7 @@ def start_wrapper_server():
                             try:
                                 tree_data = []
                                 folders_data: dict[str, list[dict]] = {}
-                                for note in mem._vault.iter_notes():
+                                for note in _iter_memory_notes(mem):  # v0.6.17: RAM
                                     rel = note.path
                                     folder = str(Path(rel).parent) if "/" in rel else ""
                                     folders_data.setdefault(folder, []).append({
@@ -1857,7 +1975,7 @@ def start_wrapper_server():
                     return
                 try:
                     from pesquisai.obsidian import ObsidianMemory, ObsidianMemoryStatus
-                    mem = ObsidianMemory.from_env()
+                    mem = _get_memory()
                     if mem.status != ObsidianMemoryStatus.READY:
                         self._json(409, {
                             "ok": False,
@@ -1899,7 +2017,7 @@ def start_wrapper_server():
                 subdir = (qp.get("subdir", [""])[0] or "").strip() or None
                 try:
                     from pesquisai.obsidian import ObsidianMemory, ObsidianMemoryStatus
-                    mem = ObsidianMemory.from_env()
+                    mem = _get_memory()
                     if mem.status != ObsidianMemoryStatus.READY:
                         self._json(409, {"ok": False, "error": f"status={mem.status.value}"})
                         return
@@ -1911,7 +2029,7 @@ def start_wrapper_server():
                         return
                     # Agrupa por pasta de primeiro nível
                     folders: dict[str, list[dict]] = {}
-                    for note in mem._vault.iter_notes(subdir=subdir):
+                    for note in _iter_memory_notes(mem, subdir=subdir):  # v0.6.17: RAM
                         rel = note.path
                         folder = str(Path(rel).parent) if "/" in rel else ""
                         folders.setdefault(folder, []).append({
@@ -1951,14 +2069,14 @@ def start_wrapper_server():
                 limit = max(1, min(limit, 100))
                 try:
                     from pesquisai.obsidian import ObsidianMemory, ObsidianMemoryStatus
-                    mem = ObsidianMemory.from_env()
+                    mem = _get_memory()
                     if mem.status != ObsidianMemoryStatus.READY:
                         self._json(409, {"ok": False, "error": f"status={mem.status.value}"})
                         return
                     # Se query vazia, lista todas (top N por path)
                     if not query:
                         results = []
-                        for note in mem._vault.iter_notes():
+                        for note in _iter_memory_notes(mem):  # v0.6.17: RAM
                             results.append({
                                 "path": note.path,
                                 "title": note.metadata.title,
@@ -1986,7 +2104,7 @@ def start_wrapper_server():
                 # GET /api/obsidian/tags — lista de tags com contagem
                 try:
                     from pesquisai.obsidian import ObsidianMemory, ObsidianMemoryStatus
-                    mem = ObsidianMemory.from_env()
+                    mem = _get_memory()
                     if mem.status != ObsidianMemoryStatus.READY:
                         self._json(409, {"ok": False, "error": f"status={mem.status.value}"})
                         return
@@ -2105,7 +2223,7 @@ def start_wrapper_server():
                     from pesquisai.obsidian.models import extract_wikilinks, extract_tags
                     import datetime as _dt
                     from dataclasses import replace as _dc_replace
-                    mem = ObsidianMemory.from_env()
+                    mem = _get_memory()
                     if mem.status != ObsidianMemoryStatus.READY:
                         self._json(409, {"ok": False, "error": f"status={mem.status.value}"})
                         return
@@ -2170,8 +2288,9 @@ def start_wrapper_server():
                                 tags=merged_tags,
                             )
                             mem._vault.write(new_note, force=force)
-                        if mem._searcher is not None:
-                            mem._searcher.invalidate()
+                        # v0.6.17: rebuild em background (não bloqueia a UI);
+                        # leitura seguinte serve índice stale até convergir
+                        _kick_memory_rebuild()
                         try:
                             _tel_event("memory_note_saved", {})
                         except Exception:
@@ -2208,8 +2327,8 @@ def start_wrapper_server():
                         if note is None:
                             self._json(500, {"ok": False, "error": "Falha ao criar nota."})
                             return
-                        if mem._searcher is not None:
-                            mem._searcher.invalidate()
+                        # v0.6.17: rebuild em background (não bloqueia a UI)
+                        _kick_memory_rebuild()
                         try:
                             _tel_event("memory_note_created", {})
                         except Exception:
@@ -2244,6 +2363,8 @@ def start_wrapper_server():
                             return
                         if mem._searcher is not None:
                             mem._searcher.invalidate()
+                        # v0.6.17: rebuild em background (não bloqueia a UI)
+                        _kick_memory_rebuild()
                         try:
                             _tel_event("memory_note_deleted", {})
                         except Exception:
@@ -2942,6 +3063,12 @@ def start_wrapper_server():
         raise RuntimeError(f"Nenhum servidor wrapper pôde ser iniciado na porta {WRAPPER_PORT}.")
     print(f"\n{next_joke('economia')}")
     print(f"🚀 Servidor wrapper iniciado na porta {WRAPPER_PORT} ({_servers_started} listener(s))")
+    # v0.6.17: pré-aquece a memória em background — quando o usuário abrir
+    # o menu da memória, o índice BM25 já estará em RAM (abertura instantânea)
+    try:
+        _warm_memory_async()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _auto_open_browser(url: str) -> None:
