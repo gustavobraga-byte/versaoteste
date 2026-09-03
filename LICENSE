@@ -2,6 +2,14 @@ MIT License
 
 Copyright (c) 2026 Gustavo Bastos Braga — Universidade Federal de Viçosa (DER/UFV)
 
+**“Commons Clause” License Condition** 
+
+The Software is provided to you by the Licensor under the License, as defined below, subject to the following condition.
+
+Without limiting other conditions in the License, the grant of rights under the License will not include, and the License does not grant to you, the right to Sell the Software.
+
+For purposes of the foregoing, “Sell” means practicing any or all of the rights granted to you under the License to provide to third parties, for a fee or other consideration (including without limitation fees for hosting or consulting/ support services related to the Software), a product or service whose value derives, entirely or substantially, from the functionality of the Software. Any license notice or attribution required by the License must also include this Commons Cause License Condition notice.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -25,12 +33,12 @@ SOFTWARE.
 ## NOTICE — Marca e Termos de Uso (v2.0, 22/08/2026)
 
 1. **Marca:** "UFVAI", sua logomarca e identidade visual pertencem à Universidade
-   Federal de Viçosa / DER. A licença MIT cobre o CÓDIGO-FONTE; não confere direito de
+   Federal de Viçosa / DER. A licença cobre o CÓDIGO-FONTE; não confere direito de
    usar a marca para produtos ou serviços derivados que sugiram endosso institucional.
    Atribuição de origem ao repositório oficial é requerida em redistribuições.
 2. **Termos de Uso:** a RELAÇÃO DE USO do programa (telemetria opt-in, integridade
    acadêmica, limitações) é regida pelos Termos de Uso v2.0
-   (`docs/TERMS_OF_USE.md`), que complementam — sem restringir os direitos da MIT
-   sobre o código — esta licença.
+   (`docs/TERMS_OF_USE.md`), que complementam esta licença.
 3. **Integridade científica:** o uso em atividade científica deve observar a Portaria
    CNPq nº 2.664/2026 (declaração de uso de IA generativa).
+
