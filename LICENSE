@@ -1,44 +1,51 @@
-MIT License
+### **ENGLISH VERSION (Revised MIT License with Commercial Use Restriction)**
 
+**Revised MIT License**  
 Copyright (c) 2026 Gustavo Bastos Braga — Universidade Federal de Viçosa (DER/UFV)
 
-**“Commons Clause” License Condition** 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, and distribute copies of the Software, and to permit persons to whom the Software is furnished to do so, **subject to the following conditions**:
 
-The Software is provided to you by the Licensor under the License, as defined below, subject to the following condition.
+1. **Non-Commercial Use Only.** The rights granted above are strictly limited to non‑commercial purposes. The Software, including any modifications, derivatives, or aggregated works incorporating it, **may not be used, sold, leased, licensed, sublicensed, distributed for a fee, hosted as a commercial service, or otherwise exploited for commercial advantage or monetary compensation**, directly or indirectly, **without the prior express written authorization of the Licensor**.
 
-Without limiting other conditions in the License, the grant of rights under the License will not include, and the License does not grant to you, the right to Sell the Software.
+2. **Commercial Licensing.** Any commercial use, distribution, or monetization of the Software shall be subject to a separate written commercial license agreement to be entered into with the Licensor. Nothing in this license shall be construed as granting any implied right to commercialize the Software.
 
-For purposes of the foregoing, “Sell” means practicing any or all of the rights granted to you under the License to provide to third parties, for a fee or other consideration (including without limitation fees for hosting or consulting/ support services related to the Software), a product or service whose value derives, entirely or substantially, from the functionality of the Software. Any license notice or attribution required by the License must also include this Commons Cause License Condition notice.
+3. **Copyright and Permission Notice.** The above copyright notice and this permission notice (including the commercial restriction above) shall be included in all copies or substantial portions of the Software.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+4. **Disclaimer of Warranty.** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---
 
-## NOTICE — Marca e Termos de Uso (v2.0, 22/08/2026)
+**NOTICE — Trademark and Terms of Use (v2.1, 09/2026)**
 
-1. **Marca:** "UFVAI", sua logomarca e identidade visual pertencem à Universidade
-   Federal de Viçosa / DER. A licença cobre o CÓDIGO-FONTE; não confere direito de
-   usar a marca para produtos ou serviços derivados que sugiram endosso institucional.
-   Atribuição de origem ao repositório oficial é requerida em redistribuições.
-2. **Termos de Uso:** a RELAÇÃO DE USO do programa (telemetria opt-in, integridade
-   acadêmica, limitações) é regida pelos Termos de Uso v2.0
-   (`docs/TERMS_OF_USE.md`), que complementam esta licença.
-3. **Integridade científica:** o uso em atividade científica deve observar a Portaria
-   CNPq nº 2.664/2026 (declaração de uso de IA generativa).
+1. **Trademark:** "UFVAI", its logo, and visual identity belong to the Universidade Federal de Viçosa / DER. This license covers the **source code** and does not grant any right to use the brand, name, or logo to suggest institutional endorsement, sponsorship, or affiliation in derivative products or services. Proper attribution to the official repository is required in all redistributions.
 
+2. **Terms of Use:** The operational rules for using the program (opt‑in telemetry, academic integrity, usage limitations) are governed by the Terms of Use v2.0 (`docs/TERMS_OF_USE.md`), which complement this license.
+
+3. **Scientific Integrity:** When used in scientific activities, the user must comply with CNPq Ordinance No. 2.664/2026 (declaration of generative AI usage).
+
+---
+
+### **VERSÃO EM PORTUGUÊS BRASILEIRO (Licença MIT Revisada com Restrição de Uso Comercial)**
+
+**Licença MIT Revisada**  
+Copyright (c) 2026 Gustavo Bastos Braga — Universidade Federal de Viçosa (DER/UFV)
+
+É concedida permissão, gratuitamente, a qualquer pessoa que obtenha uma cópia deste software e dos arquivos de documentação associados (o "Software"), para lidar com o Software sem restrições, incluindo, sem limitação, os direitos de usar, copiar, modificar, mesclar, publicar e distribuir cópias do Software, bem como permitir que as pessoas a quem o Software for fornecido o façam, **sob as seguintes condições**:
+
+1. **Uso Exclusivamente Não Comercial.** Os direitos concedidos acima ficam estritamente limitados a finalidades não comerciais. O Software, incluindo quaisquer modificações, derivações ou trabalhos agregados que o incorporem, **NÃO pode ser utilizado, vendido, arrendado, licenciado, sublicenciado, distribuído mediante cobrança, hospedado como serviço comercial, nem explorado para vantagem comercial ou compensação monetária**, direta ou indiretamente, **sem a autorização prévia, expressa e por escrito do Licenciante**.
+
+2. **Licenciamento Comercial.** Qualquer uso, distribuição ou monetização do Software para fins comerciais dependerá de um contrato de licença comercial específico e escrito, a ser firmado com o Licenciante. Nenhuma disposição desta licença será interpretada como outorga de direito implícito à comercialização do Software.
+
+3. **Aviso de Copyright e Permissão.** O aviso de copyright acima e este aviso de permissão (incluindo a restrição comercial acima) deverão ser incluídos em todas as cópias ou partes substanciais do Software.
+
+4. **Isenção de Garantia.** O SOFTWARE É FORNECIDO "COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO, EXPRESSA OU IMPLÍCITA, INCLUINDO, MAS NÃO SE LIMITANDO ÀS GARANTIAS DE COMERCIABILIDADE, ADEQUAÇÃO A UM DETERMINADO FIM E NÃO VIOLAÇÃO DE DIREITOS. EM NENHUMA HIPÓTESE OS AUTORES OU DETENTORES DE DIREITOS AUTORAIS SERÃO RESPONSÁVEIS POR QUALQUER RECLAMAÇÃO, DANOS OU OUTRA RESPONSABILIDADE, SEJA EM AÇÃO CONTRATUAL, EXTRACONTRATUAL OU DE OUTRA NATUREZA, DECORRENTE DE, OU EM CONEXÃO COM O SOFTWARE OU O USO OU OUTRAS NEGOCIAÇÕES NO SOFTWARE.
+
+---
+
+**AVISO — Marca e Termos de Uso (v2.1, 09/2026)**
+
+1. **Marca:** "UFVAI", sua logomarca e identidade visual pertencem à Universidade Federal de Viçosa / DER. Esta licença cobre o **código-fonte** e não confere qualquer direito de uso da marca, nome ou logotipo para sugerir endosso institucional, patrocínio ou afiliação em produtos ou serviços derivados. A atribuição da origem ao repositório oficial é obrigatória em todas as redistribuições.
+
+2. **Termos de Uso:** As regras operacionais para uso do programa (telemetria opt‑in, integridade acadêmica, limitações) são regidas pelos Termos de Uso v2.0 (`docs/TERMS_OF_USE.md`), que complementam esta licença.
+
+3. **Integridade Científica:** Quando utilizado em atividade científica, o usuário deve observar a Portaria CNPq nº 2.664/2026 (declaração de uso de IA generativa).
