@@ -67,6 +67,7 @@ SKILL_REGISTRY: list[SkillEntry] = [
     ("https://github.com/gustavobraga-byte/skill-obsidian-memory.git", "obsidian-memory", False),
     ("https://github.com/gustavobraga-byte/Memorial_ufv.git", "memorial", False),
     ("https://github.com/gustavobraga-byte/BR-DWGD.git", "BR-DWGD", False),
+    ("https://github.com/gustavobraga-byte/cep-ufv.git", "cep-ufv", False),
     
 ]
 
@@ -84,6 +85,7 @@ SKILL_MAPPINGS: list[tuple[str, str]] = [
     ("/tmp/skill_obsidian-memory", "obsidian-memory"),
     ("/tmp/skill_memorial", "memorial"),
     ("/tmp/skill_BR-DWGD", "BR-DWGD"), 
+    ("/tmp/skill_cep-ufv", "cep-ufv"),
 ]
 
 # Skills que o sistema considera ESSENCIAIS para funcionar
