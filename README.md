@@ -1,3 +1,4 @@
+# <img href="https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb" src="assets/ufvai_logo.svg"> 
 # UFVAI — Pesquisa científica com integridade
 
 > **UFVAI** é a marca do assistente; o motor/código é o PesquisAI (este repositório). v0.6.10
