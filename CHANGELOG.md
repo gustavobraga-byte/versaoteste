@@ -1,5 +1,15 @@
 # Changelog — PesquisAI
 
+## [0.6.18] — 2026-09-19 — 🧩 Skills personalizadas do usuário
+
+### 🧩 Nova pasta persistente de skills personalizadas
+- **Motivação:** permitir que o usuário estenda o UFVAI com skills próprias, sem precisar editar o código ou os repositórios oficiais, e que o agente saiba onde criar skills novas solicitadas em conversa.
+- **Pasta:** `backups/skills-personalizadas/` (Colab: `/content/drive/My Drive/PesquisAI/backups/skills-personalizadas/` · Offline: `~/PesquisAI/backups/skills-personalizadas/`). Criada automaticamente no boot, com `README.md` explicativo.
+- **Carga a cada boot:** nova `setup_custom_skills()` em `pesquisai/run_fast.py`, chamada logo após `setup_skills()` — varre a pasta e copia cada subpasta válida (contendo `SKILL.md`) para `SKILLS_DIR` (`~/.agents/skills`), onde o OpenCode a injeta no contexto junto com as oficiais. Subpastas sem `SKILL.md` são ignoradas com log informativo (validação fail-closed); falhas nunca interrompem o boot.
+- **Instrução ao agente:** nova seção "🧩 Skills Personalizadas do Usuário" injetada no prompt do `pesquisai.md` (via `_inject` dentro de `setup_launch`) com o caminho real da pasta — ao criar uma nova skill a pedido do usuário, o agente grava-a obrigatoriamente nessa pasta e informa que ela entra em vigor no próximo boot.
+- **Documentação:** `AGENTS.md` ganhou seção §2.1.0 com as regras da pasta de skills personalizadas.
+- Bump `0.6.17 → 0.6.18` em `pesquisai/__version__.py` (`__version__`, `__codename__="Skills personalizadas do usuário (backups/skills-personalizadas carregadas a cada boot)"`), `pyproject.toml`, `CHANGELOG.md`.
+
 ## [0.6.17] — 2026-09-01 — ⚡ Memória abre instantânea via menu (singleton + warm-up + prefetch)
 
 ### ⚡ O carregamento da memória demorava muito a cada abertura do menu
@@ -12,6 +22,8 @@
 
 ### Outros (bump)
 - Bump `0.6.16 → 0.6.17` em `pesquisai/__version__.py` (`__version__`, `__codename__="Memória abre instantânea via menu (singleton + warm-up)"`), `pyproject.toml`, `CHANGELOG.md`.
+- **Rebuild `.deb` 0.6.17-offline** (02/09, versão não publicada): fonte 0.6.17 integral (`launch_app.py`, `search.py`, `telemetry.py`, `responsive_v041`), assets corrigidos (`logo-oficial-288.jpg`, `icon.png`, `ufvai-64/128/256.png` — o pacote 0.6.9 só tinha `logo-oficial.jpeg`, quebrando o logo no código novo), `zh_CN.json` + `vendor/marked.min.js` incluídos, `ufvai-app.desktop` + ícones hicolor 64/128/256, docs atualizados (README/MANUAL/CHANGELOG/TELEMETRY/PRIVACY/SECURITY), postinst com reparo ativo de permissões (lição 0.6.9-2) e normalização 755/644. Validado: 14/14 md5 = canônica · py_compile 28 arquivos · bash -n 6 scripts · 0 `__pycache__` · 0 aninhamento · sha256 `9804297a…69f1`.
+- **Docs sincronizados em 0.6.17:** `AGENTS.md` + `agents/AGENTS.*.md` ×5 (frontmatter/rodapés 0.6.13→0.6.17, canônica + GitHub), `README.md` (badge, Novidades 0.6.14–0.6.17 + histórico consolidado 0.6.x, BibTeX, citação), `MANUAL.md` (cabeçalho, citação, metadados, histórico 0.6.11–0.6.17), `pyproject.toml` da raiz do Drive (0.6.9→0.6.17).
 
 ## [0.6.16] — 2026-09-01 — 🐛 Fix retorno: 1 linha por clique (remove heartbeat duplicado)
 
