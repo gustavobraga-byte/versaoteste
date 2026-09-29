@@ -1,5 +1,23 @@
 # Changelog — PesquisAI
 
+## [0.6.19] — 2026-09-29 — 📱 Menu mobile sem SVG + docs em paridade
+
+### 📱 Responsivo: esconder botões SVG quando o hamburger aparece
+- **Motivação:** em telas pequenas (≤767px) o menu hamburger aparecia mas os botões-ícone SVG continuavam na topbar, poluindo e duplicando ações.
+- **Fix CSS (`launch_app_responsive*.py`):** `@media (max-width:767px)` agora faz `.tb-icon{display:none}`; drawer reexibe botões textuais (`.mobile-menu .tb-btn{display:inline-flex}`) sem SVG (`.mobile-menu .tb-btn svg, .mobile-menu .btn-provider svg{display:none}`). NENHUM SVG aparece com menu reduzido — funções seguem no drawer (Dashboard, Sessões, Atalhos, Diretrizes, Memória, Tema, Idioma, backup/restore/drive).
+- **Arquivos:** `pesquisai/launch_app_responsive_v041.py` (produção) + `pesquisai/launch_app_responsive.py` (legado) nos dois projetos (`UFVAI-v0.6.9/` e `ufvai-github/`).
+
+### 📚 Docs em paridade (skills personalizadas)
+- **Sincronizados `UFVAI-v0.6.9/` → `ufvai-github/`:** `AGENTS.md` + `agents/AGENTS.{pt,en,es,fr,zh}.md` + `agents/README.md` — todos agora com §2.1.0, linha `cep-ufv`, ética atualizada, cabeçalhos multilíngues com recall 4b.
+- **Fix versões incorretas:** frontmatter/rodapés `0.6.17` → `0.6.19` (código já era `0.6.18` no staging); `Dockerfile` estável `0.6.9` → `0.6.19`; `README.md` (badge, novidades, tabela, citação, BibTeX, rodapé), `MANUAL.md` (cabeçalho, tabela, citação, rodapé), `citacao_pesquisai.md`, `PesquisAI.ipynb`, `pyproject.toml` sincronizados.
+- Bump `0.6.18 → 0.6.19` em `pesquisai/__version__.py` (`__version__`, `__release_date__="2026-09-29"`, `__codename__="Menu mobile sem SVG + docs em paridade (skills personalizadas)"`), `pyproject.toml`, `Dockerfile`, `CHANGELOG.md`.
+
+### 📦 Rebuild `.deb` 0.6.19-offline (29/09)
+- **Base:** `pesquisai_0.6.17-offline10` extraído; `/opt/pesquisai` atualizado com fonte v0.6.19 (docs, `__version__`, `constants.py` com `cep-ufv` + `custom_skills`, responsivo sem SVG, `index.html`, i18n); `run_fast.py` com merge `setup_custom_skills` (v0.6.18) sobre patches offline (tela loading, portas automáticas); `telemetry.py`/`launch_app.py` offline preservados (versão via `__version__`).
+- **Pacote:** `pesquisai_0.6.19-offline_amd64.deb` · 1019K · md5 `df7be1672b18395f652ef558696bc946` · sha256 `695a03f3ba130d8e63d55f761945ccc6d47bbedbac7b18168671668a813da05a` · `Version: 0.6.19-offline` · `Installed-Size: 3240` · 0 `__pycache__`/`.pyc` · perms 755/644.
+- **Validação:** `py_compile` merged OK; `test_version_sync` 5/5; `dpkg-deb` conteúdo OK (`__version__ 0.6.19`, `custom_skills` 6 refs, responsive `display:none` 2 refs, AGENTS `0.6.19`, offline patches 25+3 refs).
+- **Destino:** `UFVAI-v0.6.9/debs/` + `ufvai-github/debs/` (anteriores preservados); `debs/README.md` atualizado (pacote + SHA + tabela + citação).
+
 ## [0.6.18] — 2026-09-19 — 🧩 Skills personalizadas do usuário
 
 ### 🧩 Nova pasta persistente de skills personalizadas

@@ -1,6 +1,6 @@
 # 📘 Manual do UFVAI
 
-> **Agente de Pesquisa Científica de Alta Performance · v0.6.13 · Setembro 2026**
+> **Agente de Pesquisa Científica de Alta Performance · v0.6.19 · Setembro 2026**
 > Registro SisPPG/UFV nº 10356285004 · Universidade Federal de Viçosa
 
 ---
@@ -527,7 +527,7 @@ Após o aceite, você acessa a interface com **terminal interativo do agente**, 
 Para usar **sem internet e sem Colab** (requisito de privacidade máxima — nada sai da sua máquina):
 
 ```bash
-sudo dpkg -i pesquisai_0.6.10-offline_amd64.deb   # ou versão mais recente
+sudo dpkg -i pesquisai_0.6.17-offline_amd64.deb   # ou versão mais recente
 ufvai                                       # abre a interface (UI 8001 · terminal 8000)
 ```
 
@@ -845,7 +845,7 @@ Todos os arquivos gerados são salvos **exclusivamente** nesses locais — nunca
 **Solução:**
 ```bash
 sudo apt install python3-pip        # resolve o Depends
-sudo dpkg -i pesquisai_0.6.10-offline_amd64.deb
+sudo dpkg -i pesquisai_0.6.17-offline_amd64.deb
 ```
 Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já estar presente é suficiente).
 
@@ -861,7 +861,7 @@ Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já e
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.6.13. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.6.19. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -872,7 +872,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
 **Formato simplificado (nota de rodapé):**
 
 ```
-UFVAI, versão 0.6.13, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
+UFVAI, versão 0.6.19, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 ```
 
@@ -901,7 +901,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 | **Tipo** | Software / Computer Program |
 | **Autor** | Braga, Gustavo Bastos |
 | **Título** | UFVAI: agente de inteligência artificial para pesquisa científica |
-| **Versão** | 0.6.10 |
+| **Versão** | 0.6.19 |
 | **Ano** | 2026 |
 | **Instituição** | Universidade Federal de Viçosa (UFV) |
 | **URL** | https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/ |
@@ -917,7 +917,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 author = {Gustavo Bastos Braga},
 title = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial para Pesquisa Cient{\'\i}fica},
 year = {2026},
-version = {0.6.10},
+version = {0.6.19},
 institution = {Universidade Federal de Vi{\c{c}}osa (UFV)},
 url = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/},
 note = {Acessado em: DD m{\^e}s AAAA}
@@ -974,7 +974,7 @@ Ethics (COPE).
 
 Referência da ferramenta:
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para
-pesquisa científica. Versão 0.6.13. Viçosa: UFV, 2026. Disponível em:
+pesquisa científica. Versão 0.6.19. Viçosa: UFV, 2026. Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Registro SisPPG/UFV nº 10356285004 — http://sisppg.ufv.br
 ```
@@ -1246,7 +1246,7 @@ O UFVAI suporta **5 idiomas** (chinês adicionado na v0.6.0):
 
 | Idioma | Arquivo |
 |--------|---------|
-| Português (Brasil) — padrão | `agents/AGENTS.pt.md` |
+| Português (Brasil) — padrão, canônico | `AGENTS.md` (raiz; sem duplicata em `agents/`) |
 | English (US) | `agents/AGENTS.en.md` |
 | Español | `agents/AGENTS.es.md` |
 | Français | `agents/AGENTS.fr.md` |
@@ -1260,6 +1260,15 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
+| **0.6.19** | 29/09/2026 | 📱 Menu mobile sem SVG (`.tb-icon{display:none}` ≤767px, drawer sem SVG) + docs em paridade (§2.1.0 skills personalizadas) |
+| **0.6.18** | 19/09/2026 | 🧩 Skills personalizadas (`backups/skills-personalizadas/` a cada boot) |
+| **0.6.17** | 01-02/09/2026 | ⚡ **Memória abre instantânea via menu**: singleton `_get_memory()` em RAM (índice BM25 construído 1×), rebuild em background (stale-while-revalidate), warm-up no boot, árvore em RAM, cache frontend 120 s + prefetch |
+| **0.6.16** | 01/09/2026 | 🐛 Retorno registra **1 linha apenas no clique** na planilha (removidos heartbeats automáticos duplicados; guard `_heartbeatSent`) |
+| **0.6.15** | 01/09/2026 | 🐛 Prompt inicial respeita o idioma detectado do sistema/navegador (`_ensure_lang_initialized()` + auto-sync frontend) |
+| **0.6.14** | 01/09/2026 | 🐛 IP real via ipify client-side (proxy Colab não injeta XFF) + todo acesso logado na planilha (heartbeat automático) |
+| **0.6.13** | 01/09/2026 | 🐛 IP real do cliente (cadeia X-Forwarded-For direita→esquerda, saltando privados) + fallback perfil persistente no heartbeat |
+| **0.6.12** | 01/09/2026 | 🐛 Preview da memória responsivo em mobile (min-height fix) |
+| **0.6.11** | 01/09/2026 | 🐛 Hotfix `isoformat` no cache BM25 (search.py + models.py) |
 | **0.6.10** | 01/09/2026 | Memória BM25 com cache em disco + paginação; Termos v6 com campo **Nome** ao lado do e-mail e **IP** capturado (planilha 8 cols + flag `usuario_ativo` por acesso); memória responsiva mobile; bump version |
 | **0.6.9** | 25/08/2026 | Termos v2.1: telemetria opt-out sem cookies (art. 7º IX); e-mail de ativação obrigatório (art. 7º V); perfil persistente em `backups/` com pré-preenchimento/pulo da tela; botão 📘 Manual + rota `/api/manual`; tela de Termos responsiva; logs do Colab fora do Drive (`/tmp/ufvai-logs/`); correção DebugView (`debug_mode`) |
 | **0.6.8** | 24/08/2026 | Canal de contato via planilha Google + Apps Script (`UFVAI_CONTACT_ENDPOINT`); rebuild `.deb` 0.6.8-2 com launcher estável |
@@ -1299,4 +1308,4 @@ O UFVAI usa estes marcadores para indicar o nível de confiança:
 ---
 
 *Documentação atualizada: Setembro 2026*  
-*UFVAI v0.6.13 · Registro SisPPG/UFV nº 10356285004*
+*UFVAI v0.6.19 · Registro SisPPG/UFV nº 10356285004*

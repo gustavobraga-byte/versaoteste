@@ -1,12 +1,14 @@
 # Termos de Uso — UFVAI
 
-**Versão:** 2.1 · **Data:** 25/08/2026 · Substitui a versão 2.0
+**Versão:** 2.2 · **Data:** 10/09/2026 · Substitui a versão 2.1 (25/08/2026)
 
 > **Resumo em uma frase:** o UFVAI é um software livre (licença MIT) de apoio à pesquisa científica,
 > fornecido "como está", sem garantias; você é responsável pelo uso que faz das saídas geradas, pelas
 > suas chaves de API e pelo cumprimento das normas de integridade acadêmica aplicáveis — a ativação
-> exige um e-mail de contato (eliminável a qualquer tempo) e a telemetria anônima vem **ativa por
-> padrão**, sem cookies, podendo ser desligada a qualquer momento (opt-out).
+> exige **nome + e-mail** de contato (elimináveis a qualquer tempo, LGPD art. 7º, V) com registro de IP,
+> e a telemetria anônima vem **ativa por padrão**, sem cookies, podendo ser desligada a qualquer momento (opt-out, art. 7º, IX).
+>
+> **Versão técnica correspondente:** `terms_version=6` (v0.6.10+). Re-consentimento exigido a cada mudança relevante.
 
 Ao instalar, acessar ou utilizar o UFVAI ("o Software"), você declara ter lido e aceito estes Termos de
 Uso, a Licença MIT ([`LICENSE`](../LICENSE)) e o Aviso de Privacidade ([`PRIVACY.md`](../PRIVACY.md)).
@@ -84,14 +86,20 @@ hipótese os autores serão responsáveis por danos decorrentes do uso do Softwa
 decisões tomadas com base em saídas de IA não revisadas por humanos. Tratando-se de relação de
 consumo, eventuais cláusulas excludentes serão interpretadas nos limites do CDC (art. 51).
 
-## 7. Telemetria anônima e e-mail de ativação
+## 7. Ativação (nome+e-mail+IP) e telemetria anônima
 
-**7.1. E-mail obrigatório para ativação.** Para aceitar estes Termos e ativar o Software você deve
-informar um **e-mail válido**, usado exclusivamente para contato sobre o UFVAI (segurança, atualizações
-e suporte — base legal: **execução do serviço, LGPD art. 7º, V**). O e-mail é guardado no SEU ambiente
-(`backups/ufvai_consentimento.json`, com cópia cifrada de resumo SHA-256) e pode ser **eliminado a
-qualquer momento** (LGPD art. 18) pela opção de eliminação de contato da interface; nesses casos ele
-será novamente solicitado na próxima abertura.
+**7.1. Nome + e-mail obrigatórios para ativação (v0.6.10+).** Para aceitar estes Termos e ativar
+o Software você deve informar **nome e e-mail válidos**, usados exclusivamente para contato sobre
+o UFVAI (segurança, atualizações e suporte — base legal: **execução do serviço, LGPD art. 7º, V**).
+O IP público de ativação/retorno é capturado via `api.ipify.org` (fallback `ipinfo.io`) para
+registro de segurança — nunca para rastreamento. Os dados são guardados no SEU ambiente
+(`backups/ufvai_consentimento.json`, com resumo SHA-256 do e-mail) e encaminhados à planilha
+de contatos do projeto em 8 colunas (`Data/hora · E-mail · Nome · SHA-256 · Ambiente · Versão ·
+Flag[novo_contato|usuario_ativo] · IP`) somente mediante este aceite. Podem ser **eliminados a
+qualquer momento** (LGPD art. 18, VI) pela opção de eliminação de contato da interface ou
+`DELETE /api/contact/delete`; nesses casos serão novamente solicitados na próxima abertura.
+Desde a v0.6.16 cada retorno gera **exatamente 1 linha** `usuario_ativo`, apenas no clique em
+"Continuar" (sem disparos automáticos).
 
 **7.2. Telemetria anônima — ativa por padrão (opt-out).** Desde a versão 2.1, a telemetria envia
 exclusivamente contadores anônimos de uso (page_view padrão do Google Analytics 4, **sem cookies**

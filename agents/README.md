@@ -6,7 +6,7 @@
 
 | Arquivo | Idioma | Quando Usar |
 |---|---|---|
-| `AGENTS.pt.md` · `AGENTS.md` (raiz) | 🇧🇷 Português (Brasil) | Padrão (default) — **canônico** |
+| `AGENTS.pt.md` · `AGENTS.md` (raiz) | 🇧🇷 Português (Brasil) | Padrão (default) — **canônico** (espelhado em `agents/AGENTS.pt.md`) |
 | `AGENTS.en.md` | 🇺🇸 English (United States) | Pesquisadores internacionais |
 | `AGENTS.es.md` | 🇪🇸 Español (España) | Hispanofalantes, América Latina |
 | `AGENTS.fr.md` | 🇫🇷 Français (France) | Francofonia, cooperação internacional |

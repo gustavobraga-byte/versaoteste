@@ -1,6 +1,6 @@
 # 📊 Telemetria do UFVAI — Como Funciona
 
-> **Resumo em uma frase:** a telemetria é **opt-in** (só funciona se você marcar a caixa na tela de Termos), envia **apenas contadores anônimos de eventos** via Google Analytics 4 Measurement Protocol, **nunca envia conteúdo**, e pode ser desligada a qualquer momento.
+> **Resumo em uma frase:** a telemetria é **ativa por padrão sem cookies (opt-out, LGPD art. 7º, IX)** desde v0.6.9 (antes opt-in), envia **apenas contadores anônimos de eventos** via Google Analytics 4 Measurement Protocol, **nunca envia conteúdo, nome, e-mail ou IP**, e pode ser desligada a qualquer momento.
 
 ---
 
@@ -93,11 +93,10 @@ Google e pode derrubar sua propriedade. O canal do e-mail é separado do canal a
 Os endereços caem numa **planilha sua no Google Drive** — mesmo ecossistema do Colab, zero
 servidor, zero custo, dado sob controle do titular (LGPD-friendly).
 
-1. Abra a planilha do desenvolvedor (https://docs.google.com/spreadsheets/d/149XGyTfPbGs34Wrb8WHBPC8gmzRQKJzvTEmqXlshvgg — ou crie uma nova em [sheets.new](https://sheets.new));
+1. Abra a planilha de contatos do projeto (ID atual `1TWVuKtAp…` — planilha v0.6.10+ com 8 colunas `Data/hora · E-mail · Nome · SHA-256 · Ambiente · Versão · Flag · IP`; se usar outra, crie em [sheets.new](https://sheets.new));
 2. Menu **Extensões → Apps Script**, apague tudo e cole o arquivo pronto
-   **`docs/APPS_SCRIPT_PLANILHA_CONTATO.gs`** (já vem com o ID da planilha acima e
-   cria sozinho a aba **"Contatos UFVAI"** com cabeçalho: Data/hora · E-mail ·
-   SHA-256 · Ambiente · Versão · Produto — sem tocar nas outras abas).
+   **`docs/APPS_SCRIPT_PLANILHA_CONTATO.gs`** (v0.6.10+, 8 colunas; cria sozinho a aba
+   **"Contatos UFVAI"** com cabeçalho: Data/hora · E-mail · Nome · SHA-256 · Ambiente · Versão · Flag[novo_contato|usuario_ativo] · IP — com migração automática de planilhas antigas de 6 colunas — sem tocar nas outras abas).
 
    *(Para outra planilha: troque `SHEET_ID` no topo do script pelo trecho
    entre `/d/` e `/edit` na URL dela.)*
@@ -308,9 +307,9 @@ grep -rn "_tel_event\|telemetry" pesquisai/ --include="*.py"
 
 ---
 
-## 8. Garantias de projeto (resumo normativo)
+## 8. Garantias de projeto (resumo normativo, v0.6.9+ opt-out)
 
-- ✅ Opt-in explícito (LGPD Art. 7º/8º — consentimento livre, informado e inequívoco)
+- ✅ Oposição fácil a qualquer momento — telemetria **ativa por padrão sem cookies** (LGPD art. 7º, IX + art. 18, §2º); ativação exige nome+e-mail+IP (art. 7º, V, Termos v2.2)
 - ✅ Minimização de dados (nenhum dado pessoal/conteúdo trafega)
 - ✅ Finalidade declarada (métricas agregadas de uso das funcionalidades)
 - ✅ Revogação fácil a qualquer momento

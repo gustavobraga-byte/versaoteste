@@ -1,6 +1,6 @@
 # 🔒 Privacidade no UFVAI
 
-**Versão:** 1.0 · **Data:** 21/08/2026 · Aplica-se ao UFVAI/PesquisAI v0.6.0+
+**Versão:** 1.1 · **Data:** 10/09/2026 · Substitui v1.0 (21/08/2026) · Aplica-se ao UFVAI/PesquisAI v0.6.10+ (Termos v2.2, `terms_version=6`)
 
 ## Princípio central
 
@@ -42,22 +42,17 @@ Na primeira abertura da interface é exibida a tela de aceite dos Termos de Uso 
 licença MIT). O aceite é registrado localmente (`~/.config/ufvai_consent.json`) e a telemetria,
 se você autorizar, também.
 
-## E-mail e nome de contato (v0.6.10 — obrigatórios para ativação)
+## E-mail, nome e IP de contato (v0.6.10+ — obrigatórios para ativação, Termos v2.2)
 
-A tela de Termos oferece um campo **opcional** para você deixar seu e-mail. Regras:
+A tela de Termos exige **nome + e-mail** para ativação. Regras (corrige a v1.0, que descrevia campo opcional):
 
-- **Base legal:** consentimento livre, informado e inequívoco (**LGPD art. 7º, I**) — campo em
-  branco por padrão; não preencher não afeta nenhuma funcionalidade;
-- **Finalidade:** exclusivamente contato sobre o UFVAI (novidades, avisos de segurança);
-- **Onde fica:** `~/.config/ufvai_profile.json` no SEU ambiente, permissão 600, com o hash SHA-256
-  e o carimbo do consentimento;
-- **Google Analytics NUNCA recebe** seu endereço — os Termos do Google proíbem dados pessoais
-  (mesmo com hash). Ao GA4 vai apenas um contador anônimo (`contact_optin`), sem conteúdo;
-- **Envio direto ao mantenedor:** só ocorre se ele configurar um endpoint próprio HTTPS
-  (`UFVAI_CONTACT_ENDPOINT`, ex.: Apps Script), e o endereço é transmitido cifrado para essa
-  finalidade declarada;
-- **Eliminação (art. 18, VI):** apague o campo na tela de Termos e salve, ou remova o arquivo
-  `~/.config/ufvai_profile.json`. Também é possível via `DELETE /api/contact/delete`.
+- **Base legal:** execução do serviço (**LGPD art. 7º, V**) — contato sobre segurança, atualizações e suporte do UFVAI;
+- **IP:** capturado no navegador via `api.ipify.org` (fallback `ipinfo.io`) e registrado junto ao contato para segurança/auditoria; nunca vai ao Google Analytics;
+- **Finalidade:** exclusivamente contato sobre o UFVAI;
+- **Onde fica:** `~/.config/ufvai_profile.json` (chmod 600, com hash SHA-256 + carimbo) + backup persistente `backups/ufvai_consentimento.json` (Drive no Colab · `~/PesquisAI/backups/` offline);
+- **Planilha do projeto:** 8 colunas `Data/hora · E-mail · Nome · SHA-256 · Ambiente · Versão · Flag[novo_contato|usuario_ativo] · IP` via webhook `UFVAI_CONTACT_ENDPOINT` (Apps Script `docs/APPS_SCRIPT_PLANILHA_CONTATO.gs` v0.6.10+). Desde v0.6.16, cada retorno gera exatamente 1 linha `usuario_ativo` apenas no clique "Continuar";
+- **Google Analytics NUNCA recebe** nome, e-mail ou IP — ao GA4 vão apenas contadores anônimos (ver `TELEMETRY.md`);
+- **Eliminação (art. 18, VI):** apague os campos na tela de Termos e salve, remova `~/.config/ufvai_profile.json` + backup, ou chame `DELETE /api/contact/delete` / `POST /api/consent` com eliminação.
 
 ## Seus direitos (LGPD)
 
