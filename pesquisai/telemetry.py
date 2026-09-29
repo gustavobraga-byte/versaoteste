@@ -680,3 +680,71 @@ def notify_active_user(ip: str | None = None) -> None:
         ).start()
     except Exception as e:
         _contato_log("heartbeat FALHOU: %s" % type(e).__name__)
+
+
+def publish_backend_url(url: str) -> None:
+    """v0.6.11: anuncia a URL pública do backend no webhook (descoberta do app).
+
+    Chamado pelo launch() do Colab após obter o proxyPort: o Apps Script
+    (v0.6.11+) guarda como "último backend" deste usuário (chave = sha do
+    e-mail) e o app Android (variante cloud) busca via
+    ``GET ?action=backend&email_sha256=...`` — zero colagem de URL.
+    Também grava linha de auditoria na planilha (flag "backend_online").
+
+    LGPD: mesma finalidade consentida do contato (art. 7º V); só vai ao
+    endpoint do desenvolvedor, nunca ao GA4. Fire-and-forget; sem perfil
+    ou sem endpoint → no-op (apenas auditoria local).
+    """
+    try:
+        u = str(url or "").strip().rstrip("/") + "/"
+        if not (u.startswith("https://") or u.startswith("http://")):
+            return
+        prof = _read_profile()
+        addr = str(prof.get("email", "")).strip().lower()
+        if not addr:
+            _contato_log("backend_online SKIP: sem e-mail salvo")
+            return
+        sha = str(prof.get("email_sha256", "")
+                  or hashlib.sha256(addr.encode("utf-8")).hexdigest())
+        name = str(prof.get("name", "") or prof.get("nome", ""))
+        endpoint = _contact_endpoint()
+        if not endpoint:
+            _contato_log("backend_online PENDENTE: endpoint não configurado")
+            return
+        payload = {
+            "product": "ufvai",
+            "email": addr,
+            "email_sha256": sha,
+            "name": name,
+            "ip": "",
+            "environment": "colab" if os.path.isdir("/content") else "local",
+            "app_version": _APP_VERSION,
+            "sent_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "flag": "backend_online",
+            "backend_url": u,
+        }
+
+        def _post() -> None:
+            try:
+                req = urllib.request.Request(
+                    endpoint,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                resp = urllib.request.urlopen(req, timeout=8)
+                try:
+                    resp.read(64)
+                except Exception:
+                    pass
+                _contato_log("backend_online OK * %s" % (u[:60],))
+            except Exception as e:
+                _contato_log("backend_online FALHOU * %s: %s"
+                             % (type(e).__name__, str(e)[:100]))
+
+        threading.Thread(target=_post, daemon=True).start()
+    except Exception as e:
+        try:
+            _contato_log("backend_online FALHOU: %s" % type(e).__name__)
+        except Exception:
+            pass

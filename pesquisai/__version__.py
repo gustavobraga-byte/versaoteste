@@ -329,13 +329,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.18"
+__version__: str = "0.6.19"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-09-01"
-__codename__: str = "Skills personalizadas do usuário (backups/skills-personalizadas carregadas a cada boot)"
+__release_date__: str = "2026-09-29"
+__codename__: str = "Menu mobile sem SVG + docs em paridade (skills personalizadas)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

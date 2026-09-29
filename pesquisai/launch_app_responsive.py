@@ -143,6 +143,15 @@ RESPONSIVE_CSS: str = """
     .tb-icons { margin-left: auto; gap: 3px; }
     .tb-icon { width: 32px; height: 32px; }
     .tb-icon svg { width: 14px; height: 14px; }
+    /* === REGRA v2 (29/09/2026) — com o hamburger visivel, ZERO icone SVG na topbar.
+       .hamburger e .lang-btn NAO sao .tb-icon: ficam de fora de proposito e
+       continuam visiveis. Especificidade #topbar + !important para nao perder a
+       cascata contra qualquer regra .tb-icon declarada depois. === */
+    #topbar .tb-icon { display: none !important; }
+    /* dentro do drawer: somente texto, nenhum SVG */
+    .mobile-menu .tb-btn { display: inline-flex; }
+    .mobile-menu .tb-btn svg,
+    .mobile-menu .btn-provider svg { display: none !important; }
     .hamburger { display: inline-flex; }
     #footer { padding: 0 8px; height: 36px; }
     .footer-brand { display: none; }
@@ -886,7 +895,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         <button onclick="copyAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;" data-i18n="agents.copy">Copiar</button>
         <button onclick="reloadAgents()" class="modal-close" style="width:auto;padding:5px 12px;font-size:11px;">↻ <span data-i18n="ui.loading">Recarregar</span></button>
         <div style="flex:1;"></div>
-        <a id="agents-source-link" href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS.pt.md" target="_blank" class="footer-link" style="font-size:10.5px;" data-i18n="agents.open_source">Ver fonte</a>
+        <a id="agents-source-link" href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/AGENTS.md" target="_blank" class="footer-link" style="font-size:10.5px;" data-i18n="agents.open_source">Ver fonte</a>
       </div>
     </div>
   </div>
@@ -1625,7 +1634,10 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       if (badgeEl) badgeEl.textContent = langShort;
       if (sourceEl) {
         const code = (_currentLang || "pt_BR").split("_")[0];
-        sourceEl.href = "https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS." + code + ".md";
+        // pt-BR canônico vive na RAIZ (AGENTS.pt.md removido — sem duplicata)
+        sourceEl.href = code === "pt"
+          ? "https://github.com/gustavobraga-byte/PesquisAI/blob/main/AGENTS.md"
+          : "https://github.com/gustavobraga-byte/PesquisAI/blob/main/agents/AGENTS." + code + ".md";
       }
 
       if (!forceReload && _agentsCacheLang === _currentLang && _agentsCache) {

@@ -62,6 +62,7 @@ try:
     from .telemetry import masked_state as _tel_masked_state, save_admin_config as _tel_save_admin
     from .telemetry import save_contact as _tel_save_contact, clear_contact as _tel_clear_contact, contact_status as _tel_contact_status
     from .telemetry import notify_active_user as _tel_notify_active_user
+    from .telemetry import publish_backend_url as _tel_publish_backend_url
 except Exception:  # pragma: no cover
     def _tel_event(*a, **k): pass
     def _tel_set_consent(*a, **k): pass
@@ -77,6 +78,7 @@ except Exception:  # pragma: no cover
     def _tel_contact_status(*a, **k):
         return {"has_email": False, "email_masked": "", "contact_endpoint_set": False}
     def _tel_notify_active_user(*a, **k): pass
+    def _tel_publish_backend_url(*a, **k): pass
 # v0.4.2.2: __version__ foi MOVIDO para pesquisai/__version__.py
 # (estava em /__version__.py). Mantemos fallback para robustez.
 try:
@@ -1764,10 +1766,15 @@ def start_wrapper_server():
                 cand_files: list[str] = []
                 for _lg in _lang_order:
                     _sh = _lg.split("_")[0]
+                    # NOTA: o pt-BR canônico vive na RAIZ (AGENTS.md) e é
+                    # espelhado em agents/AGENTS.pt.md (cópia idêntica).
+                    # Se o espelho existir, é ele que é servido primeiro;
+                    # senão, o fallback canônico abaixo cobre o pt.
                     cand_files.append(f"AGENTS.{_sh}.md")
                     cand_files.append(f"AGENTS.{_lg}.md")
                 content = None
                 served_file = None
+                served_lang = None
                 tried_files = []
                 if agents_dir:
                     for fname in cand_files:
@@ -1778,10 +1785,25 @@ def start_wrapper_server():
                                 with open(fpath, "r", encoding="utf-8") as fh:
                                     content = fh.read()
                                 served_file = fname
+                                served_lang = fname[7:-3] if fname.startswith("AGENTS.") else ""
                                 break
                             except Exception as e:
                                 content = f"⚠️ Erro ao ler {fname}: {e}"
                                 break
+                if content is None:
+                    # Fallback canônico: <raiz>/AGENTS.md (pt-BR, fonte única).
+                    # Cobre o pt_BR (sem AGENTS.pt.md desde a remoção da
+                    # duplicata) e serve de última instância p/ qualquer idioma.
+                    _root_agents = os.path.join(parent, "AGENTS.md")
+                    tried_files.append(_root_agents)
+                    if os.path.isfile(_root_agents):
+                        try:
+                            with open(_root_agents, "r", encoding="utf-8") as fh:
+                                content = fh.read()
+                            served_file = "AGENTS.md"
+                            served_lang = "pt"
+                        except Exception as e:
+                            content = f"⚠️ Erro ao ler AGENTS.md: {e}"
                 if content is None:
                     self._json(200, {
                         "ok": False,
@@ -1795,7 +1817,8 @@ def start_wrapper_server():
                     "ok": True,
                     "lang": full,
                     "served_file": served_file or "",
-                    "fallback_used": bool(served_file and short not in str(served_file)),
+                    "served_lang": served_lang or short,
+                    "fallback_used": bool(served_lang and served_lang not in (short, full)),
                     "filename": served_file or f"AGENTS.{short}.md",
                     "content": content,
                 })
@@ -3668,6 +3691,13 @@ def launch():
     if not IN_COLAB:
         _auto_open_browser(banner_url)
         print(f"\n🌐 Interface: {banner_url}  (terminal: http://localhost:{TERMINAL_PORT})")
+
+    # v0.6.11: anuncia a URL pública p/ o app Android descobrir sozinho (sem colar URL)
+    if IN_COLAB and banner_url and str(banner_url).startswith("http"):
+        try:
+            _tel_publish_backend_url(str(banner_url))
+        except Exception:
+            pass
 
     return banner_url
 
