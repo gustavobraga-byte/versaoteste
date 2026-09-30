@@ -329,13 +329,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.19"
+__version__: str = "0.6.20"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-09-29"
-__codename__: str = "Menu mobile sem SVG + docs em paridade (skills personalizadas)"
+__release_date__: str = "2026-09-30"
+__codename__: str = "Anti-encerramento do runtime do Colab (keepalive) + Sair com segurança"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

@@ -141,6 +141,15 @@ RESPONSIVE_CSS: str = """
     .status { display: none; }  /* esconde status, foco no essencial */
     .tb-btn { display: none; }  /* migram para hamburger */
     .tb-icons { margin-left: auto; gap: 3px; }
+    /* === FIX (29/09/2026): hamburguer alinhado a DIREITA no mobile. ===
+       Causa: o CSS base tem .sep { flex:1 }, que absorve TODO o espaco livre
+       do #topbar. Na resolucao do flexbox o flex-grow e resolvido ANTES das
+       margens auto, entao o margin-left:auto do .tb-icons recebia 0 e o
+       grupo ficava colado no logo, a ESQUERDA. Os .tb-btn que o .sep
+       separava ja estao display:none neste breakpoint, entao nao se perde
+       nada ao escondê-lo: o espaco volta e o hamburguer encosta na borda
+       direita. Especificidade #topbar para vencer o .sep do CSS base. */
+    #topbar .sep { display: none; }
     .tb-icon { width: 32px; height: 32px; }
     .tb-icon svg { width: 14px; height: 14px; }
     /* === REGRA v2 (29/09/2026) — com o hamburger visivel, ZERO icone SVG na topbar.
@@ -757,7 +766,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <span data-i18n="providers.title">+ provedor</span>
     </button>
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
-    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <pan data-i18n="dashboard.title">Dashboard de Saúde</span></button>
+    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
@@ -1298,8 +1307,16 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         });
         const d = await r.json();
         if (d.ok) {
-          toast("✅ Importado!", "ok");
-          setTimeout(() => location.reload(), 800);
+          if (d.ttyd_restarted) {
+            toast("✅ Sessão " + (d.session_id || "") + " importada + ttyd reiniciado!", "ok");
+            // v0.5.1.6: aguardar 3.5s para o ttyd reiniciar antes de recarregar
+            // (o ttyd precisa reabrir o WebSocket + handshake do opencode)
+            setTimeout(() => location.reload(), 3500);
+          } else {
+            toast("⚠️ Importado, mas ttyd não reiniciou. Recarregue manualmente (Ctrl+Shift+R).", "warn");
+            // Fallback: tentar reload após 1.5s
+            setTimeout(() => location.reload(), 1500);
+          }
         } else {
           toast("❌ " + (d.error || "Erro"), "err");
         }
