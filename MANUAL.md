@@ -1,6 +1,6 @@
 # 📘 Manual do UFVAI
 
-> **Agente de Pesquisa Científica de Alta Performance · v0.6.19 · Setembro 2026**
+> **Agente de Pesquisa Científica de Alta Performance · v0.6.20 · Setembro 2026**
 > Registro SisPPG/UFV nº 10356285004 · Universidade Federal de Viçosa
 
 ---
@@ -527,7 +527,7 @@ Após o aceite, você acessa a interface com **terminal interativo do agente**, 
 Para usar **sem internet e sem Colab** (requisito de privacidade máxima — nada sai da sua máquina):
 
 ```bash
-sudo dpkg -i pesquisai_0.6.17-offline_amd64.deb   # ou versão mais recente
+sudo dpkg -i pesquisai_0.6.19-offline_amd64.deb   # ou versão mais recente
 ufvai                                       # abre a interface (UI 8001 · terminal 8000)
 ```
 
@@ -845,7 +845,7 @@ Todos os arquivos gerados são salvos **exclusivamente** nesses locais — nunca
 **Solução:**
 ```bash
 sudo apt install python3-pip        # resolve o Depends
-sudo dpkg -i pesquisai_0.6.17-offline_amd64.deb
+sudo dpkg -i pesquisai_0.6.19-offline_amd64.deb
 ```
 Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já estar presente é suficiente).
 
@@ -861,7 +861,7 @@ Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já e
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.6.19. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.6.20. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -872,7 +872,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
 **Formato simplificado (nota de rodapé):**
 
 ```
-UFVAI, versão 0.6.19, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
+UFVAI, versão 0.6.20, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 ```
 
@@ -901,7 +901,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 | **Tipo** | Software / Computer Program |
 | **Autor** | Braga, Gustavo Bastos |
 | **Título** | UFVAI: agente de inteligência artificial para pesquisa científica |
-| **Versão** | 0.6.19 |
+| **Versão** | 0.6.20 |
 | **Ano** | 2026 |
 | **Instituição** | Universidade Federal de Viçosa (UFV) |
 | **URL** | https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/ |
@@ -917,7 +917,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 author = {Gustavo Bastos Braga},
 title = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial para Pesquisa Cient{\'\i}fica},
 year = {2026},
-version = {0.6.19},
+version = {0.6.20},
 institution = {Universidade Federal de Vi{\c{c}}osa (UFV)},
 url = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/},
 note = {Acessado em: DD m{\^e}s AAAA}
@@ -974,7 +974,7 @@ Ethics (COPE).
 
 Referência da ferramenta:
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para
-pesquisa científica. Versão 0.6.19. Viçosa: UFV, 2026. Disponível em:
+pesquisa científica. Versão 0.6.20. Viçosa: UFV, 2026. Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Registro SisPPG/UFV nº 10356285004 — http://sisppg.ufv.br
 ```
@@ -1260,7 +1260,8 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
-| **0.6.19** | 29/09/2026 | 📱 Menu mobile sem SVG (`.tb-icon{display:none}` ≤767px, drawer sem SVG) + docs em paridade (§2.1.0 skills personalizadas) |
+| **0.6.20** | 30/09/2026 | 🫀 Anti-encerramento do Colab (keepalive em 3 camadas) + "Sair com segurança" + supervisor autopreservado + notebook enxuto |
+| **0.6.19** | 29/09/2026 | 📱 Menu mobile sem SVG (`.tb-icon{display:none}` ≤767px, drawer sem SVG) + hamburger alinhado à direita (`#topbar .sep{display:none}` ≤767px, evita `flex:1` × `margin-left:auto`) + teste de regressão de cascata + docs em paridade (§2.1.0 skills personalizadas) |
 | **0.6.18** | 19/09/2026 | 🧩 Skills personalizadas (`backups/skills-personalizadas/` a cada boot) |
 | **0.6.17** | 01-02/09/2026 | ⚡ **Memória abre instantânea via menu**: singleton `_get_memory()` em RAM (índice BM25 construído 1×), rebuild em background (stale-while-revalidate), warm-up no boot, árvore em RAM, cache frontend 120 s + prefetch |
 | **0.6.16** | 01/09/2026 | 🐛 Retorno registra **1 linha apenas no clique** na planilha (removidos heartbeats automáticos duplicados; guard `_heartbeatSent`) |
@@ -1308,4 +1309,4 @@ O UFVAI usa estes marcadores para indicar o nível de confiança:
 ---
 
 *Documentação atualizada: Setembro 2026*  
-*UFVAI v0.6.19 · Registro SisPPG/UFV nº 10356285004*
+*UFVAI v0.6.20 · Registro SisPPG/UFV nº 10356285004*

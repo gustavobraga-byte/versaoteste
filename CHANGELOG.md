@@ -1,6 +1,48 @@
 # Changelog — PesquisAI
 
-## [0.6.19] — 2026-09-29 — 📱 Menu mobile sem SVG + docs em paridade
+## [0.6.20] — 2026-09-30 — 🫀 Anti-encerramento do Colab (keepalive em 3 camadas) + "Sair com segurança"
+
+### 🫀 O Colab não encerra mais o runtime com a aba minimizada
+- **Sintoma:** *"o Colab está constantemente encerrando o ambiente de execução"* — inclusive ao minimizar a aba. O keepalive anterior (JS que clicava o botão de conexão a cada 60 s) morria nesse cenário: o Chrome estrangula timers de página oculta e pode congelar a página; e o Colab decide a ociosidade no **backend**, por atividade do kernel.
+- **Solução (`pesquisai/keepalive.py`, novo):** heartbeat vindo do **kernel**, em três camadas —
+  - **L0 — célula executando** (`keepalive.loop()`, última célula do notebook): mantém o kernel ativo mesmo com a aba minimizada (**camada principal**);
+  - **L1 — thread daemon no kernel** (`keepalive.start()`): ping `cell_javascript_eval` a cada 50 s; sobrevive a Ctrl+C e ao fechamento da aba;
+  - **L2 — JavaScript no navegador** (`colab_host.keepalive_js()`): clique no botão + diálogo "Runtime disconnected" + **wake lock** + ping ao voltar a ficar visível (45 s) — apoio.
+- **Fundamento verificado:** `googlecolab/google-colab-cli` (2026-09-25): *"VM liveness is automatically maintained by the Colab backend based on kernel activity"*; o ping HTTP no TFE exige bearer token (401) — inviável.
+- **Decisões à prova de regressão:** `expect_reply=False` sempre (a resposta chega pelo `stdin` — ler descartaria o `input()` do usuário); dois locks com ordem fixa **estado → envio** (sem deadlock entre L0/L1); `pings_ok` = mensagens emitidas (não confirmação — o módulo nunca lê o stdin).
+- **Integração:** célula "🫀 MANTER VIVO" no notebook (markdown + código) + `keepalive.start()` no boot; rota `/api/keepalive` (arquivo-ponte kernel → supervisor/UI); `UFVAI_NO_KEEPALIVE=1` desliga (padrão no Dockerfile/offline).
+- **Limite honesto (documentado no módulo e no notebook):** teto de ~12 h do serviço, cota, CAPTCHA e decisões do backend continuam valendo — nenhum código na VM impede o Colab de destruir o runtime; a versão maximiza a sobrevivência e deixa a recuperação a um clique (memória/skills/config vivem no Drive).
+
+### 🚪 "Sair com segurança" (novo)
+- Botão na topbar + item no drawer do mobile: confirma → `POST /api/shutdown` (encerra supervisor/ttyd) → tela final com **contagem regressiva de 10 s** para **liberar o runtime do Colab** (desconexão oficial) ou "só encerrar o UFVAI e manter o runtime". i18n `exit.*` nos 5 idiomas; fora do Colab a parte de runtime some (não se aplica).
+
+### 🛡️ Boot (supervisor) mais seguro
+- `kill_previous` autopreservado: `UFVAI_NO_KILLPREVIOUS=1` desliga; o `pkill` de python agora só atinge processos com o marcador `UFVAI_HOST_CHILD=1` (nunca o supervisor/processo atual); ttyd segue por COMM exato.
+
+### 🧪 Testes
+- **Novo:** `tests/test_keepalive.py` — 28 testes (expect_reply, ordem dos locks/sem deadlock, degradação fora do Colab, idempotência, payload JS, rota da API).
+- `tests/test_colab_host.py` (45 s + wake lock) e `tests/test_responsive_hamburger.py` (agora 5 arquivos vivos) atualizados; suíte completa e `test_version_sync` verdes.
+
+### 🧹 Manutenção
+- Repositório consolidado no projeto **`UFVAI-v0.6.9/`**; pasta `ufvai-github/` descontinuada (arquivada). Cópias de produção da raiz em paridade (correções: `<span>` no drawer, fluxo de restauração com `ttyd_restarted`).
+- `PesquisAI.ipynb` enxugado (comentários condensados) e `REPO_URL` → `PesquisAI.git` (versão final de publicação).
+
+## [0.6.19] — 2026-09-29 — 📱 Menu mobile sem SVG + hamburger à direita + docs em paridade
+
+### 📐 O menu hamburger aparecia colado no logo, à esquerda
+- **Sintoma:** em ≤767px o botão de idioma + hamburguer apareciam logo ao lado da marca "UFVAI", no lado **esquerdo** da topbar — o usuário não os achava.
+- **Causa raiz:** o CSS base tem `.sep { flex: 1; }` dentro do `#topbar`. Na resolução do flexbox o `flex-grow` é distribuído **antes** das margens automáticas (§4.5 do spec: "auto margins absorb the remaining free space *after* the flexible lengths have been resolved"). Com o `.sep` absorvendo todo o espaço livre, o `margin-left: auto` do `.tb-icons` recebia 0 e o grupo encostava no logo.
+- **Fix CSS:** em `@media (max-width: 767px)` → `#topbar .sep { display: none; }` (especificidade de ID, vence o `.sep` do CSS base). Os `.tb-btn` que o `.sep` separava já estão `display:none` nesse breakpoint, então nada se perde: o espaço livre volta e o `margin-left: auto` do `.tb-icons` empurra idioma + hamburguer para a borda direita.
+- **Desktop intacto:** o `.sep` continua `flex:1` como spacer acima de 768px e o `.tb-icons` volta a `margin-left: 6px` (encostado no logo, como sempre).
+- **Arquivos:** `pesquisai/launch_app_responsive_v041.py` (produção) + `pesquisai/launch_app_responsive.py` (legado) nos dois projetos (`UFVAI-v0.6.9/`, `ufvai-github/`) **e** as cópias de produção da raiz (`launch_app_responsive_v041.py`, `launch_app_responsive.py`, `launch_app_responsive_versaoteste_CORRIGIDO.py`) — 7 arquivos vivos no total.
+
+### 🧪 Teste de regressão de cascata (não é grep no fonte)
+- **Novo:** `tests/test_responsive_hamburger.py` nos dois projetos.
+- **Como funciona:** importa o módulo real, chama `create_wrapper_html()`, extrai os `<style>`, parseia o CSS com `tinycss2` e **resolve a cascata de verdade** — especificidade + `!important` + ordem de origem + style inline — para uma largura simulada. Escolhido porque o bug anterior (`display:none` presente mas inefetivo por cascata) **passaria** num grep: a regra antiga tinha especificidade (0,1,0), igual à da regra base.
+- **Cobertura:** 7 arquivos vivos × 10 larguras (320/375/414/479/600/767 mobile · 768/900/1024/1440 desktop) — 252 verificações por projeto. Contratos: (a) ≤767px nenhum SVG da topbar fica visível (exceto o do próprio hamburger); (b) ≤767px `.sep` = `none` e `.tb-icons` com `margin-left:auto`; (c) ≥768px o `.sep` volta a ser spacer e `.tb-icons` volta a `6px`; (d) o hamburger e o botão de idioma continuam visíveis no mobile; (e) nenhum SVG dentro do drawer.
+- **Resultado:** 252/252 nos dois projetos.
+- Versão do release: `0.6.19` em `pesquisai/__version__.py` (`__version__="0.6.19"`, `__release_date__="2026-09-29"`, `__codename__="Menu mobile sem SVG + docs em paridade (skills personalizadas)"`), `pyproject.toml`, `Dockerfile` e `CHANGELOG.md`; docs em paridade: `README.md` (badge, novidades, tabela de versões, citação, BibTeX, rodapé), `MANUAL.md` (cabeçalho, citação, tabela, rodapé), `AGENTS.md` + `agents/AGENTS.{pt,en,es,fr,zh}.md`, `citacao_pesquisai.md`, `PesquisAI.ipynb`.
+
 
 ### 📱 Responsivo: esconder botões SVG quando o hamburger aparece
 - **Motivação:** em telas pequenas (≤767px) o menu hamburger aparecia mas os botões-ícone SVG continuavam na topbar, poluindo e duplicando ações.
