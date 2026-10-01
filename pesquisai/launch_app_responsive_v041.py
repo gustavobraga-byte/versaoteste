@@ -1018,13 +1018,24 @@ def create_wrapper_html(
     <div id="sair-modal" role="dialog" aria-modal="true" aria-labelledby="sair-title">
       <div class="modal-title" id="sair-title">⏻ <span data-i18n="sair.title">Encerrar sessão</span></div>
       <p class="sair-q" style="font-size:12.5px;color:var(--ink);margin-bottom:10px;" data-i18n="sair.confirm_q">Desconectar e excluir o ambiente de execução?</p>
-      <p class="sair-warn" data-i18n="sair.warn">Tudo em memória será perdido — os arquivos no seu Google Drive continuam salvos. O progresso da sessão do agente será salvo na memória antes de encerrar. Não há como desfazer após confirmar.</p>
+      <p class="sair-warn" data-i18n="sair.warn">Tudo em memória será perdido — os arquivos no seu Google Drive continuam salvos. Não há como desfazer após confirmar.</p>
       <div style="display:flex;gap:8px;">
         <button id="sair-yes" onclick="ufvaiExitConfirm()" style="flex:1;padding:9px;background:rgba(224,112,112,.15);border:1px solid rgba(224,112,112,.4);border-radius:var(--radius);color:var(--red);font-family:var(--font-sans);font-size:12px;font-weight:700;cursor:pointer;" data-i18n="sair.yes">SIM, SAIR</button>
         <button onclick="ufvaiExitCancel()" style="padding:9px 14px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:12px;cursor:pointer;" data-i18n="ui.cancel">Cancelar</button>
       </div>
       <div class="sair-status" id="sair-status"></div>
-      <div class="sair-done" id="sair-done" data-i18n="sair.done">✅ Ambiente encerrado. Para usar o UFVAI de novo: reexecute a célula de boot.</div>
+    </div>
+  </div>
+
+  <!-- v0.6.20 — tela "Ambiente desconectado" (após SIM, SAIR) — visual igual à
+       tela de Termos recusados; fica visível quando o runtime é desconectado -->
+  <div id="exit-overlay">
+    <div class="t-card">
+      <div class="t-brand"><b>UFV</b><em>AI</em></div>
+      <p class="e-msg">✅ Ambiente desconectado e excluído.<br>
+        Para usar o UFVAI de novo: reexecute a célula de boot no Colab.<br>
+        Os arquivos no seu Google Drive continuam salvos.<br><br>
+        <span style="opacity:.75">Environment disconnected and deleted. To use UFVAI again, re-run the boot cell in Colab. Files on your Google Drive remain saved.</span></p>
     </div>
   </div>
 
@@ -1613,13 +1624,20 @@ def create_wrapper_html(
     function ufvaiExit() {
       const ov = document.getElementById("sair-overlay");
       document.getElementById("sair-status").textContent = "";
-      document.getElementById("sair-done").style.display = "none";
       const yes = document.getElementById("sair-yes");
       yes.disabled = false; yes.style.opacity = "1";
       ov.classList.add("open");
     }
     function ufvaiExitCancel() {
       document.getElementById("sair-overlay").classList.remove("open");
+    }
+    // v0.6.20 — tela "Ambiente desconectado": mostra o overlay full-screen
+    // (mesmo visual da tela de Termos recusados) e fecha o modal; a tela
+    // permanece visível quando o runtime do Colab é desconectado/excluído.
+    function ufvaiExitDone() {
+      ufvaiExitCancel();
+      const eo = document.getElementById("exit-overlay");
+      if (eo) eo.style.display = "flex";
     }
     async function ufvaiExitConfirm() {
       const d = _sairDict();
@@ -1635,12 +1653,11 @@ def create_wrapper_html(
         });
         const resp = await r.json().catch(() => ({}));
         if (r.ok && resp.ok) {
-          document.getElementById("sair-done").style.display = "block";
-          document.getElementById("sair-status").textContent = "";
           // v0.6.20-fix: a rota responde na hora (o unassign é agendado em
-          // thread daemon no backend). Fechamos o modal assim que a resposta
-          // chega, sem a antiga espera fixa de 2,5 s.
-          setTimeout(function() { ufvaiExitCancel(); }, 600);
+          // thread daemon no backend). Mostramos imediatamente a tela
+          // "Ambiente desconectado" — ela permanece visível quando a conexão
+          // cai (sem a antiga espera fixa de 2,5 s).
+          ufvaiExitDone();
         } else {
           yes.disabled = false; yes.style.opacity = "1";
           st.textContent = resp.error || d.fail;
@@ -3561,6 +3578,19 @@ def create_wrapper_html(
   #terms-overlay .t-ok{background:linear-gradient(135deg,#D1A705,#b29149);color:#141c24;border:none;}
   #terms-overlay .t-ok:disabled{opacity:.35;cursor:not-allowed;}
   #terms-overlay .t-no{background:transparent;color:#9a9790;border-color:rgba(154,151,144,.35);}
+  /* ── v0.6.20 — tela "Ambiente desconectado" (após SIM, SAIR) — mesmo visual
+     da tela de Termos recusados (card escuro com borda dourada). Permanece
+     visível quando o runtime do Colab é desconectado/excluído. ── */
+  #exit-overlay{position:fixed;inset:0;z-index:100000;display:none;align-items:center;
+    justify-content:center;background:rgba(10,13,17,.96);backdrop-filter:blur(6px);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;padding:16px;}
+  #exit-overlay .t-card{max-width:520px;width:100%;background:#141c24;border:1px solid #b29149;
+    border-radius:14px;padding:28px 26px;color:#e8e6e0;box-shadow:0 20px 60px rgba(0,0,0,.5);
+    text-align:center;}
+  #exit-overlay .t-brand{font-family:"Montserrat","Syne",sans-serif;font-size:26px;
+    letter-spacing:-0.02em;margin-bottom:12px;}
+  #exit-overlay .t-brand b{font-weight:700}#exit-overlay .t-brand em{font-style:normal;font-weight:600;color:#b29149}
+  #exit-overlay .e-msg{font-size:13px;line-height:1.6;}
   /* ── v0.6.9: RESPONSIVO (celulares/tablets — tudo visível e rolável) ── */
   @media (max-width:640px){
     #terms-overlay{padding:10px;padding-left:max(10px,env(safe-area-inset-left));
@@ -4031,7 +4061,7 @@ def create_wrapper_html(
         "pt_BR": {
             "ui.backup": "Salvar backup", "ui.restore": "Restaurar",
             "ui.sair": "SAIR",
-            "sair.title": "Encerrar sessão", "sair.confirm_q": "Desconectar e excluir o ambiente de execução?", "sair.warn": "Tudo em memória será perdido — os arquivos no seu Google Drive continuam salvos. O progresso da sessão do agente será salvo na memória antes de encerrar. Não há como desfazer após confirmar.", "sair.yes": "SIM, SAIR", "sair.status": "Encerrando o ambiente… aguarde", "sair.fail": "Falha ao encerrar — use Runtime ▸ Desconectar e excluir ambiente.", "sair.done": "✅ Ambiente encerrado. Para usar o UFVAI de novo: reexecute a célula de boot.",
+            "sair.title": "Encerrar sessão", "sair.confirm_q": "Desconectar e excluir o ambiente de execução?", "sair.warn": "Tudo em memória será perdido — os arquivos no seu Google Drive continuam salvos. Não há como desfazer após confirmar.", "sair.yes": "SIM, SAIR", "sair.status": "Encerrando o ambiente… aguarde", "sair.fail": "Falha ao encerrar — use Runtime ▸ Desconectar e excluir ambiente.", "sair.done": "✅ Ambiente encerrado. Para usar o UFVAI de novo: reexecute a célula de boot.",
             "ui.drive": "Drive", "ui.close": "Fechar", "ui.cancel": "Cancelar",
             "ui.loading": "Carregando…", "ui.status_active": "agente ativo",
             "ui.exporting": "Exportando sessão…",
@@ -4132,7 +4162,7 @@ def create_wrapper_html(
         "en_US": {
             "ui.backup": "Save backup", "ui.restore": "Restore",
             "ui.sair": "EXIT",
-            "sair.title": "End session", "sair.confirm_q": "Disconnect and delete the execution environment?", "sair.warn": "Everything in memory will be lost — files on your Google Drive remain saved. The agent session progress is saved to memory before exiting. Cannot be undone once confirmed.", "sair.yes": "YES, EXIT", "sair.status": "Shutting down the environment… please wait", "sair.fail": "Failed to shut down — use Runtime ▸ Disconnect and delete runtime.", "sair.done": "✅ Environment terminated. To use UFVAI again: re-run the boot cell.",
+            "sair.title": "End session", "sair.confirm_q": "Disconnect and delete the execution environment?", "sair.warn": "Everything in memory will be lost — files on your Google Drive remain saved. Cannot be undone once confirmed.", "sair.yes": "YES, EXIT", "sair.status": "Shutting down the environment… please wait", "sair.fail": "Failed to shut down — use Runtime ▸ Disconnect and delete runtime.", "sair.done": "✅ Environment terminated. To use UFVAI again: re-run the boot cell.",
             "ui.drive": "Drive", "ui.close": "Close", "ui.cancel": "Cancel",
             "ui.loading": "Loading…", "ui.status_active": "agent active",
             "ui.exporting": "Exporting session…",
@@ -4233,7 +4263,7 @@ def create_wrapper_html(
         "es_ES": {
             "ui.backup": "Guardar copia", "ui.restore": "Restaurar",
             "ui.sair": "SALIR",
-            "sair.title": "Cerrar sesión", "sair.confirm_q": "¿Desconectar y eliminar el entorno de ejecución?", "sair.warn": "Todo en memoria se perderá — los archivos de tu Google Drive siguen guardados. El progreso de la sesión del agente se guarda en la memoria antes de cerrar. No se puede deshacer tras confirmar.", "sair.yes": "SÍ, SALIR", "sair.status": "Cerrando el entorno… espere", "sair.fail": "Error al cerrar — usa Runtime ▸ Desconectar y eliminar el entorno.", "sair.done": "✅ Entorno cerrado. Para usar UFVAI de nuevo: reejecuta la celda de arranque.",
+            "sair.title": "Cerrar sesión", "sair.confirm_q": "¿Desconectar y eliminar el entorno de ejecución?", "sair.warn": "Todo en memoria se perderá — los archivos de tu Google Drive siguen guardados. No se puede deshacer tras confirmar.", "sair.yes": "SÍ, SALIR", "sair.status": "Cerrando el entorno… espere", "sair.fail": "Error al cerrar — usa Runtime ▸ Desconectar y eliminar el entorno.", "sair.done": "✅ Entorno cerrado. Para usar UFVAI de nuevo: reejecuta la celda de arranque.",
             "ui.drive": "Drive", "ui.close": "Cerrar", "ui.cancel": "Cancelar",
             "ui.loading": "Cargando…", "ui.status_active": "agente activo",
             "ui.exporting": "Exportando sesión…",
@@ -4334,7 +4364,7 @@ def create_wrapper_html(
         "fr_FR": {
             "ui.backup": "Sauvegarder", "ui.restore": "Restaurer",
             "ui.sair": "QUITTER",
-            "sair.title": "Terminer la session", "sair.confirm_q": "Déconnecter et supprimer l'environnement d'exécution ?", "sair.warn": "Tout en mémoire sera perdu — les fichiers de votre Google Drive restent sauvegardés. La progression de la session de l'agent est enregistrée dans la mémoire avant de quitter. Irréversible après confirmation.", "sair.yes": "OUI, QUITTER", "sair.status": "Arrêt de l'environnement… veuillez patienter", "sair.fail": "Échec de l'arrêt — utilisez Runtime ▸ Déconnecter et supprimer l'environnement.", "sair.done": "✅ Environnement terminé. Pour réutiliser UFVAI : relancez la cellule de démarrage.",
+            "sair.title": "Terminer la session", "sair.confirm_q": "Déconnecter et supprimer l'environnement d'exécution ?", "sair.warn": "Tout en mémoire sera perdu — les fichiers de votre Google Drive restent sauvegardés. Irréversible après confirmation.", "sair.yes": "OUI, QUITTER", "sair.status": "Arrêt de l'environnement… veuillez patienter", "sair.fail": "Échec de l'arrêt — utilisez Runtime ▸ Déconnecter et supprimer l'environnement.", "sair.done": "✅ Environnement terminé. Pour réutiliser UFVAI : relancez la cellule de démarrage.",
             "ui.drive": "Drive", "ui.close": "Fermer", "ui.cancel": "Annuler",
             "ui.loading": "Chargement…", "ui.status_active": "agent actif",
             "ui.exporting": "Exportation de la session…",
@@ -4435,7 +4465,7 @@ def create_wrapper_html(
         "zh_CN": {
             "ui.backup": "保存备份", "ui.restore": "恢复",
             "ui.sair": "退出",
-            "sair.title": "结束会话", "sair.confirm_q": "断开连接并删除执行环境？", "sair.warn": "内存中的所有内容都将丢失 — Google 云端硬盘中的文件仍会保存。退出前，智能体会话进度会保存到记忆中。确认后无法撤销。", "sair.yes": "确定，退出", "sair.status": "正在关闭环境…请稍候", "sair.fail": "关闭失败 — 请使用 Runtime ▸ 断开连接并删除环境。", "sair.done": "✅ 环境已终止。如需再次使用 UFVAI：重新运行引导单元。",
+            "sair.title": "结束会话", "sair.confirm_q": "断开连接并删除执行环境？", "sair.warn": "内存中的所有内容都将丢失 — Google 云端硬盘中的文件仍会保存。确认后无法撤销。", "sair.yes": "确定，退出", "sair.status": "正在关闭环境…请稍候", "sair.fail": "关闭失败 — 请使用 Runtime ▸ 断开连接并删除环境。", "sair.done": "✅ 环境已终止。如需再次使用 UFVAI：重新运行引导单元。",
             "ui.drive": "云端硬盘", "ui.close": "关闭", "ui.cancel": "取消",
             "ui.loading": "加载中…", "ui.status_active": "智能体运行中",
             "ui.exporting": "正在导出会话…",

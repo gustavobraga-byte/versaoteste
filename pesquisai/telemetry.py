@@ -369,6 +369,19 @@ def save_contact(email: str, name: str | None = None, ip: str | None = None) -> 
         if not _valid_name(cname):
             return False, "Nome inválido — use 2 a 100 letras."
     sha = hashlib.sha256(addr.encode("utf-8")).hexdigest()
+    # v0.6.20-fix: dedupe ANTES de gravar — lê o perfil PERSISTENTE (local +
+    # backup do Drive). Se o e-mail já está registrado, é RE-CONSENTIMENTO
+    # (re-aceite dos Termos, re-execução da célula, overlay esporádico) e NÃO
+    # um contato novo: a planilha não recebe linha "novo_contato" — apenas o
+    # heartbeat "usuario_ativo" do clique "Continuar" registra o acesso.
+    # E-mail diferente (ou ausente) = contato novo de verdade → registra.
+    _already_registered = False
+    try:
+        _prev = _read_profile()
+        _already_registered = (bool(_prev.get("email"))
+                               and str(_prev.get("email", "")).strip().lower() == addr)
+    except Exception:
+        _already_registered = False
     try:
         os.makedirs(os.path.dirname(_PROFILE_FILE), exist_ok=True)
         # preserva campos antigos se já existirem (ex.: ip não persiste)
@@ -400,6 +413,14 @@ def save_contact(email: str, name: str | None = None, ip: str | None = None) -> 
                     "sim" if configured() else "nao",
                     "sim" if _contact_endpoint() else "NAO CONFIGURADO",
                     ip or "—"))
+    if _already_registered:
+        # v0.6.20-fix: re-consentimento — sem linha "novo_contato" na planilha
+        # e sem contador GA4 repetido; o perfil local/Drive é atualizado acima
+        # (mantendo aceite/versão dos Termos em dia) e o acesso será registrado
+        # pelo clique "Continuar" (flag "usuario_ativo").
+        _contato_log("re-consentimento SKIP: e-mail já registrado — sem linha "
+                     "'novo_contato' (só o 'usuario_ativo' do botão)")
+        return True, "Contato atualizado com sucesso."
     # Contador ANÔNIMO para o GA4 (sem nenhum dado derivado do e-mail/nome/ip)
     event("contact_optin")
     # Canal direto do desenvolvedor (opcional): envia o endereço real por HTTPS
@@ -412,6 +433,16 @@ def clear_contact() -> None:
     """Elimina o e-mail local (direito de eliminação, LGPD art. 18 VI)."""
     try:
         os.remove(_PROFILE_FILE)
+    except Exception:
+        pass
+    # v0.6.20-fix: elimina TAMBÉM o perfil persistente (Drive/offline) — sem
+    # isso, após a eliminação, o re-aceite dos Termos seria tratado como
+    # re-consentimento (sem linha "novo_contato") e o e-mail eliminado voltaria
+    # a pré-preencher a tela. Eliminação = eliminar em todos os cantos.
+    try:
+        bpath = _persisted_profile_path()
+        if bpath and os.path.isfile(bpath):
+            os.remove(bpath)
     except Exception:
         pass
 

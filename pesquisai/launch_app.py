@@ -44,6 +44,7 @@ if IN_COLAB:
         except Exception:
             pass
     _builtins.print = _silent_print
+
 from .opencode_utils import find_opencode, build_env
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
 
