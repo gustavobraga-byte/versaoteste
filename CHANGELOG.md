@@ -1,9 +1,8 @@
 # Changelog — PesquisAI
 
-## [0.6.20] — 2026-10-01 — 🫀 Boot simplificado + keep-alive em subprocesso + botão SAIR
-
+## [0.6.20] — 2026-10-01 — 🫀 Keep-alive + botão SAIR na interface · 🌐 Rodapé com o site oficial · 📄 Planilha de contatos em 1 linha
 ### 🎯 Nova direção (mudança de planos)
-- **Descartada** a abordagem da 0.6.20 bugada de 30/09 (supervisor desacoplado `colab_host.py`/`spawn_detached` — travava em "Aguardando a interface ficar pronta…" porque `eval_js(proxyPort)` e `drive.mount` exigem o kernel do Colab e abortavam antes de gravar o `READY_FILE`). **Rollback** foi feito e a base desta release é a **v0.6.19 estável**, sem alteração funcional no pacote — a 0.6.20 vive **somente no `PesquisAI.ipynb`**.
+- **Descartada** a abordagem da 0.6.20 bugada de 30/09 (supervisor desacoplado `colab_host.py`/`spawn_detached` — travava em "Aguardando a interface ficar pronta…" porque `eval_js(proxyPort)` e `drive.mount` exigem o kernel do Colab e abortavam antes de gravar o `READY_FILE`). **Rollback** foi feito e a base desta release é a **v0.6.19 estável**, sem alteração funcional no pacote de boot — a 0.6.20 vive no `PesquisAI.ipynb` (boot/keep-alive/SAIR) e no pacote (rodapé do site + planilha de contatos, abaixo). Número de versão mantido: **0.6.20**.
 
 ### 📦 Novo `PesquisAI.ipynb` (única mudança de código)
 - **Célula de boot simplificada:** painel da logomarca (5% → 12% → 20%) → clone/pull do repositório (`git pull --ff-only --depth 1` em `/tmp/pesquisai`) → `from main import run; run()` **direto no kernel do Colab** (fluxo comprovado da v0.6.17/0.6.19, sem supervisor) → painel 100%.
@@ -15,6 +14,20 @@
   - Fallback honesto: se `invokeFunction` falhar, o card orienta usar o menu **Runtime** manualmente (nenhuma chamada inventada);
   - Fora do Colab o card não é exibido (sem `google.colab` disponível).
 - **Documentação:** células markdown do ipynb atualizadas (instruções de uso, keep-alive e SAIR; citação ABNT v0.6.20).
+
+### 🌐 Rodapé com o link do site oficial
+- O rodapé da interface ganha o link **"🌐 Site"** (ícone globo em SVG, abre em nova aba) para `https://gustavobraga-byte.github.io/ufvaisite/`, entre o GitHub e o texto "UFV · Viçosa, MG - Brasil".
+- **Responsivo:** em telas <480px o texto "UFV · Viçosa, MG - Brasil" sai de cena para o link caber sem quebrar a linha; desktop e tablet mantêm tudo visível.
+- Arquivos: `pesquisai/launch_app_responsive_v041.py` + `pesquisai/launch_app_responsive.py` (pacote) e cópias vivas da raiz (4 no total); typo de tag `<span>` corrigido no responsivo do pacote.
+
+### 📄 Planilha de contatos: uma linha por ativação/retorno
+- **Contrato novo:** a planilha do desenvolvedor recebe EXATAMENTE UMA linha — a **`usuario_ativo`** (e-mail · nome · IP), gravada **quando o usuário clica no botão** (Continuar/ABRIR da tela de Termos ou "Bem-vindo de volta").
+- O primeiro aceite **não grava mais** a linha `novo_contato`: grava somente o perfil do usuário localmente + backup no Drive (e o contador anônimo no GA4).
+- Backend (`telemetry.py`): `notify_active_user()` agora é a única fonte de linhas; a flag legada `novo_contato` ainda é aceita no Apps Script (compatibilidade) e o fix "Versão" como texto (evita `0.6.20` virar data no Sheets) está propagado nas cópias.
+
+### 🧪 Testes
+- Suítes revalidadas: deduplicação/telemetria atualizada ao contrato da linha única (32/32) · cascata CSS dos 4 arquivos vivos (144/144) · versão/boot (24/24) · SAIR em modo estático.
+- **Igual a Zero:** o ambiente Colab em uso nunca foi desligado nos testes (casos que invocariam shutdown/keepalive real foram executados apenas como verificação estática de código).
 
 ### 🔢 Versionamento e docs em paridade
 - Bump `0.6.19 → 0.6.20` em `pesquisai/__version__.py` (`__version__`, `__release_date__="2026-10-01"`, `__codename__="Boot simplificado + keep-alive em subprocesso + botão SAIR no Colab"`), `pyproject.toml` (versão + descrição), `Dockerfile` (comentário + LABEL), `README.md` (badge, novidades, tabela de versões, citação, BibTeX, rodapé), `MANUAL.md` (cabeçalho, citações, tabela, rodapé), `AGENTS.md` + `agents/AGENTS.{en,es,fr,pt,zh}.md` (frontmatter + rodapé), `citacao_pesquisai.md`, `PesquisAI.ipynb`.
