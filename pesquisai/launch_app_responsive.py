@@ -766,7 +766,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <span data-i18n="providers.title">+ provedor</span>
     </button>
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
-    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
+    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <pan data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
@@ -1307,16 +1307,8 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
         });
         const d = await r.json();
         if (d.ok) {
-          if (d.ttyd_restarted) {
-            toast("✅ Sessão " + (d.session_id || "") + " importada + ttyd reiniciado!", "ok");
-            // v0.5.1.6: aguardar 3.5s para o ttyd reiniciar antes de recarregar
-            // (o ttyd precisa reabrir o WebSocket + handshake do opencode)
-            setTimeout(() => location.reload(), 3500);
-          } else {
-            toast("⚠️ Importado, mas ttyd não reiniciou. Recarregue manualmente (Ctrl+Shift+R).", "warn");
-            // Fallback: tentar reload após 1.5s
-            setTimeout(() => location.reload(), 1500);
-          }
+          toast("✅ Importado!", "ok");
+          setTimeout(() => location.reload(), 800);
         } else {
           toast("❌ " + (d.error || "Erro"), "err");
         }

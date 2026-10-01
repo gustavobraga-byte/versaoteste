@@ -606,6 +606,40 @@ def create_wrapper_html(
     .btn-restore { color:var(--amber); background:var(--amber-dim); border-color:rgba(232,184,75,.25); }
     .btn-restore:hover { background:rgba(232,184,75,.2); border-color:rgba(232,184,75,.5); }
 
+    /* v0.6.20 — botão SAIR (encerrar ambiente de execução) */
+    .btn-sair { color:var(--red); background:var(--red-dim); border-color:rgba(224,112,112,.25); }
+    .btn-sair:hover { background:rgba(224,112,112,.2); border-color:rgba(224,112,112,.5); }
+
+    /* v0.6.20 — modal de confirmação do SAIR */
+    #sair-overlay {
+      position: fixed; inset: 0;
+      background: var(--ov-dim);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 99999; opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    #sair-overlay.open { opacity: 1; pointer-events: all; }
+    #sair-modal {
+      background: var(--rail); border: 1px solid var(--line);
+      border-radius: 8px; padding: 24px; width: 400px; max-width: 90vw;
+      box-shadow: 0 24px 64px rgba(0,0,0,.6);
+    }
+    #sair-modal .sair-warn {
+      font-size: 11.5px; color: var(--ink-muted);
+      line-height: 1.6; margin-bottom: 16px;
+    }
+    #sair-modal .sair-status {
+      font-size: 11px; color: var(--accent);
+      margin-top: 12px; min-height: 15px; text-align: center;
+    }
+    #sair-modal .sair-done {
+      display: none; margin-top: 14px; padding: 12px;
+      font-size: 12px; color: var(--ink); line-height: 1.6;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line); border-radius: var(--radius);
+      text-align: center;
+    }
+
     #toast {
       position: fixed; bottom: 58px; right: 18px;
       padding: 9px 16px; border-radius: var(--radius);
@@ -746,19 +780,6 @@ def create_wrapper_html(
     .tb-icon:active { transform: scale(.94); }
     .tb-icon svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
 
-    /* v0.6.20 — botão "Sair com segurança". Vermelho só no hover: fica
-       visível sem competir com os botões de ação do dia a dia, mas
-       inequivoco quando o usuário procura encerrar. */
-    .tb-exit { color:#b04a3f; border-color:rgba(176,74,63,.28); }
-    .tb-exit:hover {
-      background:rgba(176,74,63,.10);
-      color:#c0392b;
-      border-color:rgba(176,74,63,.55);
-    }
-    /* Tema escuro: mantém o contraste do vermelho no fundo escuro. */
-    [data-theme="dark"] .tb-exit { color:#e07a6c; border-color:rgba(224,122,108,.32); }
-    [data-theme="dark"] .tb-exit:hover { background:rgba(224,122,108,.14); color:#f0a79c; }
-
     .health-row {
       display:flex; align-items:center; justify-content:space-between;
       padding:9px 12px; font-size:11.5px; color:var(--ink);
@@ -864,9 +885,6 @@ def create_wrapper_html(
       <button class="tb-icon" onclick="openTelemetry()" id="telemetry-btn" title="Telemetria (Admin)" style="display:none !important" data-i18n-title="telemetry.title">
         <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="4" width="3" height="14"/></svg>
       </button>
-      <button class="tb-icon tb-exit" onclick="ufvaiShutdown()" id="exit-btn" title="Sair com segurança" data-i18n-title="exit.title">
-        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </button>
       <button class="lang-btn" id="lang-btn" onclick="toggleLangMenu()" aria-haspopup="true" aria-expanded="false" title="Idioma / Language">
         <span class="lang-flag" id="lang-flag">🇧🇷</span>
         <span class="lang-code" id="lang-code">PT</span>
@@ -893,6 +911,12 @@ def create_wrapper_html(
       <span data-i18n="ui.drive">Drive</span>
     </a>
 
+    <!-- v0.6.20: SAIR — oculto por padrão; exibido via JS somente no Colab -->
+    <button class="tb-btn btn-sair" id="sair-btn" onclick="ufvaiExit()" style="display:none;">
+      <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+      <span data-i18n="ui.sair">SAIR</span>
+    </button>
+
   </div>
 
   <!-- Mobile menu (drawer) — espelha o topbar em mobile -->
@@ -910,6 +934,11 @@ def create_wrapper_html(
       <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
       <span data-i18n="ui.drive">Drive</span>
     </a>
+    <!-- v0.6.20: SAIR no drawer mobile (idem topbar: exibido só no Colab) -->
+    <button class="tb-btn btn-sair" id="sair-btn-mobile" onclick="ufvaiExit(); toggleMobileMenu();" style="display:none;width:100%;justify-content:flex-start;">
+      <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+      <span data-i18n="ui.sair">SAIR</span>
+    </button>
     <button class="btn-provider" onclick="connectProvider(); toggleMobileMenu();" style="width:100%;justify-content:flex-start;">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
       <span data-i18n="providers.title">+ provedor</span>
@@ -923,10 +952,6 @@ def create_wrapper_html(
     <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória UFVAI</span></button>
     <button class="modal-close" onclick="toggleTheme(); toggleMobileMenu();">◑ <span data-i18n="theme.toggle">Alternar Tema</span></button>
     <button class="modal-close" onclick="toggleLangMenu();">🌐 <span data-i18n="languages.label">Idioma</span></button>
-    <div style="height:1px;background:var(--line);margin:8px 0;"></div>
-    <button class="modal-close" onclick="toggleMobileMenu(); ufvaiShutdown();" style="color:#c0392b;">
-      ⏻ <span data-i18n="exit.title">Sair com segurança</span>
-    </button>
   </div>
 
   <!-- Dropdown de idioma (NOVO em v0.4.1) -->
@@ -987,36 +1012,19 @@ def create_wrapper_html(
 
   <div id="toast"></div>
 
-  <!-- v0.6.20 — Tela final do "Sair com segurança". Exibida depois que o
-       servidor já encerrou (UFVAI + ttyd mortos). A partir daqui a página
-       não tem mais backend: o botão apenas redireciona o frame de topo
-       para o endpoint de desconexão do Colab, que encerra e descarta o
-       runtime. É a única forma honesta de liberar a VM — o processo do
-       Python já morreu e não pode mais pedir isso. -->
-  <div id="exit-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:100000;display:none;align-items:center;justify-content:center;padding:24px;">
-    <div style="max-width:460px;width:100%;text-align:center;font-family:'DM Mono',monospace;">
-      <div style="font-family:'Montserrat',system-ui,sans-serif;font-size:32px;font-weight:800;color:#2b2d3a;margin-bottom:6px;">UFV<span style="color:#b8912f;">AI</span></div>
-      <div style="color:#8f8d86;font-size:13px;margin-bottom:22px;" data-i18n="exit.stopped">UFVAI encerrado com segurança.</div>
-
-      <div id="exit-runtime-box" style="border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:18px;text-align:left;">
-        <div style="color:#b8912f;font-size:12px;letter-spacing:.06em;margin-bottom:6px;" data-i18n="exit.runtime_title">RUNTIME DO GOOGLE COLAB</div>
-        <div style="color:var(--fg);font-size:13px;line-height:1.6;" data-i18n="exit.runtime_body">
-          A VM do Colab continua alocada e contando tempo. Toque abaixo para desconectar e descartá-la.
-        </div>
-        <button onclick="ufvaiReleaseRuntime()" id="exit-release-btn"
-          style="margin-top:14px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #b8912f;
-                 background:#b8912f;color:#fff;font-family:'Montserrat',system-ui,sans-serif;
-                 font-size:14px;font-weight:700;cursor:pointer;">
-          <span data-i18n="exit.release">Encerrar runtime do Colab</span>
-        </button>
-        <div id="exit-countdown" style="color:#8f8d86;font-size:11px;margin-top:8px;"></div>
+  <!-- v0.6.20 — Modal de confirmação do SAIR (confirmação OBRIGATÓRIA antes
+       de desconectar e excluir o ambiente de execução do Colab) -->
+  <div id="sair-overlay" onclick="if(event.target===this)ufvaiExitCancel()">
+    <div id="sair-modal" role="dialog" aria-modal="true" aria-labelledby="sair-title">
+      <div class="modal-title" id="sair-title">⏻ <span data-i18n="sair.title">Encerrar sessão</span></div>
+      <p class="sair-q" style="font-size:12.5px;color:var(--ink);margin-bottom:10px;" data-i18n="sair.confirm_q">Desconectar e excluir o ambiente de execução?</p>
+      <p class="sair-warn" data-i18n="sair.warn">Tudo em memória será perdido — os arquivos no seu Google Drive continuam salvos. O progresso da sessão do agente será salvo na memória antes de encerrar. Não há como desfazer após confirmar.</p>
+      <div style="display:flex;gap:8px;">
+        <button id="sair-yes" onclick="ufvaiExitConfirm()" style="flex:1;padding:9px;background:rgba(224,112,112,.15);border:1px solid rgba(224,112,112,.4);border-radius:var(--radius);color:var(--red);font-family:var(--font-sans);font-size:12px;font-weight:700;cursor:pointer;" data-i18n="sair.yes">SIM, SAIR</button>
+        <button onclick="ufvaiExitCancel()" style="padding:9px 14px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:12px;cursor:pointer;" data-i18n="ui.cancel">Cancelar</button>
       </div>
-
-      <button onclick="ufvaiExitManual()" style="padding:10px 18px;border-radius:10px;border:1px solid var(--line);
-              background:transparent;color:var(--fg);font-family:'DM Mono',monospace;font-size:13px;cursor:pointer;"
-              data-i18n="exit.manual">
-        Só encerrar o UFVAI e manter o runtime
-      </button>
+      <div class="sair-status" id="sair-status"></div>
+      <div class="sair-done" id="sair-done" data-i18n="sair.done">✅ Ambiente encerrado. Para usar o UFVAI de novo: reexecute a célula de boot.</div>
     </div>
   </div>
 
@@ -1581,6 +1589,67 @@ def create_wrapper_html(
       document.getElementById("modal-overlay").classList.remove("open");
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // v0.6.20 — SAIR: desconectar e excluir o ambiente de execução
+    // Botão vive na interface do app (topbar/drawer). Exibido somente
+    // no Colab. Confirmação OBRIGATÓRIA; após confirmar:
+    //   POST /api/shutdown {confirm:true} → backend salva a nota de fim
+    //   de sessão na memória, encerra o keep-alive e desconecta o runtime.
+    // ═══════════════════════════════════════════════════════════
+    function _sairDict() {
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
+      return {
+        status: dict["sair.status"] || "Encerrando o ambiente… aguarde",
+        fail: dict["sair.fail"] || "Falha ao encerrar — use Runtime ▸ Desconectar e excluir ambiente.",
+      };
+    }
+    function ufvaiExit() {
+      const ov = document.getElementById("sair-overlay");
+      document.getElementById("sair-status").textContent = "";
+      document.getElementById("sair-done").style.display = "none";
+      const yes = document.getElementById("sair-yes");
+      yes.disabled = false; yes.style.opacity = "1";
+      ov.classList.add("open");
+    }
+    function ufvaiExitCancel() {
+      document.getElementById("sair-overlay").classList.remove("open");
+    }
+    async function ufvaiExitConfirm() {
+      const d = _sairDict();
+      const st = document.getElementById("sair-status");
+      const yes = document.getElementById("sair-yes");
+      yes.disabled = true; yes.style.opacity = ".6";
+      st.textContent = d.status;
+      try {
+        const r = await fetch(BASE + "/api/shutdown", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: true })
+        });
+        const resp = await r.json().catch(() => ({}));
+        if (r.ok && resp.ok) {
+          document.getElementById("sair-done").style.display = "block";
+          document.getElementById("sair-status").textContent = "";
+          // O runtime cai em ~1,5s (thread daemon do backend). A UI já
+          // mostra o estado final; nada mais a fazer aqui.
+          setTimeout(function() { ufvaiExitCancel(); }, 2500);
+        } else {
+          yes.disabled = false; yes.style.opacity = "1";
+          st.textContent = resp.error || d.fail;
+        }
+      } catch (e) {
+        yes.disabled = false; yes.style.opacity = "1";
+        st.textContent = d.fail;
+      }
+    }
+    // Exibe os botões SAIR somente no Colab (no .deb/offline não há runtime a encerrar)
+    if (IS_COLAB) {
+      try {
+        document.getElementById("sair-btn").style.display = "";
+        document.getElementById("sair-btn-mobile").style.display = "";
+      } catch (e) {}
+    }
+
     async function doRestore(file) {
       const dict = I18N[_currentLang] || I18N["pt_BR"];
       // 🔔 CORREÇÃO v0.5.1.8: confirma antes de restaurar backup
@@ -1696,125 +1765,6 @@ def create_wrapper_html(
       no.onclick = function() { ov.style.opacity = "0"; ov.style.pointerEvents = "none"; };
       ov.onclick = function(e) { if (e.target === ov) { ov.style.opacity = "0"; ov.style.pointerEvents = "none"; } };
       ov.style.opacity = "1"; ov.style.pointerEvents = "all";
-    }
-
-    // ══════════════════════════════════════════════════════════════
-    // v0.6.20 — "Sair com segurança"
-    //
-    // Fluxo: confirmação → POST /api/shutdown (mata ttyd + wrapper) →
-    // tela final → liberação do runtime do Colab.
-    //
-    // Por que a liberação do runtime é um passo SEPARADO e explícito: o
-    // processo do Python acabou de ser encerrado, então já não existe
-    // código rodando capaz de pedir ao Colab que destrua a VM. Só o
-    // navegador pode fazer isso, navegando para o endpoint oficial de
-    // desconexão. Automatizamos com contagem regressiva, mas deixamos o
-    // usuário capaz de cancelar — desligar a VM sem aviso seria perder o
-    // trabalho aberto no notebook sem que ele perceba.
-    // ══════════════════════════════════════════════════════════════
-    let _exitTimer = null;
-    let _exitAuto = true;
-
-    function ufvaiShutdown() {
-      const dict = I18N[_currentLang] || I18N["pt_BR"];
-      const msg = (dict["exit.confirm"] ||
-        "Encerrar o UFVAI? O terminal e o servidor serão finalizados. O que estiver em andamento será perdido.");
-      // researchConfirm exige callback síncrono; a parte assíncrona entra
-      // na função abaixo.
-      pesquisaiConfirm(msg, ufvaiDoShutdown);
-    }
-
-    async function ufvaiDoShutdown() {
-      const dict = I18N[_currentLang] || I18N["pt_BR"];
-      toast((dict["ui.stopping"] || "Encerrando o UFVAI…"), "info");
-      try {
-        const r = await fetch(BASE + "/api/shutdown", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirm: true, mode: "stop" })
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!d || d.ok !== true) {
-          toast("❌ " + ((d && d.error) || "Falha ao encerrar."), "err");
-          return;
-        }
-        ufvaiShowExitScreen(d);
-      } catch (e) {
-        // Se a conexão caiu, provavelmente o servidor já encerrou —
-        // tratar como sucesso evita prender o usuário numa tela de erro.
-        console.warn("[UFVAI] shutdown: conexão perdida", e);
-        ufvaiShowExitScreen({ in_colab: true,
-          disconnect_url: "https://colab.research.google.com/disconnect" });
-      }
-    }
-
-    function ufvaiShowExitScreen(data) {
-      const ov = document.getElementById("exit-overlay");
-      const box = document.getElementById("exit-runtime-box");
-      const cd = document.getElementById("exit-countdown");
-      if (!ov) return;
-      ov.style.display = "flex";
-
-      // Fora do Colab (modo .deb/local) não há runtime a descartar.
-      if (!data || !data.in_colab) {
-        if (box) box.style.display = "none";
-        return;
-      }
-
-      const url = (data.disconnect_url ||
-        "https://colab.research.google.com/disconnect");
-
-      // Contagem regressiva: 10s para liberar o runtime automaticamente.
-      // Longa o bastante para o usuário ler, curta o bastante para não
-      // deixar a VM alocada sem necessidade.
-      let left = 10;
-      _exitAuto = true;
-      if (_exitTimer) clearInterval(_exitTimer);
-      const tick = () => {
-        if (!_exitAuto) { if (cd) cd.textContent = ""; return; }
-        if (cd) {
-          cd.textContent = (I18N[_currentLang]?.["exit.auto"] ||
-            "Encerrando o runtime em {n}s…") .replace("{n}", String(left));
-        }
-        if (left <= 0) { ufvaiReleaseRuntime(); return; }
-        left -= 1;
-      };
-      tick();
-      _exitTimer = setInterval(tick, 1000);
-      window.__ufvaiRelease = () => ufvaiReleaseRuntime(url);
-    }
-
-    function ufvaiReleaseRuntime(url) {
-      _exitAuto = false;
-      if (_exitTimer) { clearInterval(_exitTimer); _exitTimer = null; }
-      const target = url ||
-        "https://colab.research.google.com/disconnect";
-      // Tenta no frame de topo (necessário porque a UI vive dentro de um
-      // iframe de proxy do Colab; navegar apenas o iframe interno não
-      // desconectaria o runtime). Cai para a própria janela se o navegador
-      // bloquear a navegação cross-frame.
-      try {
-        if (window.top && window.top !== window.self) {
-          window.top.location.href = target;
-        } else {
-          window.location.href = target;
-        }
-      } catch (e) {
-        window.location.href = target;
-      }
-    }
-
-    function ufvaiExitManual() {
-      _exitAuto = false;
-      if (_exitTimer) { clearInterval(_exitTimer); _exitTimer = null; }
-      const ov = document.getElementById("exit-overlay");
-      if (ov) ov.style.display = "none";
-      document.body.innerHTML =
-        '<div style="display:flex;align-items:center;justify-content:center;height:100vh;' +
-        'font-family:\'DM Mono\',monospace;color:#8f8d86;text-align:center;padding:24px;">' +
-        '<div><div style="font-size:15px;margin-bottom:6px;">✓ UFVAI encerrado.</div>' +
-        '<div style="font-size:12px;">O runtime do Colab segue ativo. Encerre-o em ' +
-        'Runtime → Encerrar sessão para não consumir cota.</div></div></div>';
     }
 
     function provBack() {
@@ -4072,6 +4022,8 @@ def create_wrapper_html(
     i18n_inline: dict[str, dict[str, str]] = {
         "pt_BR": {
             "ui.backup": "Salvar backup", "ui.restore": "Restaurar",
+            "ui.sair": "SAIR",
+            "sair.title": "Encerrar sessão", "sair.confirm_q": "Desconectar e excluir o ambiente de execução?", "sair.warn": "Tudo em memória será perdido — os arquivos no seu Google Drive continuam salvos. O progresso da sessão do agente será salvo na memória antes de encerrar. Não há como desfazer após confirmar.", "sair.yes": "SIM, SAIR", "sair.status": "Encerrando o ambiente… aguarde", "sair.fail": "Falha ao encerrar — use Runtime ▸ Desconectar e excluir ambiente.", "sair.done": "✅ Ambiente encerrado. Para usar o UFVAI de novo: reexecute a célula de boot.",
             "ui.drive": "Drive", "ui.close": "Fechar", "ui.cancel": "Cancelar",
             "ui.loading": "Carregando…", "ui.status_active": "agente ativo",
             "ui.exporting": "Exportando sessão…",
@@ -4117,15 +4069,6 @@ def create_wrapper_html(
             # v0.5.1.2 — Memória UFVAI
             "memory.title": "Memória UFVAI",
             "telemetry.title": "Telemetria (Admin)",
-            "exit.title": "Sair com segurança",
-            "exit.confirm": "Encerrar o UFVAI? O terminal e o servidor serão finalizados. O que estiver em andamento será perdido.",
-            "exit.stopped": "UFVAI encerrado com segurança.",
-            "exit.runtime_title": "RUNTIME DO GOOGLE COLAB",
-            "exit.runtime_body": "A VM do Colab continua alocada e contando tempo. Toque abaixo para desconectar e descartá-la.",
-            "exit.release": "Encerrar runtime do Colab",
-            "exit.auto": "Encerrando o runtime em {n}s…",
-            "exit.manual": "Só encerrar o UFVAI e manter o runtime",
-            "ui.stopping": "Encerrando o UFVAI…",
             "memory.subtitle": "Camada de memória persistente do agente",
             "memory.tooltip": "Memória UFVAI (segundo cérebro)",
             "memory.status_ready": "🟢 Ativa",
@@ -4180,6 +4123,8 @@ def create_wrapper_html(
         },
         "en_US": {
             "ui.backup": "Save backup", "ui.restore": "Restore",
+            "ui.sair": "EXIT",
+            "sair.title": "End session", "sair.confirm_q": "Disconnect and delete the execution environment?", "sair.warn": "Everything in memory will be lost — files on your Google Drive remain saved. The agent session progress is saved to memory before exiting. Cannot be undone once confirmed.", "sair.yes": "YES, EXIT", "sair.status": "Shutting down the environment… please wait", "sair.fail": "Failed to shut down — use Runtime ▸ Disconnect and delete runtime.", "sair.done": "✅ Environment terminated. To use UFVAI again: re-run the boot cell.",
             "ui.drive": "Drive", "ui.close": "Close", "ui.cancel": "Cancel",
             "ui.loading": "Loading…", "ui.status_active": "agent active",
             "ui.exporting": "Exporting session…",
@@ -4225,15 +4170,6 @@ def create_wrapper_html(
             # v0.5.1.2 — PesquisAI Memory
             "memory.title": "UFVAI Memory",
             "telemetry.title": "Telemetry (Admin)",
-            "exit.title": "Exit safely",
-            "exit.confirm": "Shut down UFVAI? The terminal and server will be stopped. Anything in progress will be lost.",
-            "exit.stopped": "UFVAI shut down safely.",
-            "exit.runtime_title": "GOOGLE COLAB RUNTIME",
-            "exit.runtime_body": "The Colab VM is still allocated and counting. Click below to disconnect and discard it.",
-            "exit.release": "Terminate Colab runtime",
-            "exit.auto": "Terminating runtime in {n}s…",
-            "exit.manual": "Only stop UFVAI, keep the runtime",
-            "ui.stopping": "Shutting down UFVAI…",
             "memory.subtitle": "Agent's persistent memory layer",
             "memory.tooltip": "UFVAI Memory (second brain)",
             "memory.status_ready": "🟢 Active",
@@ -4288,6 +4224,8 @@ def create_wrapper_html(
         },
         "es_ES": {
             "ui.backup": "Guardar copia", "ui.restore": "Restaurar",
+            "ui.sair": "SALIR",
+            "sair.title": "Cerrar sesión", "sair.confirm_q": "¿Desconectar y eliminar el entorno de ejecución?", "sair.warn": "Todo en memoria se perderá — los archivos de tu Google Drive siguen guardados. El progreso de la sesión del agente se guarda en la memoria antes de cerrar. No se puede deshacer tras confirmar.", "sair.yes": "SÍ, SALIR", "sair.status": "Cerrando el entorno… espere", "sair.fail": "Error al cerrar — usa Runtime ▸ Desconectar y eliminar el entorno.", "sair.done": "✅ Entorno cerrado. Para usar UFVAI de nuevo: reejecuta la celda de arranque.",
             "ui.drive": "Drive", "ui.close": "Cerrar", "ui.cancel": "Cancelar",
             "ui.loading": "Cargando…", "ui.status_active": "agente activo",
             "ui.exporting": "Exportando sesión…",
@@ -4333,15 +4271,6 @@ def create_wrapper_html(
             # v0.5.1.2 — Memoria PesquisAI
             "memory.title": "Memoria UFVAI",
             "telemetry.title": "Telemetría (Admin)",
-            "exit.title": "Salir de forma segura",
-            "exit.confirm": "¿Cerrar UFVAI? El terminal y el servidor se detendrán. Se perderá lo que esté en curso.",
-            "exit.stopped": "UFVAI cerrado de forma segura.",
-            "exit.runtime_title": "RUNTIME DE GOOGLE COLAB",
-            "exit.runtime_body": "La VM de Colab sigue asignada y contando. Pulsa abajo para desconectarla y descartarla.",
-            "exit.release": "Finalizar runtime de Colab",
-            "exit.auto": "Finalizando el runtime en {n}s…",
-            "exit.manual": "Solo cerrar UFVAI y mantener el runtime",
-            "ui.stopping": "Cerrando UFVAI…",
             "memory.subtitle": "Capa de memoria persistente del agente",
             "memory.tooltip": "Memoria UFVAI (segundo cerebro)",
             "memory.status_ready": "🟢 Activa",
@@ -4396,6 +4325,8 @@ def create_wrapper_html(
         },
         "fr_FR": {
             "ui.backup": "Sauvegarder", "ui.restore": "Restaurer",
+            "ui.sair": "QUITTER",
+            "sair.title": "Terminer la session", "sair.confirm_q": "Déconnecter et supprimer l'environnement d'exécution ?", "sair.warn": "Tout en mémoire sera perdu — les fichiers de votre Google Drive restent sauvegardés. La progression de la session de l'agent est enregistrée dans la mémoire avant de quitter. Irréversible après confirmation.", "sair.yes": "OUI, QUITTER", "sair.status": "Arrêt de l'environnement… veuillez patienter", "sair.fail": "Échec de l'arrêt — utilisez Runtime ▸ Déconnecter et supprimer l'environnement.", "sair.done": "✅ Environnement terminé. Pour réutiliser UFVAI : relancez la cellule de démarrage.",
             "ui.drive": "Drive", "ui.close": "Fermer", "ui.cancel": "Annuler",
             "ui.loading": "Chargement…", "ui.status_active": "agent actif",
             "ui.exporting": "Exportation de la session…",
@@ -4441,15 +4372,6 @@ def create_wrapper_html(
             # v0.5.1.2 — Mémoire PesquisAI
             "memory.title": "Mémoire UFVAI",
             "telemetry.title": "Télémétrie (Admin)",
-            "exit.title": "Quitter en toute sécurité",
-            "exit.confirm": "Arrêter UFVAI ? Le terminal et le serveur seront arrêtés. Toute progression en cours sera perdue.",
-            "exit.stopped": "UFVAI arrêté en toute sécurité.",
-            "exit.runtime_title": "RUNTIME GOOGLE COLAB",
-            "exit.runtime_body": "La VM Colab est toujours allouée et continue de compter. Cliquez ci-dessous pour la déconnecter et la libérer.",
-            "exit.release": "Terminer le runtime Colab",
-            "exit.auto": "Terminaison du runtime dans {n}s…",
-            "exit.manual": "Arrêter seulement UFVAI et garder le runtime",
-            "ui.stopping": "Arrêt de UFVAI…",
             "memory.subtitle": "Couche de mémoire persistante de l'agent",
             "memory.tooltip": "Mémoire UFVAI (deuxième cerveau)",
             "memory.status_ready": "🟢 Active",
@@ -4504,6 +4426,8 @@ def create_wrapper_html(
         },
         "zh_CN": {
             "ui.backup": "保存备份", "ui.restore": "恢复",
+            "ui.sair": "退出",
+            "sair.title": "结束会话", "sair.confirm_q": "断开连接并删除执行环境？", "sair.warn": "内存中的所有内容都将丢失 — Google 云端硬盘中的文件仍会保存。退出前，智能体会话进度会保存到记忆中。确认后无法撤销。", "sair.yes": "确定，退出", "sair.status": "正在关闭环境…请稍候", "sair.fail": "关闭失败 — 请使用 Runtime ▸ 断开连接并删除环境。", "sair.done": "✅ 环境已终止。如需再次使用 UFVAI：重新运行引导单元。",
             "ui.drive": "云端硬盘", "ui.close": "关闭", "ui.cancel": "取消",
             "ui.loading": "加载中…", "ui.status_active": "智能体运行中",
             "ui.exporting": "正在导出会话…",
@@ -4548,15 +4472,6 @@ def create_wrapper_html(
             "success_messages.backup_saved": "备份已保存",
             "memory.title": "UFVAI 记忆库",
             "telemetry.title": "遥测（管理员）",
-            "exit.title": "安全退出",
-            "exit.confirm": "要关闭 UFVAI 吗？终端和服务器将被停止，当前进行中的工作会丢失。",
-            "exit.stopped": "UFVAI 已安全关闭。",
-            "exit.runtime_title": "GOOGLE COLAB 运行时",
-            "exit.runtime_body": "Colab 虚拟机仍处于分配状态并继续计时。点击下方以断开并释放它。",
-            "exit.release": "终止 Colab 运行时",
-            "exit.auto": "将在 {n}s 后终止运行时…",
-            "exit.manual": "仅关闭 UFVAI，保留运行时",
-            "ui.stopping": "正在关闭 UFVAI…",
             "memory.subtitle": "智能体的持久记忆层（第二大脑）",
             "memory.tooltip": "UFVAI 记忆库（第二大脑）",
             "memory.status_ready": "🟢 运行中",

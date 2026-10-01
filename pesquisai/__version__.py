@@ -334,8 +334,8 @@ __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-09-30"
-__codename__: str = "Anti-encerramento do runtime do Colab (keepalive) + Sair com segurança"
+__release_date__: str = "2026-10-01"
+__codename__: str = "Boot simplificado + keep-alive em subprocesso + botão SAIR no Colab"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

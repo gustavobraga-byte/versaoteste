@@ -249,69 +249,17 @@ def kill_previous():
     v0.6.5: pkill -x (COMM exato) em vez de -f — não casa processos cuja
     LINHA DE COMANDO meramente contém 'ttyd' (ex.: bash -i -c 'ttyd …',
     agente hospedeiro, editores). Mesmo efeito, sem danos colaterais.
-
-    v0.6.20: autopreservação em três níveis, para que a inicialização nunca
-    derrube a si mesma nem o supervisor que a hospeda:
-
-      1. `UFVAI_NO_KILLPREVIOUS=1` desliga a função por completo (usado pelo
-         supervisor já sob flock — lá o pkill é redundante e perigoso).
-      2. O `pkill` de processos python NÃO casa o processo atual nem o
-         supervisor: ambos carregam `UFVAI_HOST_CHILD=1` no ambiente, e o
-         padrão de cmdline foi Tightened para exigir o sufixo do
-         supervisor. Sem isso, o `pkill -f "python3.*8001"` encontrava o
-         próprio `python3 -m pesquisai.colab_host` e matava o processo que
-         estava executando a linha.
-      3. O ttyd continua sendo encerrado por COMM exato — é um filho
-         descartável por definição, e o watchdog reconstrói se preciso.
     """
-    if os.environ.get("UFVAI_NO_KILLPREVIOUS", "").strip().lower() in (
-        "1", "true", "yes", "on"
-    ):
-        logger.info("UFVAI_NO_KILLPREVIOUS=1 — kill_previous ignorado.")
-        return
-
-    import signal  # import local: o módulo não depende de signal no topo
-
-    # 1. ttyd: COMM exato. Qualquer ttyd é resíduo de sessão anterior.
     subprocess.run(
         ["pkill", "-9", "-x", "ttyd"],
         capture_output=True,
         timeout=5,
     )
-
-    # 2. Wrapper HTTP python: escopo restrito a quem carrega o marcador do
-    #    supervisor no ambiente. Filtros do /proc porque `pkill -f` não
-    #    oferece negação de ambiente e poderia casar o processo atual.
-    try:
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit():
-                continue
-            pid = int(entry)
-            if pid == os.getpid() or pid == os.getppid():
-                continue
-            try:
-                with open(f"/proc/{pid}/environ", "rb") as fh:
-                    env = fh.read().split(b"\0")
-            except (OSError, PermissionError):
-                continue
-            if b"UFVAI_HOST_CHILD=1" in env:
-                # É um supervisor/host nosso — nunca matar.
-                continue
-            try:
-                with open(f"/proc/{pid}/cmdline", "rb") as fh:
-                    cmd = fh.read().replace(b"\0", b" ").decode(
-                        "utf-8", "ignore"
-                    )
-            except (OSError, PermissionError):
-                continue
-            if f"python3" in cmd and str(WRAPPER_PORT) in cmd:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    pass
-    except Exception as exc:
-        logger.debug("Varredura de processos do wrapper falhou: %s", exc)
-
+    subprocess.run(
+        ["pkill", "-f", f"python3.*{WRAPPER_PORT}"],
+        capture_output=True,
+        timeout=5,
+    )
     time.sleep(0.5)
 
 
@@ -586,54 +534,29 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
         return _TTYD_TOUCH_INDEX_PATH
 
     import urllib.request as _urllib
-    import socket as _socket
 
-    # ── v0.6.20: porta EFÊMERA para o ttyd de sondagem ──────────────
-    # Antes, esta função subia o ttyd dummy na MESMA porta do terminal real
-    # (TERMINAL_PORT). Dois defeitos graves decorrentes disso:
-    #
-    #   1. Se o ttyd real estivesse no ar, o probe não conseguia o bind e o
-    #      HTML era lido do ttyd real — funcionava por acidente. Se NÃO
-    #      estivesse, o dummy subia e o navegador podia conectar nele: o
-    #      usuário via "pesquisai_touch_tmp" e precisava apertar Enter para
-    #      iniciar o agente.
-    #   2. O `pkill -9 -x ttyd` de limpeza (abaixo) matava QUALQUER ttyd do
-    #      sistema, inclusive o ttyd real de outra instância — era a causa
-    #      do "reconnecting" quando o notebook era reexecutado.
-    #
-    # Agora o probe usa uma porta livre efêmera e o cleanup mata apenas o
-    # processo que ele mesmo criou (por grupo de processos). Nenhum ttyd
-    # alheio é tocado.
-    def _free_port() -> int:
-        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-            s.bind(("127.0.0.1", 0))
-            return s.getsockname()[1]
-
-    probe_port = _free_port()
-
-    # 1. Iniciar ttyd temporário com comando dummy, em porta própria
+    # 1. Iniciar ttyd temporário com comando dummy
     #    v0.6.5: nova sessão de processos + log em arquivo
     print("📱 Preparando HTML do ttyd com touch handlers...")
     tmp_proc = subprocess.Popen(
-        ["ttyd", "-p", str(probe_port), "echo", "pesquisai_touch_tmp"],
+        ["ttyd", "-p", str(TERMINAL_PORT), "echo", "pesquisai_touch_tmp"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
         start_new_session=True,
     )
     time.sleep(2)
 
-    # 2. Buscar HTML padrão do ttyd (na porta efêmera, nunca na do terminal)
+    # 2. Buscar HTML padrão do ttyd
     html_content: str | None = None
     try:
-        url = f"http://localhost:{probe_port}/"
+        url = f"http://localhost:{TERMINAL_PORT}/"
         req = _urllib.Request(url, headers={"User-Agent": "PesquisAI-Touch-Setup"})
         html_content = _urllib.urlopen(req, timeout=5).read().decode("utf-8")
     except Exception as e:
         logger.warning("Falha ao buscar HTML do ttyd para touch handlers: %s", e)
 
-    # 3. Matar APENAS o ttyd de sondagem
-    #    v0.6.20: killpg no grupo próprio (start_new_session=True garante que
-    #    o grupo é exclusivo deste probe). REMOVIDO o `pkill -9 -x ttyd`,
-    #    que era global e derrubava o ttyd real de qualquer outra instância.
+    # 3. Matar ttyd temporário
+    #    v0.6.5: terminate/wait primeiro; fallback pkill -x (COMM exato) —
+    #    NUNCA pkill -f ttyd, que mataria também o ttyd real de outra thread.
     try:
         tmp_proc.terminate()
         tmp_proc.wait(timeout=3)
@@ -647,6 +570,7 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
             pass
     except Exception:
         pass
+    subprocess.run(["pkill", "-9", "-x", "ttyd"], capture_output=True, timeout=3)
     time.sleep(0.5)
 
     if not html_content:
@@ -845,21 +769,6 @@ def _wait_port_open(port: int, timeout_s: float = 10.0) -> bool:
         except OSError:
             time.sleep(0.25)
     return False
-
-
-def _port_is_open(port: int, timeout: float = 0.4) -> bool:
-    """v0.6.20: teste pontual — a porta responde AGORA?
-
-    `_wait_port_open` espera; este aqui só consulta. Usado por
-    /api/shutdown?mode=status e pelo watchdog para reportar o estado real
-    dos serviços sem bloquear.
-    """
-    import socket as _s
-    try:
-        with _s.create_connection(("127.0.0.1", port), timeout=timeout):
-            return True
-    except OSError:
-        return False
 
 
 def _consent_backup_file():
@@ -1646,32 +1555,6 @@ def start_wrapper_server():
                 self._json(200, {"ready": bool(ready), "port": TERMINAL_PORT})
                 return
             
-            if p == "/api/keepalive":
-                # v0.6.20 — estado do anti-encerramento do runtime do Colab.
-                #
-                # A thread do keepalive vive no KERNEL, e este wrapper roda no
-                # SUPERVISOR: dois processos diferentes. A única ponte entre
-                # eles é o arquivo JSON que o kernel publica — por isso a
-                # leitura é por arquivo e não por variável de módulo.
-                #
-                # Quando o keepalive nunca foi iniciado (ex.: o usuário rodou
-                # só a UI, sem passar pela célula do notebook), `ok` é False
-                # e a UI mostra "inativo" em vez de fingir que está protegido.
-                try:
-                    from . import keepalive as _ka
-                    _st = _ka.read_status_file()
-                except Exception as _exc:
-                    _st = None
-                self._json(200, {
-                    "ok": bool(_st),
-                    "status": _st,
-                    "hint": (
-                        "Inicie pela célula do notebook: "
-                        "from pesquisai.keepalive import start; start()"
-                    ),
-                })
-                return
-
             if p == "/api/backups":
                 try:
                     files = sorted(
@@ -1883,10 +1766,15 @@ def start_wrapper_server():
                 cand_files: list[str] = []
                 for _lg in _lang_order:
                     _sh = _lg.split("_")[0]
+                    # NOTA: o pt-BR canônico vive na RAIZ (AGENTS.md) e é
+                    # espelhado em agents/AGENTS.pt.md (cópia idêntica).
+                    # Se o espelho existir, é ele que é servido primeiro;
+                    # senão, o fallback canônico abaixo cobre o pt.
                     cand_files.append(f"AGENTS.{_sh}.md")
                     cand_files.append(f"AGENTS.{_lg}.md")
                 content = None
                 served_file = None
+                served_lang = None
                 tried_files = []
                 if agents_dir:
                     for fname in cand_files:
@@ -1897,10 +1785,25 @@ def start_wrapper_server():
                                 with open(fpath, "r", encoding="utf-8") as fh:
                                     content = fh.read()
                                 served_file = fname
+                                served_lang = fname[7:-3] if fname.startswith("AGENTS.") else ""
                                 break
                             except Exception as e:
                                 content = f"⚠️ Erro ao ler {fname}: {e}"
                                 break
+                if content is None:
+                    # Fallback canônico: <raiz>/AGENTS.md (pt-BR, fonte única).
+                    # Cobre o pt_BR (sem AGENTS.pt.md desde a remoção da
+                    # duplicata) e serve de última instância p/ qualquer idioma.
+                    _root_agents = os.path.join(parent, "AGENTS.md")
+                    tried_files.append(_root_agents)
+                    if os.path.isfile(_root_agents):
+                        try:
+                            with open(_root_agents, "r", encoding="utf-8") as fh:
+                                content = fh.read()
+                            served_file = "AGENTS.md"
+                            served_lang = "pt"
+                        except Exception as e:
+                            content = f"⚠️ Erro ao ler AGENTS.md: {e}"
                 if content is None:
                     self._json(200, {
                         "ok": False,
@@ -1914,7 +1817,8 @@ def start_wrapper_server():
                     "ok": True,
                     "lang": full,
                     "served_file": served_file or "",
-                    "fallback_used": bool(served_file and short not in str(served_file)),
+                    "served_lang": served_lang or short,
+                    "fallback_used": bool(served_lang and served_lang not in (short, full)),
                     "filename": served_file or f"AGENTS.{short}.md",
                     "content": content,
                 })
@@ -2330,102 +2234,6 @@ def start_wrapper_server():
             if p.startswith("/api/") and not self._authorized():
                 return self._reject_token()
             body = json.loads(self.rfile.read(length)) if length else {}
-
-            # ════════════════════════════════════════════════════════════
-            # v0.6.20 — "Sair com segurança": encerra o UFVAI e devolve
-            # as instruções de descarte do runtime do Colab.
-            #
-            # A CONFIRMAÇÃO é responsabilidade do frontend (modal); aqui
-            # exigimos `confirm: true` para que uma chamada acidental ou um
-            # clique em replay não derrube a sessão. `mode=status` permite só
-            # consultar o estado sem disparar a ação.
-            #
-            # Ordem deliberada:
-            #   1. desliga o watchdog (senão ele veria a porta 8000 cair e
-            #      "ressuscitaria" o ttyd enquanto a UI está sendo desmontada);
-            #   2. mata a árvore do terminal (ttyd + bash + opencode);
-            #   3. responde 200 — o wrapper precisa estar vivo para isso;
-            #   4. o frontend navega para o endpoint de desconexão do Colab.
-            # A limpeza completa do processo supervisor é feita pelo próprio
-            # supervisor ao receber o evento de shutdown.
-            # ════════════════════════════════════════════════════════════
-            if p == "/api/shutdown":
-                mode = (body.get("mode", "stop") or "stop").lower().strip()
-
-                if mode == "status":
-                    from . import colab_host as _ch
-                    self._json(200, {
-                        "ok": True,
-                        "host_pid": _ch.read_host_pid(),
-                        "in_colab": bool(IN_COLAB),
-                        "ttyd_alive": _port_is_open(TERMINAL_PORT),
-                        "wrapper_alive": _port_is_open(WRAPPER_PORT),
-                    })
-                    return
-
-                if not body.get("confirm"):
-                    self._json(400, {
-                        "ok": False,
-                        "error": "Shutdown exige confirm=true.",
-                    })
-                    return
-
-                logger.info("v0.6.20: shutdown solicitado via API.")
-
-                # 1. impede o watchdog de reiniciar o ttyd
-                try:
-                    from . import colab_host as _ch
-                    _ch.request_shutdown("api")
-                except Exception as exc:
-                    logger.warning("request_shutdown falhou: %s", exc)
-
-                # 2. derruba a árvore do terminal
-                try:
-                    _stop_terminal()
-                except Exception as exc:
-                    logger.warning("_stop_terminal falhou: %s", exc)
-
-                # 3. responde antes de qualquer encerramento do wrapper —
-                #    esta resposta é a última que o frontend receberá.
-                self._json(200, {
-                    "ok": True,
-                    "stopped": True,
-                    "in_colab": bool(IN_COLAB),
-                    "message": (
-                        "UFVAI encerrado. O runtime do Colab ainda está ativo; "
-                        "use o botão abaixo para liberá-lo."
-                    ),
-                    # Endpoint oficial do Colab que encerra e descarta o
-                    # runtime. O frontend redireciona o frame de topo para cá.
-                    "disconnect_url": (
-                        "https://colab.research.google.com/disconnect"
-                        if IN_COLAB else ""
-                    ),
-                })
-
-                # 4. agenda o encerramento do wrapper após a resposta.flush().
-                #    Usa daemon=False implícito via thread separada para não
-                #    matar a thread que está escrevendo a resposta.
-                def _finalize():
-                    time.sleep(0.6)
-                    try:
-                        server = getattr(self, "server", None)
-                        if server is not None:
-                            threading.Thread(
-                                target=server.shutdown, daemon=True
-                            ).start()
-                    except Exception:
-                        pass
-                    # Sem supervisor, o próprio processo do wrapper pode
-                    # encerrar. No Colab isso é desejado (a UI já está fora).
-                    try:
-                        if not IN_COLAB:
-                            os._exit(0)
-                    except Exception:
-                        pass
-
-                threading.Thread(target=_finalize, daemon=True).start()
-                return
 
             # ════════════════════════════════════════════════════════════
             # v0.5.1.4 — Memória Obsidian: salvar, criar, deletar nota
@@ -3235,6 +3043,30 @@ def start_wrapper_server():
                 self._json(200, {"ok": True, "deleted": True})
                 return
 
+            # ══════════════════════════════════════════════════════════
+            # v0.6.20 — Botão SAIR da interface (após confirmação no modal)
+            # ══════════════════════════════════════════════════════════
+            if p == "/api/shutdown":
+                # Exigência de segurança: a UI só envia {"confirm": true}
+                # após o usuário confirmar no modal. Sem isso, 400.
+                if not bool(body.get("confirm", False)):
+                    return self._json(400, {
+                        "ok": False,
+                        "error": "Confirmação ausente — o encerramento exige "
+                                 "confirmação explícita do usuário.",
+                    })
+                memory_saved = _shutdown_save_memory_note()
+                keepalive_killed = _shutdown_kill_keepalive()
+                # Desconecta/exclui o runtime APÓS responder (thread daemon),
+                # para a UI mostrar o estado "encerrando/encerrado".
+                _shutdown_schedule_unassign()
+                return self._json(200, {
+                    "ok": True,
+                    "memory_saved": bool(memory_saved),
+                    "keepalive_killed": bool(keepalive_killed),
+                    "message": "Encerrando o ambiente de execução…",
+                })
+
             self.send_error(404)
     
     # v0.6.9-6: offline completo — bind 0.0.0.0 resolve "porta não funciona" quando localhost
@@ -3779,6 +3611,125 @@ def show_launch_button(banner_url):
   </a>
 </div>
 """))
+
+
+# ══════════════════════════════════════════════════════════════════
+# v0.6.20 — Botão SAIR da interface: encerramento seguro do runtime
+# ══════════════════════════════════════════════════════════════════
+# Fluxo acionado pela UI (modal com confirmação → POST /api/shutdown):
+#   1. Salvar nota de fim de sessão na memória (best-effort, nunca bloqueia);
+#   2. Encerrar o keep-alive do notebook (PID em /tmp/pesquisai/ufvai_keepalive.pid,
+#      escrito pela célula de boot; fallback pkill pelo marcador de cmdline);
+#   3. Desconectar e excluir o runtime do Colab (runtime.unassign) — executado
+#      em thread daemon APÓS a resposta HTTP chegar ao frontend, para que a
+#      UI possa mostrar o estado "encerrando/encerrado" antes da queda.
+_KEEPALIVE_PID_FILE = "/tmp/pesquisai/ufvai_keepalive.pid"
+_KEEPALIVE_CMD_MARKER = "ufvai-keepalive-v0620"
+
+
+def _shutdown_save_memory_note() -> bool:
+    """Grava nota de fim de sessão na memória (best-effort, fail-open)."""
+    try:
+        from pesquisai.obsidian import ObsidianMemoryStatus
+        from pesquisai.obsidian.models import Note, NoteMetadata
+        from pesquisai.obsidian.models import extract_wikilinks, extract_tags
+        import datetime as _dt
+
+        mem = _get_memory()
+        if mem.status != ObsidianMemoryStatus.READY or mem._vault is None:
+            return False
+        today = _dt.date.today()
+        rel_path = f"sessions/ses_{today.isoformat()}-encerrado-via-interface.md"
+        body = (
+            f"# Sessão encerrada via interface — {today.isoformat()}\n\n"
+            "- **Evento:** usuário acionou o botão **SAIR** da interface do app "
+            "(confirmação explícita no modal) e o ambiente de execução foi "
+            "desconectado/excluído (`runtime.unassign`).\n"
+            f"- **Registrado automaticamente** pela rota `/api/shutdown` (v0.6.20) "
+            "para preservar o rastro da sessão na memória.\n"
+            "- Próxima sessão: recall em [[moc/last-state]].\n"
+        )
+        existing = mem.get(rel_path)
+        if existing is not None:
+            body = existing.body + "\n" + body
+        note = Note(
+            path=rel_path,
+            metadata=NoteMetadata(
+                title=f"Sessão encerrada via interface — {today.isoformat()}",
+                created=existing.metadata.created if existing else today,
+                updated=today,
+                tags=("pesquisai/session", "pesquisai/archived"),
+                created_by="pesquisai",
+                status="archived",
+            ),
+            body=body,
+            wikilinks=extract_wikilinks(body),
+            tags=extract_tags(body),
+        )
+        if existing is not None:
+            note.tags = tuple(sorted(set(note.tags) | set(existing.metadata.tags) | set(note.wikilinks and [])))
+        mem._vault.write(note, force=False)
+        return True
+    except Exception:
+        return False
+
+
+def _shutdown_kill_keepalive() -> bool:
+    """Encerra o subprocesso keep-alive do notebook (best-effort)."""
+    import signal  # import local: módulo não depende de signal no topo
+
+    pid: int | None = None
+    try:
+        with open(_KEEPALIVE_PID_FILE, "r", encoding="utf-8") as fh:
+            pid = int(fh.read().strip())
+    except Exception:
+        pid = None
+
+    if pid is not None and pid > 0 and pid != os.getpid():
+        try:
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(20):
+                time.sleep(0.05)
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    return True
+            os.kill(pid, signal.SIGKILL)
+            return True
+        except OSError:
+            pass
+
+    # Fallback: marcador na cmdline (PID file ausente/inválido)
+    try:
+        subprocess.run(
+            ["pkill", "-f", _KEEPALIVE_CMD_MARKER],
+            capture_output=True, timeout=5,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _shutdown_schedule_unassign(delay_s: float = 1.5) -> None:
+    """Desconecta/exclui o runtime do Colab após a resposta HTTP ser entregue.
+
+    O servidor wrapper roda em thread DENTRO do processo do kernel do Colab;
+    `google.colab.runtime.unassign()` age pelo canal do kernel e é o mesmo
+    mecanismo de *Runtime ▸ Desconectar e excluir ambiente* (colabtools).
+    Fora do Colab (offline/.deb), nada é feito.
+    """
+    def _worker():
+        try:
+            time.sleep(delay_s)
+            if not IN_COLAB:
+                return
+            from google.colab import runtime as _colab_runtime  # noqa: PLC0415
+            _colab_runtime.unassign()
+        except Exception:
+            # Fallback honesto: o usuário pode usar o menu Runtime.
+            pass
+
+    threading.Thread(target=_worker, daemon=True, name="ufvai-sair-unassign").start()
 
 
 def launch():
