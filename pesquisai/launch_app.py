@@ -3055,15 +3055,14 @@ def start_wrapper_server():
                         "error": "Confirmação ausente — o encerramento exige "
                                  "confirmação explícita do usuário.",
                     })
-                memory_saved = _shutdown_save_memory_note()
-                keepalive_killed = _shutdown_kill_keepalive()
-                # Desconecta/exclui o runtime APÓS responder (thread daemon),
-                # para a UI mostrar o estado "encerrando/encerrado".
-                _shutdown_schedule_unassign()
+                # v0.6.20-fix: resposta IMEDIATA. O trabalho lento (nota de
+                # fim de sessão no Drive/FUSE, kill do keep-alive e unassign)
+                # roda em thread daemon. Antes era tudo síncrono e a rota só
+                # respondia depois do write no Drive → o modal travava vários
+                # segundos antes de desconectar.
+                _shutdown_start()
                 return self._json(200, {
                     "ok": True,
-                    "memory_saved": bool(memory_saved),
-                    "keepalive_killed": bool(keepalive_killed),
                     "message": "Encerrando o ambiente de execução…",
                 })
 
@@ -3617,7 +3616,9 @@ def show_launch_button(banner_url):
 # v0.6.20 — Botão SAIR da interface: encerramento seguro do runtime
 # ══════════════════════════════════════════════════════════════════
 # Fluxo acionado pela UI (modal com confirmação → POST /api/shutdown):
-#   1. Salvar nota de fim de sessão na memória (best-effort, nunca bloqueia);
+#   0. A rota responde IMEDIATAMENTE (v0.6.20-fix) — todo o trabalho vai para
+#      uma thread daemon via _shutdown_start(), para a UI não travar no Drive;
+#   1. Salvar nota de fim de sessão na memória (best-effort, teto de 1 s);
 #   2. Encerrar o keep-alive do notebook (PID em /tmp/pesquisai/ufvai_keepalive.pid,
 #      escrito pela célula de boot; fallback pkill pelo marcador de cmdline);
 #   3. Desconectar e excluir o runtime do Colab (runtime.unassign) — executado
@@ -3688,8 +3689,10 @@ def _shutdown_kill_keepalive() -> bool:
     if pid is not None and pid > 0 and pid != os.getpid():
         try:
             os.kill(pid, signal.SIGTERM)
-            for _ in range(20):
-                time.sleep(0.05)
+            # v0.6.20-fix: espera curta (≤0,3 s) pelo TERM antes do KILL —
+            # o botão SAIR não pode ficar preso num processo teimoso.
+            for _ in range(15):
+                time.sleep(0.02)
                 try:
                     os.kill(pid, 0)
                 except OSError:
@@ -3710,7 +3713,7 @@ def _shutdown_kill_keepalive() -> bool:
         return False
 
 
-def _shutdown_schedule_unassign(delay_s: float = 1.5) -> None:
+def _shutdown_schedule_unassign(delay_s: float = 0.4) -> None:
     """Desconecta/exclui o runtime do Colab após a resposta HTTP ser entregue.
 
     O servidor wrapper roda em thread DENTRO do processo do kernel do Colab;
@@ -3730,6 +3733,53 @@ def _shutdown_schedule_unassign(delay_s: float = 1.5) -> None:
             pass
 
     threading.Thread(target=_worker, daemon=True, name="ufvai-sair-unassign").start()
+
+
+def _shutdown_start(
+    *,
+    memory_timeout_s: float = 1.0,
+    flush_s: float = 0.4,
+) -> None:
+    """Dispara o encerramento SEM bloquear a resposta HTTP (v0.6.20-fix).
+
+    Todo o trabalho lento — gravar a nota de fim de sessão na memória
+    (Drive/FUSE), encerrar o keep-alive e desligar o runtime — roda em
+    thread daemon. A rota ``/api/shutdown`` responde na hora e a UI fecha o
+    modal imediatamente, sem os segundos de espera do write no Drive.
+
+    A gravação da nota tem um **teto** (``memory_timeout_s``): desconectar
+    não pode depender de uma escrita lenta no Drive. A nota é *best-effort*
+    e o progresso real já é salvo continuamente pelo agente.
+    """
+    def _worker() -> None:
+        # 1. Nota de fim de sessão em paralelo (não bloqueia o kill).
+        note_done = threading.Event()
+
+        def _save() -> None:
+            try:
+                _shutdown_save_memory_note()
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                note_done.set()
+
+        threading.Thread(
+            target=_save, daemon=True, name="ufvai-sair-memoria",
+        ).start()
+
+        # 2. Encerra o keep-alive (rápido) enquanto a nota é gravada.
+        try:
+            _shutdown_kill_keepalive()
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 3. Espera a nota apenas até o teto — nunca além disso.
+        note_done.wait(timeout=memory_timeout_s)
+
+        # 4. Só então derruba o kernel, garantindo o flush da resposta HTTP.
+        _shutdown_schedule_unassign(delay_s=flush_s)
+
+    threading.Thread(target=_worker, daemon=True, name="ufvai-sair").start()
 
 
 def launch():

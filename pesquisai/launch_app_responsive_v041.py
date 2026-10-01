@@ -1637,9 +1637,10 @@ def create_wrapper_html(
         if (r.ok && resp.ok) {
           document.getElementById("sair-done").style.display = "block";
           document.getElementById("sair-status").textContent = "";
-          // O runtime cai em ~1,5s (thread daemon do backend). A UI já
-          // mostra o estado final; nada mais a fazer aqui.
-          setTimeout(function() { ufvaiExitCancel(); }, 2500);
+          // v0.6.20-fix: a rota responde na hora (o unassign é agendado em
+          // thread daemon no backend). Fechamos o modal assim que a resposta
+          // chega, sem a antiga espera fixa de 2,5 s.
+          setTimeout(function() { ufvaiExitCancel(); }, 600);
         } else {
           yes.disabled = false; yes.style.opacity = "1";
           st.textContent = resp.error || d.fail;
