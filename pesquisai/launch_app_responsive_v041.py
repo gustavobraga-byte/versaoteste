@@ -1357,6 +1357,13 @@ def create_wrapper_html(
     // ════════════════════════════════════════════════════════════
 
     const BASE = location.origin;
+    // v0.6.20-fix: IS_COLAB precisa existir no escopo DESTE script.
+    // Antes, o único `IS_COLAB` era declarado dentro da IIFE do GA4 (script
+    // posterior, escopo local); o uso top-level no bloco do botão SAIR
+    // lançava `ReferenceError: IS_COLAB is not defined`, abortando todo este
+    // script ANTES de registrar o listener de `load` — o splash nunca era
+    // escondido e a UI travava em "Iniciando terminal…".
+    const IS_COLAB = {__IS_COLAB__};
     const LANGS = {__LANGS_JSON__};
     const I18N = {__I18N_JSON__};
     const LANG_COOKIE = "pesquisai_lang";
