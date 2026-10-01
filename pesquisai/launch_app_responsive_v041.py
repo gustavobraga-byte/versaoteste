@@ -162,12 +162,24 @@ RESPONSIVE_CSS: str = """
     .mobile-menu .tb-btn svg,
     .mobile-menu .btn-provider svg { display: none !important; }
     .hamburger { display: inline-flex; }
-    #footer { padding: 0 8px; height: 36px; }
+    #footer { padding: 0 8px; height: 36px; gap: 12px; }
+    /* v0.6.20-fix: rodapé mobile = SOMENTE ÍCONES (todo texto escondido).
+       - .footer-link font-size:0 colapsa o texto do link; o SVG mantém tamanho fixo em px.
+       - .footer-loc ("UFV · Viçosa, MG") sai TAMBÉM no mobile intermediário (480–767px),
+         e não apenas abaixo de 480px.
+       - Separadores (.footer-sep) desativados: sem texto, o separador fica órfão
+         (ex.: o que precedia o texto oculto / o que antecedia o "Powered by").
+         O gap do #footer passa a dar o espaçamento entre os ícones. */
     .footer-brand { display: none; }
-    .footer-sep { margin: 0 6px; }
-    .footer-link { font-size: 11px; }
-    .btn-provider { padding: 0 6px; font-size: 9px; height: 20px; }
+    .footer-loc { display: none; }
     .footer-oc { display: none; }
+    #footer .footer-sep { display: none; }
+    .footer-link { font-size: 0; }
+    .footer-link svg { margin-right: 0; }
+    .btn-provider { padding: 0 6px; font-size: 9px; height: 20px; }
+    .footer-right { gap: 10px; }
+    .footer-right .btn-provider { gap: 0; }
+    .footer-right .btn-provider span { display: none; }  /* "+ provedor" vira só o ícone */
     /* terminal: ocupa mais espaço em mobile */
     #terminal-frame { height: calc(100vh - 50px - 36px) !important; }
     /* modais: largura quase total */
@@ -212,12 +224,8 @@ RESPONSIVE_CSS: str = """
     .footer-sep:nth-of-type(3) { display: none; }
   }
 
-  /* v0.6.20-fix: rodapé responsivo com o link do SITE OFICIAL.
-     Em telas muito pequenas (<480px) o texto "UFV · Viçosa, MG - Brasil"
-     sai de cena para o link 🌐 Site caber sem quebrar a linha. */
-  @media (max-width: 479px) {
-    .footer-loc { display: none; }
-  }
+  /* v0.6.20-fix: coberto pelo bloco ≤767px — rodapé mobile = somente ícones
+     (nada a fazer aqui para o rodapé). */
 
   /* === Acessibilidade: foco visível em todos os botões === */
   .tb-btn:focus-visible, .tb-icon:focus-visible, .hamburger:focus-visible,
@@ -992,12 +1000,12 @@ def create_wrapper_html(
   <div id="footer">
     <span class="footer-brand">UFVAI</span>
     <span class="footer-sep"></span>
-    <a href="mailto:gustavo.braga@ufv.br" class="footer-link">
+    <a href="mailto:gustavo.braga@ufv.br" class="footer-link" title="gustavo.braga@ufv.br" aria-label="E-mail">
       <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
       gustavo.braga@ufv.br
     </a>
     <span class="footer-sep"></span>
-    <a href="https://github.com/gustavobraga-byte/PesquisAI" target="_blank" class="footer-link">
+    <a href="https://github.com/gustavobraga-byte/PesquisAI" target="_blank" class="footer-link" title="GitHub" aria-label="GitHub">
       <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
       GitHub
     </a>
