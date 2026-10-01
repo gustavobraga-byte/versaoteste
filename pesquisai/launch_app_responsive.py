@@ -196,6 +196,8 @@ RESPONSIVE_CSS: str = """
     .mobile-menu { width: 100vw; max-width: 100vw; }
     #footer { font-size: 9px; }
     .footer-link svg { width: 9px; height: 9px; }
+    /* v0.6.20-fix: rodapé responsivo — link 🌐 Site priorizado no mobile */
+    .footer-loc { display: none; }
   }
 
   /* === Landscape em mobile (altura < 500px) === */
@@ -766,7 +768,7 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       <span data-i18n="providers.title">+ provedor</span>
     </button>
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
-    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <pan data-i18n="dashboard.title">Dashboard de Saúde</span></button>
+    <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
@@ -802,7 +804,13 @@ def create_wrapper_html(terminal_url: str, drive_url: str) -> str:
       GitHub
     </a>
     <span class="footer-sep"></span>
-    <span style="color:var(--ink-muted)">UFV · Viçosa, MG - Brasil</span>
+    <!-- v0.6.20-fix: link do SITE OFICIAL no rodapé (falta reportada pelo usuário) -->
+    <a href="https://gustavobraga-byte.github.io/ufvaisite/" target="_blank" rel="noopener" class="footer-link footer-site" title="Site oficial do UFVAI">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Site
+    </a>
+    <span class="footer-sep"></span>
+    <span style="color:var(--ink-muted)" class="footer-loc">UFV · Viçosa, MG - Brasil</span>
 
     <div class="footer-right">
       <button class="btn-provider" onclick="connectProvider()" title="Conectar novo provedor de IA">

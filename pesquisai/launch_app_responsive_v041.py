@@ -212,6 +212,13 @@ RESPONSIVE_CSS: str = """
     .footer-sep:nth-of-type(3) { display: none; }
   }
 
+  /* v0.6.20-fix: rodapé responsivo com o link do SITE OFICIAL.
+     Em telas muito pequenas (<480px) o texto "UFV · Viçosa, MG - Brasil"
+     sai de cena para o link 🌐 Site caber sem quebrar a linha. */
+  @media (max-width: 479px) {
+    .footer-loc { display: none; }
+  }
+
   /* === Acessibilidade: foco visível em todos os botões === */
   .tb-btn:focus-visible, .tb-icon:focus-visible, .hamburger:focus-visible,
   .lang-btn:focus-visible, .lang-option:focus-visible {
@@ -995,7 +1002,13 @@ def create_wrapper_html(
       GitHub
     </a>
     <span class="footer-sep"></span>
-    <span style="color:var(--ink-muted)">UFV · Viçosa, MG - Brasil</span>
+    <!-- v0.6.20-fix: link do SITE OFICIAL no rodapé (falta reportada pelo usuário) -->
+    <a href="https://gustavobraga-byte.github.io/ufvaisite/" target="_blank" rel="noopener" class="footer-link footer-site" title="Site oficial do UFVAI">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Site
+    </a>
+    <span class="footer-sep"></span>
+    <span style="color:var(--ink-muted)" class="footer-loc">UFV · Viçosa, MG - Brasil</span>
     <span class="footer-sep"></span>
 
     <div class="footer-right">
@@ -3812,16 +3825,20 @@ def create_wrapper_html(
       var okName=_validName((nm&&nm.value||"").trim());
       btn.disabled=!(chk.checked && okMail && okName);
     }
-    function _post(accepted, analytics, contactEmail, contactName){
+    function _post(accepted, analytics, contactEmail, contactName, onDone){
       try{
         var payload={accepted:accepted,analytics:analytics,terms_version:_TV};
         if(contactEmail!==undefined) payload.contact_email=contactEmail;
         if(contactName!==undefined) payload.contact_name=contactName;
         if(__UFVAI_CLIENT_IP__) payload.ip=__UFVAI_CLIENT_IP__;
+        // v0.6.20-fix: quando onDone vem preenchido (fluxo do aceite), o
+        // heartbeat "usuario_ativo" é disparado DEPOIS da resposta do
+        // /api/consent — o perfil já está gravado no servidor e a planilha
+        // recebe exatamente 1 linha (e-mail · nome · IP) por clique do botão.
         fetch("/api/consent",{method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(payload)}).catch(function(){});
-      }catch(e){}
+          body:JSON.stringify(payload)}).then(function(){ if(onDone) try{onDone();}catch(e){} })["catch"](function(){ if(onDone) try{onDone();}catch(e){} });
+      }catch(e){ if(onDone) try{onDone();}catch(e2){} }
     }
     var _heartbeatSent=false;
     function _heartbeat(){
@@ -3897,7 +3914,10 @@ def create_wrapper_html(
       if(err) err.textContent="";
       localStorage.setItem("ufvai_terms_version",_TV);
       localStorage.setItem("ufvai_analytics", an.checked?"1":"0");
-      _post(true, an.checked, v, vn);
+      // v0.6.20-fix: o aceite NÃO grava mais linha "novo_contato" na
+      // planilha. A ÚNICA linha vem do heartbeat "usuario_ativo" (com IP),
+      // disparado pelo clique deste botão APÓS o consent ser processado.
+      _post(true, an.checked, v, vn, _heartbeat);
       ov.style.display="none";
       if(_autofillTimer){ clearInterval(_autofillTimer); _autofillTimer=null; }
       // v0.6.9: telemetria ativa por padrão — liga o GA se NÃO desmarcada (opt-out)

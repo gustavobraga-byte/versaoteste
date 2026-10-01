@@ -46,7 +46,8 @@ _FORM_VIEW_URL = ("https://docs.google.com/forms/d/e/"
     "1FAIpQLSd773cm2qDkwpXzbz50IVhGSG7rpC527taTYGsdUes0Lh1s2A/viewform")
 # Webhook do desenvolvedor (Apps Script → Planilha). Ver scripts/webhook-contatos.gs
 # v0.6.10 (01/09): endpoint atualizado (solicitação usuário)
-_DEFAULT_CONTACT_ENDPOINT = "https://script.google.com/macros/s/AKfycbxel3-_75htD3b5bd0HEPLSCWHSj79CR_Tf4IH6sEWscBlhF3jOjcNBaKbCuffcWskH/exec"
+# v0.6.20 (01/10): nova implantação do Apps Script (nova URL /exec)
+_DEFAULT_CONTACT_ENDPOINT = "https://script.google.com/macros/s/AKfycby1zrMKMbySw-eZ6v-9W8G-6GRXcyyO77YYMKSG7vZfGF34mqWF-02XgBVs4FHPtmQ6/exec"
 
 _FALSEY = ("0", "false", "off", "no")
 
@@ -382,6 +383,12 @@ def save_contact(email: str, name: str | None = None, ip: str | None = None) -> 
                                and str(_prev.get("email", "")).strip().lower() == addr)
     except Exception:
         _already_registered = False
+    # v0.6.20-fix (segunda rodada): a planilha do desenvolvedor recebe
+    # EXATAMENTE UMA linha por ativação/retorno — o heartbeat "usuario_ativo"
+    # (com IP) disparado pelo clique do botão Continuar/ABRIR via /api/access
+    # → notify_active_user(). Aqui NÃO há mais forward "novo_contato": o
+    # primeiro aceite grava apenas o perfil local/Drive; a linha única só é
+    # escrita quando o usuário clica no botão.
     try:
         os.makedirs(os.path.dirname(_PROFILE_FILE), exist_ok=True)
         # preserva campos antigos se já existirem (ex.: ip não persiste)
@@ -423,9 +430,12 @@ def save_contact(email: str, name: str | None = None, ip: str | None = None) -> 
         return True, "Contato atualizado com sucesso."
     # Contador ANÔNIMO para o GA4 (sem nenhum dado derivado do e-mail/nome/ip)
     event("contact_optin")
-    # Canal direto do desenvolvedor (opcional): envia o endereço real por HTTPS
-    # v0.6.10: encaminha nome e ip juntos
-    threading.Thread(target=_forward_contact, args=(addr, sha, "novo_contato", cname, ip or ""), daemon=True).start()
+    # v0.6.20-fix: NÃO há forward "novo_contato" ao endpoint — a planilha do
+    # desenvolvedor recebe a linha ÚNICA "usuario_ativo" (e-mail · nome · IP)
+    # somente no clique do botão Continuar/ABRIR (/api/access →
+    # notify_active_user()). Isso elimina a duplicação na planilha.
+    _contato_log("primeiro aceite: perfil gravado localmente — planilha aguarda "
+                 "'usuario_ativo' do clique do botão (linha única)")
     return True, "Contato registrado com sucesso."
 
 
@@ -480,9 +490,12 @@ def _forward_contact(addr: str, sha: str, kind: str = "novo_contato", name: str 
     O webhook (UFVAI_CONTACT_ENDPOINT) é o único canal confiável.
 
     ``kind`` distingue o tipo de registro gravado na planilha:
-      • "novo_contato" — primeiro aceite da tela de Termos (opt-in);
-      • "usuario_ativo" — reabertura: usuário já ativo, cada novo acesso
-        (heartbeat da tela "Bem-vindo de volta" → flag na planilha).
+      • "usuario_ativo" — ÚNICO tipo enviado (v0.6.20): cada ativação/retorno
+        grava 1 linha com e-mail + nome + IP, disparada pelo clique do botão
+        (Continuar/ABRIR → /api/access → notify_active_user()).
+      • "novo_contato" — legado (primeiro aceite da tela de Termos); SEM uso
+        desde a v0.6.20: o aceite grava apenas o perfil local/Drive, sem
+        linha na planilha, eliminando a duplicação de registro.
 
     v0.6.10: ``name`` e ``ip`` são enviados juntos (nome ao lado do e-mail;
     IP capturado do X-Forwarded-For/remote_addr). O IP é coletado com
@@ -685,7 +698,9 @@ def notify_active_user(ip: str | None = None) -> None:
     Na reabertura (perfil persistente existente + mesma versão dos Termos),
     a UI mostra a tela "Bem-vindo de volta" e, ao confirmar, chama este
     heartbeat: o webhook recebe o e-mail + horário do acesso + flag
-    "usuario_ativo", distinguindo-o do "novo_contato" (primeiro aceite).
+    "usuario_ativo". v0.6.20: este é o ÚNICO registro que a planilha recebe
+    — o primeiro aceite também chega aqui (perfil já gravado por
+    save_contact), garantindo exatamente 1 linha por ativação.
 
     v0.6.10: ``ip`` capturado da requisição (X-Forwarded-For) é encaminhado
     junto ao webhook para métrica de ativação geográfica/segurança.
