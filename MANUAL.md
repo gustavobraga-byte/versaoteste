@@ -484,6 +484,14 @@ Quando terminar, o próprio painel finaliza em 100% exibindo a **logomarca ofici
 ![Splash de inicialização do terminal](manual-figuras/splash-terminal-real.jpeg)
 *Figura 3 — Splash real de conexão: logomarca UFVAI, spinner dourado e status "Iniciando terminal…".*
 
+### 1.4.1 Keep-alive e botão SAIR (v0.6.20)
+
+Desde a **v0.6.20**, o notebook mantém o runtime do Colab ativo com um **keep-alive em background** (subprocesso que grava 1 linha a cada 60s em `/tmp/pesquisai/ufvai_keepalive.log`) — o combate à ociosidade funciona mesmo com a aba minimizada.
+
+> **Limite honesto:** nada impede o Colab de destruir o runtime (~12 h de teto, cota, decisão do backend). Memória, skills e configurações vivem no seu Drive — se cair: **Runtime → Reiniciar sessão → Executar tudo**.
+
+**Para encerrar por completo (economiza cota):** no card **ENCERRAR SESSÃO** exibido abaixo da barra de carregamento, clique em **SAIR**. O UFVAI **pede confirmação** (SIM, SAIR / CANCELAR) e, ao confirmar, desconecta e **exclui o ambiente de execução** (equivalente a *Runtime ▸ Desconectar e excluir ambiente*, via `google.colab.runtime.unassign()`). Tudo em memória é perdido — **os arquivos no seu Drive continuam salvos**. Não há como desfazer após confirmar.
+
 ### 1.5 O aceite obrigatório (Termos de Uso) — a primeira tela
 
 > **Sem o aceite, o UFVAI não abre.** A tela de Termos de Uso é a **única tela de abertura** do aplicativo — não existe modal intermediário nem forma de pular.
@@ -1260,7 +1268,7 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
-| **0.6.20** | 30/09/2026 | 🫀 Anti-encerramento do Colab (keepalive em 3 camadas) + "Sair com segurança" + supervisor autopreservado + notebook enxuto |
+| **0.6.20** | 01/10/2026 | 🫀 Boot simplificado do Colab (ipynb: clone + `run()` no kernel + keep-alive em subprocesso, log `ufvai_keepalive.log`) + botão **SAIR** com confirmação (encerra o keep-alive e chama `runtime.unassign()` — desconecta e exclui o ambiente) |
 | **0.6.19** | 29/09/2026 | 📱 Menu mobile sem SVG (`.tb-icon{display:none}` ≤767px, drawer sem SVG) + hamburger alinhado à direita (`#topbar .sep{display:none}` ≤767px, evita `flex:1` × `margin-left:auto`) + teste de regressão de cascata + docs em paridade (§2.1.0 skills personalizadas) |
 | **0.6.18** | 19/09/2026 | 🧩 Skills personalizadas (`backups/skills-personalizadas/` a cada boot) |
 | **0.6.17** | 01-02/09/2026 | ⚡ **Memória abre instantânea via menu**: singleton `_get_memory()` em RAM (índice BM25 construído 1×), rebuild em background (stale-while-revalidate), warm-up no boot, árvore em RAM, cache frontend 120 s + prefetch |

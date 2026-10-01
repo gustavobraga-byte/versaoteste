@@ -146,14 +146,14 @@ O agente opera por *skills* — cada uma conecta a uma fonte ou capacidade.
 
 ## 🆕 Novidades
 
-**v0.6.20 — 🫀 Anti-encerramento do Colab: keepalive em 3 camadas (célula + thread no kernel) + "Sair com segurança"** (o runtime sobrevive à aba minimizada; o botão encerra o UFVAI e libera a VM) · **v0.6.19 — 📱 Menu mobile sem SVG + hamburger à direita + docs em paridade** (esconde `.tb-icon` quando hamburger aparece; alinha o hamburger à direita em ≤767px via `#topbar .sep{display:none}` — o `flex:1` do `.sep` vencia o `margin-left:auto` do `.tb-icons`; novo teste resolve a cascata de verdade; AGENTS + 5 traduções com §2.1.0) · **v0.6.18 — 🧩 Skills personalizadas** (`backups/skills-personalizadas/` a cada boot) · **v0.6.17 — ⚡ Memória abre instantânea** (singleton + warm-up + prefetch; 2ª abertura em µs) · **v0.6.16 — 1 linha por retorno** (heartbeat só no clique *Continuar*) · **v0.6.15 — idioma detectado** (sistema/navegador) · **v0.6.14 — IP real via ipify + todo acesso logado** · **v0.6.13 — IP real + heartbeat `usuario_ativo`** · **v0.6.10 — Nome+IP, planilha 8 colunas, cache BM25, mobile** · **v0.6.9 — Termos v2.1, e-mail obrigatório, opt-out sem cookies, .deb offline**.
+**v0.6.20 — 🫀 Boot simplificado + keep-alive em subprocesso + botão SAIR** (boot do Colab de volta ao fluxo simples da 0.6.17: clone + `main.run()` no kernel, sem supervisor; keep-alive em background grava 1 linha/60s em `ufvai_keepalive.log`; botão **SAIR** com confirmação desconecta e exclui o ambiente via `runtime.unassign()` — colabtools #2568) · **v0.6.19 — 📱 Menu mobile sem SVG + hamburger à direita + docs em paridade** (esconde `.tb-icon` quando hamburger aparece; alinha o hamburger à direita em ≤767px via `#topbar .sep{display:none}` — o `flex:1` do `.sep` vencia o `margin-left:auto` do `.tb-icons`; novo teste resolve a cascata de verdade; AGENTS + 5 traduções com §2.1.0) · **v0.6.18 — 🧩 Skills personalizadas** (`backups/skills-personalizadas/` a cada boot) · **v0.6.17 — ⚡ Memória abre instantânea** (singleton + warm-up + prefetch; 2ª abertura em µs) · **v0.6.16 — 1 linha por retorno** (heartbeat só no clique *Continuar*) · **v0.6.15 — idioma detectado** (sistema/navegador) · **v0.6.14 — IP real via ipify + todo acesso logado** · **v0.6.13 — IP real + heartbeat `usuario_ativo`** · **v0.6.10 — Nome+IP, planilha 8 colunas, cache BM25, mobile** · **v0.6.9 — Termos v2.1, e-mail obrigatório, opt-out sem cookies, .deb offline**.
 
 <details>
 <summary>Histórico 0.6.x completo</summary>
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
-| **0.6.20** | 30/09/2026 | 🫀 Anti-encerramento do Colab (keepalive em 3 camadas) + "Sair com segurança" + supervisor autopreservado + notebook enxuto |
+| **0.6.20** | 01/10/2026 | Boot simplificado (ipynb: clone + run + keep-alive subprocesso) + botão SAIR com confirmação (runtime.unassign) |
 | **0.6.19** | 29/09/2026 | Menu mobile sem SVG + hamburger à direita no mobile (fix `.sep` `flex:1`) + teste de cascata + docs em paridade (§2.1.0) |
 | **0.6.18** | 19/09/2026 | Skills personalizadas (`backups/skills-personalizadas/`) |
 | **0.6.17** | 01/09/2026 | Memória instantânea (singleton + warm-up + prefetch) |

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pesquisai-additions"
 version = "0.6.20"
-description = "UFVAI v0.6.20 (engine PesquisAI) — anti-encerramento do Colab (keepalive em 3 camadas: célula + thread no kernel) + 'Sair com segurança' (encerra o runtime) + hamburger à direita no mobile + docs em paridade (skills personalizadas) + obsidian autopilot + grant_finder + i18n (5 idiomas incl. 简体中文) + termos v6 nome+IP + memória instantânea (singleton BM25 + warm-up + prefetch) + IP ipify + heartbeat no clique + idioma inicial detectado"
+description = "UFVAI v0.6.20 (engine PesquisAI) — boot do Colab simplificado (clone + run) + keep-alive em subprocesso (log ufvai_keepalive.log) + botão SAIR com confirmação (desconecta e exclui o runtime via runtime.unassign) + hamburger alinhado à direita no mobile + docs em paridade (skills personalizadas backups/skills-personalizadas) + obsidian autopilot + grant_finder + i18n (5 idiomas incl. 简体中文) + termos v6 nome+IP + memória instantânea (singleton BM25 + warm-up + prefetch) + responsiva mobile + IP ipify + heartbeat no clique + idioma inicial detectado"
 authors = [
     { name = "Gustavo Bastos Braga", email = "gustavo.braga@ufv.br" },
 ]

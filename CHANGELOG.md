@@ -1,31 +1,26 @@
 # Changelog — PesquisAI
 
-## [0.6.20] — 2026-09-30 — 🫀 Anti-encerramento do Colab (keepalive em 3 camadas) + "Sair com segurança"
+## [0.6.20] — 2026-10-01 — 🫀 Boot simplificado + keep-alive em subprocesso + botão SAIR
 
-### 🫀 O Colab não encerra mais o runtime com a aba minimizada
-- **Sintoma:** *"o Colab está constantemente encerrando o ambiente de execução"* — inclusive ao minimizar a aba. O keepalive anterior (JS que clicava o botão de conexão a cada 60 s) morria nesse cenário: o Chrome estrangula timers de página oculta e pode congelar a página; e o Colab decide a ociosidade no **backend**, por atividade do kernel.
-- **Solução (`pesquisai/keepalive.py`, novo):** heartbeat vindo do **kernel**, em três camadas —
-  - **L0 — célula executando** (`keepalive.loop()`, última célula do notebook): mantém o kernel ativo mesmo com a aba minimizada (**camada principal**);
-  - **L1 — thread daemon no kernel** (`keepalive.start()`): ping `cell_javascript_eval` a cada 50 s; sobrevive a Ctrl+C e ao fechamento da aba;
-  - **L2 — JavaScript no navegador** (`colab_host.keepalive_js()`): clique no botão + diálogo "Runtime disconnected" + **wake lock** + ping ao voltar a ficar visível (45 s) — apoio.
-- **Fundamento verificado:** `googlecolab/google-colab-cli` (2026-09-25): *"VM liveness is automatically maintained by the Colab backend based on kernel activity"*; o ping HTTP no TFE exige bearer token (401) — inviável.
-- **Decisões à prova de regressão:** `expect_reply=False` sempre (a resposta chega pelo `stdin` — ler descartaria o `input()` do usuário); dois locks com ordem fixa **estado → envio** (sem deadlock entre L0/L1); `pings_ok` = mensagens emitidas (não confirmação — o módulo nunca lê o stdin).
-- **Integração:** célula "🫀 MANTER VIVO" no notebook (markdown + código) + `keepalive.start()` no boot; rota `/api/keepalive` (arquivo-ponte kernel → supervisor/UI); `UFVAI_NO_KEEPALIVE=1` desliga (padrão no Dockerfile/offline).
-- **Limite honesto (documentado no módulo e no notebook):** teto de ~12 h do serviço, cota, CAPTCHA e decisões do backend continuam valendo — nenhum código na VM impede o Colab de destruir o runtime; a versão maximiza a sobrevivência e deixa a recuperação a um clique (memória/skills/config vivem no Drive).
+### 🎯 Nova direção (mudança de planos)
+- **Descartada** a abordagem da 0.6.20 bugada de 30/09 (supervisor desacoplado `colab_host.py`/`spawn_detached` — travava em "Aguardando a interface ficar pronta…" porque `eval_js(proxyPort)` e `drive.mount` exigem o kernel do Colab e abortavam antes de gravar o `READY_FILE`). **Rollback** foi feito e a base desta release é a **v0.6.19 estável**, sem alteração funcional no pacote — a 0.6.20 vive **somente no `PesquisAI.ipynb`**.
 
-### 🚪 "Sair com segurança" (novo)
-- Botão na topbar + item no drawer do mobile: confirma → `POST /api/shutdown` (encerra supervisor/ttyd) → tela final com **contagem regressiva de 10 s** para **liberar o runtime do Colab** (desconexão oficial) ou "só encerrar o UFVAI e manter o runtime". i18n `exit.*` nos 5 idiomas; fora do Colab a parte de runtime some (não se aplica).
+### 📦 Novo `PesquisAI.ipynb` (única mudança de código)
+- **Célula de boot simplificada:** painel da logomarca (5% → 12% → 20%) → clone/pull do repositório (`git pull --ff-only --depth 1` em `/tmp/pesquisai`) → `from main import run; run()` **direto no kernel do Colab** (fluxo comprovado da v0.6.17/0.6.19, sem supervisor) → painel 100%.
+- **🫀 Keep-alive em background (subprocesso):** `subprocess.Popen(sys.executable, start_new_session=True)` imprime 1 linha a cada 60s em `/tmp/pesquisai/ufvai_keepalive.log` (saída em arquivo — mantém a política "painel único", zero texto solto no notebook). Limite honesto documentado na célula: nada impede o Colab de destruir o runtime (~12 h de teto, cota, decisão do backend).
+- **🔴 Botão SAIR (novo, card abaixo da barra de carregamento):**
+  - Exibido após o boot bem-sucedido **somente no Colab** (registro real de callback via `google.colab.output.register_callback("ufvai.exit", …)`);
+  - **Confirmação obrigatória:** clique em SAIR abre painel de confirmação (SIM, SAIR / CANCELAR) com aviso claro — tudo em memória é perdido, arquivos no Drive continuam salvos, não há como desfazer;
+  - Ao confirmar: encerra o keep-alive (`terminate` → `wait` → fallback `kill`), atualiza o painel de boot ("Encerrando o ambiente…") e chama **`google.colab.runtime.unassign()`** — desconecta e exclui o runtime (equivalente a *Runtime ▸ Desconectar e excluir ambiente*; colabtools #2568);
+  - Fallback honesto: se `invokeFunction` falhar, o card orienta usar o menu **Runtime** manualmente (nenhuma chamada inventada);
+  - Fora do Colab o card não é exibido (sem `google.colab` disponível).
+- **Documentação:** células markdown do ipynb atualizadas (instruções de uso, keep-alive e SAIR; citação ABNT v0.6.20).
 
-### 🛡️ Boot (supervisor) mais seguro
-- `kill_previous` autopreservado: `UFVAI_NO_KILLPREVIOUS=1` desliga; o `pkill` de python agora só atinge processos com o marcador `UFVAI_HOST_CHILD=1` (nunca o supervisor/processo atual); ttyd segue por COMM exato.
+### 🔢 Versionamento e docs em paridade
+- Bump `0.6.19 → 0.6.20` em `pesquisai/__version__.py` (`__version__`, `__release_date__="2026-10-01"`, `__codename__="Boot simplificado + keep-alive em subprocesso + botão SAIR no Colab"`), `pyproject.toml` (versão + descrição), `Dockerfile` (comentário + LABEL), `README.md` (badge, novidades, tabela de versões, citação, BibTeX, rodapé), `MANUAL.md` (cabeçalho, citações, tabela, rodapé), `AGENTS.md` + `agents/AGENTS.{en,es,fr,pt,zh}.md` (frontmatter + rodapé), `citacao_pesquisai.md`, `PesquisAI.ipynb`.
+- **Pendente (humano):** publish no GitHub (o ipynb clona de `gustavobraga-byte/PesquisAI`); rebuild do `.deb` não é exigido (o código do pacote é idêntico à v0.6.19 — a mudança vive só no notebook).
 
-### 🧪 Testes
-- **Novo:** `tests/test_keepalive.py` — 28 testes (expect_reply, ordem dos locks/sem deadlock, degradação fora do Colab, idempotência, payload JS, rota da API).
-- `tests/test_colab_host.py` (45 s + wake lock) e `tests/test_responsive_hamburger.py` (agora 5 arquivos vivos) atualizados; suíte completa e `test_version_sync` verdes.
-
-### 🧹 Manutenção
-- Repositório consolidado no projeto **`UFVAI-v0.6.9/`**; pasta `ufvai-github/` descontinuada (arquivada). Cópias de produção da raiz em paridade (correções: `<span>` no drawer, fluxo de restauração com `ttyd_restarted`).
-- `PesquisAI.ipynb` enxugado (comentários condensados) e `REPO_URL` → `PesquisAI.git` (versão final de publicação).
+---
 
 ## [0.6.19] — 2026-09-29 — 📱 Menu mobile sem SVG + hamburger à direita + docs em paridade
 
