@@ -1,5 +1,71 @@
 # Changelog — PesquisAI
 
+## [Não lançado] — 2026-10-13 — 🔧 Migração do motor para a **OpenCode V2** · 🍪 Aviso de cookies de terceiros · 🫀 Keep-alive por célula bloqueante
+
+> **Sem bump de versão (decisão do autor):** a migração ainda não foi validada em
+> execução real no Colab com o motor 2.x instalado — por isso ela fica em
+> "Não lançado" e o número continua **0.6.20**. Promover para uma versão própria
+> (0.7.0) só depois da validação de campo.
+
+### 🔧 Motor OpenCode V2 (a mudança de fundo)
+- **O que mudou:** o UFVAI passou a rodar sobre o **OpenCode 2.x**. A V2 abandonou `config.json` e `tui.json`; a configuração do motor vive em `~/.config/opencode/opencode.json` e a do cliente de terminal em `~/.config/opencode/cli.json`.
+- **Instalador:** `https://opencode.ai/v2/install` (constante `OPENCODE_INSTALL_V2`), com fallback para o pacote npm oficial `@opencode/cli`. O V1 instalado é **atualizado no lugar** (mesmo `~/.opencode/bin`).
+- **Detecção de versão:** `opencode_utils` ganhou `opencode_version_string()`, `opencode_major()` e `is_opencode_v2()`. `find_opencode()` passa a **preferir o binário 2.x** entre todos os candidatos — antes, um `opencode` 1.x antigo no PATH era escolhido e o boot tentava atualizar a cada inicialização.
+- **`--auto` no lugar de `--yolo`:** é a flag de autoaprovação da V2. Desligar continua possível com `PESQUISAI_YOLO=0` (comportamento padrão inalterado: ligado).
+- **Tema do terminal em um arquivo só:** `themes/pesquisai.json` traz **dark e light juntos**; o modo passa a ficar em `cli.json` (`theme.mode`). O tema legado `pesquisai-light.json` é removido quando existe. A interface web continua usando os nomes `pesquisai` / `pesquisai-light`.
+- **As 50 chaves do tema:** o conversor da V2 exige as mesmas 50 chaves do tema embutido; a paleta foi convertida papel a papel. A ausência de qualquer uma faria o motor cair no tema padrão.
+- **`tui.json` não é mais gravado:** é formato V1; a V2 só o lê para migrar quando `cli.json` ainda não existe.
+- **Agente:** `agents/pesquisai.md` com o frontmatter aceito pela V2 (`description`, `mode: primary`, `color`) — **sem `name`**, porque a V2 define o ID pelo caminho do arquivo. `default_agent` vai para `opencode.json`.
+- **Credenciais:** a V2 guarda credenciais em SQLite (`~/.local/share/opencode/opencode.db`). O backup no Drive voltou a ser feito com **`opencode auth export` → JSON cifrado** e restaurado com `opencode auth import`. O banco em si nunca é copiado.
+
+### 🍪 Aviso de cookies de terceiros do proxy do Colab
+- **Problema:** a interface abre pelo proxy do Colab (`https://<porta>-<id>.prod.colab.dev`). Se o navegador bloquear cookies de terceiros, **o endereço simplesmente não abre** — sem mensagem de erro útil.
+- **Solução:** `colab_cookies.py` sobe um servidor efêmero em `127.0.0.1` e o teste roda num **iframe** apontando para uma página mínima servida pelo próprio kernel. A página tenta gravar um cookie e responde por `postMessage`; a célula confirma em verde ou mostra o alerta **vermelho** com as instruções por navegador (Chrome/Edge, Firefox, Brave, Safari), sempre num `<details>` para funcionar mesmo sem JavaScript.
+- **Não bloqueia o boot:** o resultado chega pelo navegador; se nada responder no prazo, o estado é "não confirmado". Fora do Colab a função devolve `skipped` e nada acontece.
+- **Sem duplicar aviso:** `ensure_cookie_check()` é idempotente — o notebook e o `run_fast` pedem o mesmo teste, e o usuário vê **um** bloco.
+- **Privacidade:** a página de teste não lê nem grava nada do usuário; só testa o próprio cookie.
+
+### 🫀 Keep-alive como célula bloqueante (corrige a 0.6.20 de 01/10)
+- **Problema:** o keep-alive da 0.6.20 era um `subprocess` que imprimia uma linha por minuto. O Colab decide a ociosidade pela **atividade do notebook** — um processo em segundo plano não conta, então a sessão continuava caindo.
+- **Solução:** `keepalive.py` roda **na própria célula**, bloqueando o kernel. A cada 60 s verifica as portas 8000 (terminal) e 8001 (interface); **duas falhas seguidas** disparam a recuperação (uma falha isolada não reinicia nada — evita falso positivo), e o estado saudável zera o contador.
+- **Limite honesto, declarado no código e no notebook:** nada garante a sessão para sempre — o Colab tem teto (~12 h) e cota. Este módulo **não simula cliques na interface**, o que seria violação dos termos do serviço.
+- **Encerrar:** o botão **SAIR** da interface chama `request_stop()` e mata a célula pelo PID file (`/tmp/pesquisai/ufvai_keepalive.pid`).
+- **Log local:** `/tmp/pesquisai/ufvai_keepalive.log` — fora do Drive de propósito, para não gerar tráfego a cada minuto.
+
+### 🛡️ Módulo novo `opencode_config.py`
+- Toda a manipulação de arquivos do motor ficou num módulo só, **sem efeito colateral na importação**: leitura de JSON/JSONC, escrita atômica (temp + `os.replace`), merge de `cli.json`, merge de `opencode.json`, tema e agente.
+- **Regra de ouro:** arquivo do usuário que **não pode ser interpretado** (JSON quebrado) **nunca é sobrescrito** — a carga é descartada e o log avisa. Isso vale para `cli.json` e `opencode.json`.
+
+### 🧪 Testes
+- **3 suítes novas**, 3 módulos que estavam sem cobertura nenhuma:
+  - `tests/test_opencode_config.py` — JSONC (comentários dentro de string não são cortados), escrita atômica sem temporário órfão, preservação das chaves do usuário, **arquivo corrompido não é sobrescrito**, tema com exatamente 50 chaves todas apontando para `defs` existentes e em hexadecimal válido, round-trip de gravação/leitura;
+  - `tests/test_colab_cookies.py` — página servida responde **HTTP 200 real** num servidor efêmero, `Cache-Control: no-store`, thread daemon, porta livre, escape da URL no HTML, idempotência do aviso, `skipped` fora do Colab, truncamento do erro em 200 caracteres;
+  - `tests/test_keepalive.py` — laço exercitado **sem espera real** (relógio e evento de parada injetados): `parado` × `limite`, recuperação só após 2 falhas seguidas, contador zerado pelo estado saudável, callback que falha não derruba o laço, log com início/fim, porta aberta/fechada, e uma trava de regressão que garante que o módulo **não volte a usar `subprocess`**.
+- `tests/test_run_fast.py` — 12 casos novos: os arquivos que a V2 lê (`themes/pesquisai.json`, `cli.json`, `agents/pesquisai.md`, `opencode.json`), a **não** escrita de `tui.json`/`config.json`/`pesquisai-light.json`, a preservação do tema escolhido pelo usuário, `cli.json`/`opencode.json` corrompidos intactos, e a ligação do teste de cookies em `setup_launch` (inclusive: erro no teste de cookies **não impede** o UFVAI de abrir).
+- `tests/test_version_sync.py` — 9 casos novos: o Dockerfile instala o motor **como o usuário `ufvai`** (não root), põe `~/.opencode/bin` no `PATH`, cria os diretórios da V2, instala `ca-certificates` e usa a **mesma URL** de `constants.OPENCODE_INSTALL_V2`.
+- **Total da suíte: 217 testes verdes.**
+
+### 🐞 Bugs encontrados pelos próprios testes (corrigidos nesta sessão)
+- **`merge_cli_theme` mutava o dicionário do chamador:** a cópia do `theme` era rasa, então escrever `theme["name"]` alterava o `cli.json` recém-lido do disco. Passou a copiar o `theme` também.
+- **File handle vazado em `_setup_theme_and_agent`:** `open(agents_md).read()` sem `with` deixava o descritor do `AGENTS.md` aberto a cada boot. Agora usa `with`.
+
+### 📦 Dockerfile
+- Instala o **OpenCode V2** durante o build, **como o usuário não-root `ufvai`** (`su -s /bin/bash ufvai -c …`), no mesmo caminho que o Colab usa (`~/.opencode/bin`) — antes a imagem exigia o binário montado por volume.
+- `ca-certificates` instalado (o instalador baixa por HTTPS), `PATH` com `~/.opencode/bin`, diretórios `~/.config/opencode/{themes,agents}` e `~/.agents/skills` criados e com dono `ufvai`.
+- **Saída para build sem rede:** `UFVAI_NO_OPENCODE_INSTALL=1` pula a etapa e deixa o `run_fast` resolver no boot.
+- A imagem **continua terminando em `USER ufvai`** e `HEALTHCHECK` inalterado.
+
+### 📚 Documentação
+- `README.md`, `MANUAL.md`, `AGENTS.md` + `agents/AGENTS.{en,es,fr,zh}.md` e `citacao_pesquisai.md`: adicionada a seção do motor **OpenCode V2**, do aviso de cookies de terceiros e do keep-alive por célula. Versão permanece 0.6.20 em todos os arquivos.
+- `PesquisAI.ipynb`: instruções de uso atualizadas (passo 2 = teste de cookies, passo 4 = keep-alive em célula), boot chamando `ensure_cookie_check()`.
+
+### ❗ Pendências (autor)
+- **Validar em execução real no Colab** com o motor 2.x instalado: `auth export`/`auth import` com credencial salva e retomada de sessão.
+- **Decidir o bump** para uma versão própria (0.7.0) quando a validação passar.
+- **Push para o GitHub** — `git push` segue bloqueado por falta de credencial (`gh auth login` pendente).
+
+---
+
 ## [0.6.20] — 2026-10-01 — 🫀 Keep-alive + botão SAIR na interface · 🌐 Rodapé com o site oficial · 📄 Planilha de contatos em 1 linha
 ### 🎯 Nova direção (mudança de planos)
 - **Descartada** a abordagem da 0.6.20 bugada de 30/09 (supervisor desacoplado `colab_host.py`/`spawn_detached` — travava em "Aguardando a interface ficar pronta…" porque `eval_js(proxyPort)` e `drive.mount` exigem o kernel do Colab e abortavam antes de gravar o `READY_FILE`). **Rollback** foi feito e a base desta release é a **v0.6.19 estável**, sem alteração funcional no pacote de boot — a 0.6.20 vive no `PesquisAI.ipynb` (boot/keep-alive/SAIR) e no pacote (rodapé do site + planilha de contatos, abaixo). Número de versão mantido: **0.6.20**.
