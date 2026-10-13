@@ -4042,7 +4042,24 @@ def launch():
     
     time.sleep(1)
     boot.finish()  # 100% + "✨ UFVAI pronto!"
+
     show_launch_button(banner_url)
+
+    # v0.6.21: cookies de terceiros — ÚLTIMO item do fluxo. O botão "ABRIR O
+    # UFVAI" já está na tela e o diagnóstico fecha a sequência com o veredito
+    # real (✅ liberados / ❌ bloqueados). O proxy do Colab (*.prod.colab.dev)
+    # não abre sem permissão de cookie de 3ª parte. ensure_cookie_check() é
+    # idempotente: se outro caminho já mostrou o bloco (run_fast ou notebook),
+    # aqui devolve 'done' sem repetir. Fora do Colab devolve 'skipped'.
+    try:
+        from .colab_cookies import ensure_cookie_check
+        _cookie_state = ensure_cookie_check()
+        if _cookie_state.get("state") == "error":
+            logger.warning(
+                "Teste de cookies indisponível: %s", _cookie_state.get("error")
+            )
+    except Exception as exc:  # noqa: BLE001 — o aviso é acessório, nunca fatal
+        logger.warning("Verificação de cookies não pôde ser executada: %s", exc)
 
     # v0.6.1: no modo offline (.deb/local) abre o navegador automaticamente
     # quando a UI estiver pronta — o launcher roda em background e antes

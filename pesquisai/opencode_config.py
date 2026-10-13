@@ -186,7 +186,10 @@ def build_agent_markdown(description: str, color: str, body: str) -> str:
     """Monta o agente com frontmatter aceito pela V2.
 
     Campos usados: ``description``, ``mode`` (primary, explícito) e ``color``
-    (hex de 6 dígitos). ``name`` NÃO é usado: a V2 define o ID pelo caminho.
+    (hex de 6 dígitos). ``name`` NÃO é usado: a V2 define o ID pelo caminho do
+    arquivo — verificado em 13/10/2026 na V2.0.28: um ``name: UFVAI`` no
+    frontmatter é **ignorado** e o agente continua aparecendo como ``ufvai``.
+    Para o agente se chamar "UFVAI", o arquivo precisa ser ``agents/UFVAI.md``.
     """
     # Aspas duplas (formato JSON é YAML válido): a descrição tem ": " e "#",
     # que quebrariam um escalar YAML sem aspas.

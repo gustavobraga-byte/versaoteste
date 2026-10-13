@@ -39,6 +39,11 @@ from .constants import (
     custom_skills_dir,
     THEME_DIR,
     AGENT_DIR,
+    AGENT_NAME,
+    AGENT_FILE,
+    LEGACY_AGENT_FILES,
+    THEME_NAME,
+    LEGACY_THEME_FILES,
     TUI_JSON,
     CLI_JSON,
     OPENCODE_CFG,
@@ -475,11 +480,14 @@ def _install_python_deps() -> None:
 def _setup_theme_and_agent() -> None:
     """Configura tema, agente UFVAI e opencode.json para o OpenCode V2.
 
-    OpenCode V2 (mudança não lançada):
+    OpenCode V2 (v0.6.21):
     - tema UFVAI completo no formato V1 (50 chaves) em themes/pesquisai.json;
       dark e light no MESMO arquivo — o modo vai em cli.json (theme.mode);
     - cli.json é a única configuração do terminal (tui.json não é mais gravado);
-    - agente em agents/pesquisai.md com frontmatter aceito pela V2 (sem `name`);
+    - agente em agents/UFVAI.md com frontmatter aceito pela V2 (sem `name` — a V2
+      deriva o ID do nome do arquivo; testado em 13/10: um `name:` no frontmatter
+      é ignorado). O ID gravado é "UFVAI", como pede o autor;
+    - agents/pesquisai.md e agents/ufvai.md são removidos na migração;
     - default_agent gravado em opencode.json (config.json não é lido pela V2).
       Arquivo do usuário que não pode ser interpretado NÃO é sobrescrito.
     """
@@ -488,13 +496,14 @@ def _setup_theme_and_agent() -> None:
     os.makedirs(os.path.dirname(OPENCODE_CFG), exist_ok=True)
 
     # ── Tema UFVAI (um arquivo, dois modos) ───────────────────
-    write_json_atomic(os.path.join(THEME_DIR, "pesquisai.json"), build_ufvai_theme())
-    legacy_light = os.path.join(THEME_DIR, "pesquisai-light.json")
-    if os.path.exists(legacy_light):
-        try:
-            os.remove(legacy_light)
-        except OSError:
-            pass
+    write_json_atomic(os.path.join(THEME_DIR, f"{THEME_NAME}.json"), build_ufvai_theme())
+    for legacy_theme in LEGACY_THEME_FILES:
+        legacy_path = os.path.join(THEME_DIR, legacy_theme)
+        if os.path.exists(legacy_path):
+            try:
+                os.remove(legacy_path)
+            except OSError:
+                pass
 
     # ── cli.json: nome e modo do tema (preserva a escolha do usuário) ──
     ok_cli, existing_cli = load_json_config(CLI_JSON)
@@ -506,14 +515,14 @@ def _setup_theme_and_agent() -> None:
         else:
             name, mode = theme_cfg, None
         if not isinstance(name, str) or not name:
-            name = "pesquisai"
+            name = THEME_NAME
         if mode not in ("dark", "light"):
             mode = "dark"
         write_json_atomic(CLI_JSON, merge_cli_theme(existing_cli, name, mode))
     else:
         logger.warning("cli.json não pôde ser lido; tema do terminal mantido como está.")
 
-    # ── Agente UFVAI (agents/pesquisai.md) ────────────────────
+    # ── Agente UFVAI (agents/ufvai.md) ────────────────────────
     agents_md = os.path.join(os.path.dirname(os.path.dirname(__file__)), "AGENTS.md")
     if os.path.exists(agents_md):
         with open(agents_md, encoding="utf-8") as fh:
@@ -625,13 +634,23 @@ Existe uma pasta persistente de skills personalizadas em:
 """
 
     agent_body = f"{content}\n{autopilot_instructions}\n{custom_skill_instructions}\n"
-    with open(os.path.join(AGENT_DIR, "pesquisai.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(AGENT_DIR, AGENT_FILE), "w", encoding="utf-8") as f:
         f.write(build_agent_markdown(UFVAI_AGENT_DESCRIPTION, "#b29149", agent_body))
+
+    # v0.6.21: o ID do agente na V2 é o nome do arquivo. O "pesquisai.md" antigo
+    # é removido para não sobrar um agente duplicado na lista da V2.
+    for legacy_agent in LEGACY_AGENT_FILES:
+        legacy_path = os.path.join(AGENT_DIR, legacy_agent)
+        if os.path.exists(legacy_path):
+            try:
+                os.remove(legacy_path)
+            except OSError:
+                logger.warning("Não foi possível remover o agente antigo %s", legacy_path)
 
     # ── opencode.json: agente padrão (V2) ─────────────────────
     ok_cfg, cfg = load_json_config(OPENCODE_CFG)
     if ok_cfg:
-        write_json_atomic(OPENCODE_CFG, merge_default_agent(cfg, "pesquisai"))
+        write_json_atomic(OPENCODE_CFG, merge_default_agent(cfg, AGENT_NAME))
     else:
         logger.warning(
             "opencode.json não pôde ser interpretado (JSONC inválido?); "
@@ -838,14 +857,16 @@ def setup_launch(folder_path: str, drive_url: str) -> str:
     # badge verde "✨ UFVAI pronto!"; fora do Colab mantém o print legado.
     if not getattr(_la, "IN_COLAB", False):
         show_ready_message()
-    # Cookies de terceiros: o proxy do Colab (*.prod.colab.dev) não abre sem
-    # eles. ensure_cookie_check() é idempotente — se o notebook já mostrou o
-    # aviso, aqui não repete. Fora do Colab devolve 'skipped' sem efeito.
+    show_launch_button(banner_url)
+    # v0.6.21 — o teste de cookies é a ÚLTIMA coisa exibida. O botão
+    # "ABRIR O UFVAI" já está na tela e o bloco de diagnóstico fecha o fluxo com
+    # o veredito real (✅ liberados / ❌ bloqueados). Fora do Colab devolve
+    # 'skipped'. ensure_cookie_check() é idempotente: se outro caminho já
+    # mostrou o bloco (notebook), aqui não repete.
     from .colab_cookies import ensure_cookie_check
     cookie_state = ensure_cookie_check()
     if cookie_state.get("state") == "error":
         logger.warning("Teste de cookies indisponível: %s", cookie_state.get("error"))
-    show_launch_button(banner_url)
     return banner_url
 
 
