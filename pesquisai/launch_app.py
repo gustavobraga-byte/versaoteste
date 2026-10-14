@@ -62,6 +62,33 @@ from .opencode_utils import (
     is_opencode_v2,
 )
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
+from .run_fast import ensure_ufvai_agent
+
+
+def _ensure_ufvai_agent_before_spawn(where: str = "terminal") -> None:
+    """Ajuste na v0.6.21 (14/10/2026 — SEM bump): terminal sempre inicia com UFVAI.
+
+    Chamada ANTES de todo (re)spawn do terminal. A OpenCode V2 só usa o
+    `default_agent` de opencode.json quando o agente existe, é visível e aceita
+    `primary` — caso contrário inicia com `build` (doc oficial
+    opencode.ai/v2/docs/agents, seção "Selection"). Reproduzido pelo autor:
+    ao adicionar uma nova chave de API o motor iniciava em `build`, porque
+    `agents/UFVAI.md`/`default_agent` só eram regrados no boot.
+
+    Best-effort: JAMAIS impede o terminal de abrir — um terminal atrasado é
+    pior que um aviso no log; a garantia roda de novo no próximo reinício.
+    """
+    try:
+        ok = ensure_ufvai_agent()
+    except Exception as exc:  # noqa: BLE001 — spawn do terminal não pode falhar por isso
+        logger.warning("ensure_ufvai_agent falhou (%s): %s", where, exc)
+        return
+    if not ok:
+        logger.warning(
+            "ensure_ufvai_agent NÃO gravou opencode.json (%s) — o motor pode "
+            "iniciar com o agente `build` até o próximo reinício.", where,
+        )
+
 
 def _safe_isoformat(v):
     """Converte date/datetime/str para ISO string de forma segura (fix v0.6.10 cache BM25)."""
@@ -299,6 +326,7 @@ def kill_previous():
         capture_output=True,
         timeout=5,
     )
+    _tmux_kill_session()  # boot começa de sessão limpa (a sessão tmux não morre com o ttyd)
     subprocess.run(
         ["pkill", "-f", f"python3.*{WRAPPER_PORT}"],
         capture_output=True,
@@ -1015,6 +1043,7 @@ def _stop_terminal(wait_s: float = 0.8) -> None:
     global _TTYD_PROC
     import signal as _signal
 
+    _tmux_kill_session()  # reinício explícito começa de sessão limpa
     proc, _TTYD_PROC = _TTYD_PROC, None
     if proc is not None and proc.poll() is None:
         try:
@@ -1063,6 +1092,59 @@ def _ensure_terminal_ready(spawn_fn, timeout_s: float = 20.0,
     return False
 
 
+# ── v0.6.22: sessão que sobrevive à queda do WebSocket ─────────────
+# O ttyd cria UM processo por conexão WebSocket e envia SIGHUP a esse processo
+# quando a conexão cai. Sem tmux, qualquer queda (ociosidade do proxy, aba em
+# segundo plano) matava o opencode, e a reconexão recomeçava a sessão do zero.
+# Com tmux, a queda derruba só o cliente: a sessão segue viva e a reconexão
+# reanexa a ela (o comando e o --prompt não rodam de novo).
+_TMUX_SOCKET = "ufvai"          # servidor tmux próprio: não mexe no tmux do usuário
+_TMUX_SESSION = "ufvai"
+_TMUX_CONF_PATH = "/tmp/ufvai-tmux.conf"
+_TMUX_CONF_TEXT = (
+    "set -g status off\n"                 # sem barra de status do tmux
+    "set -g escape-time 10\n"             # ESC responde rápido no TUI do opencode
+    "set -g default-terminal xterm-256color\n"
+    "set -g mouse on\n"                   # roda do mouse vira copy-mode (rolagem)
+)
+
+
+def _tmux_conf_path() -> "str | None":
+    """Grava o tmux.conf do UFVAI e devolve o caminho (None se não der)."""
+    try:
+        with open(_TMUX_CONF_PATH, "w", encoding="utf-8") as fh:
+            fh.write(_TMUX_CONF_TEXT)
+        return _TMUX_CONF_PATH
+    except OSError:
+        return None
+
+
+def _ttyd_shell_argv(bash_cmd: str) -> list:
+    """Argumentos do comando que o ttyd executa (depois das flags do ttyd).
+
+    Com tmux, o ttyd só anexa à sessão do UFVAI. Sem tmux, mantém o
+    comportamento anterior (bash -i -c), sem sessão persistente.
+    """
+    shell = ["bash", "-i", "-c", bash_cmd]
+    conf = _tmux_conf_path()
+    if conf is None or not shutil.which("tmux"):
+        return shell
+    return ["tmux", "-L", _TMUX_SOCKET, "-f", conf,
+            "new", "-A", "-s", _TMUX_SESSION, *shell]
+
+
+def _tmux_kill_session() -> None:
+    """Encerra a sessão tmux do UFVAI. Usado só em reinício explícito e no boot,
+    para que trocar idioma/chave/sessão comece de um estado limpo."""
+    if not shutil.which("tmux"):
+        return
+    try:
+        subprocess.run(["tmux", "-L", _TMUX_SOCKET, "kill-session", "-t", _TMUX_SESSION],
+                       capture_output=True, timeout=3)
+    except Exception:  # noqa: BLE001 — sessão inexistente é o caso normal
+        pass
+
+
 def _build_ttyd_cmd(lang: str | None = None):
     """v0.6.5: constrói (args, env) do ttyd com saudação no idioma pedido.
 
@@ -1088,7 +1170,7 @@ def _build_ttyd_cmd(lang: str | None = None):
 
     # v0.4.2.5: construir args com --index (touch handlers)
     # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
-    base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable", "bash", "-i", "-c", bash_cmd]
+    base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable", *_ttyd_shell_argv(bash_cmd)]
     return _build_ttyd_args(base_args, env), env, full_lang
 
 
@@ -1099,6 +1181,9 @@ def start_ttyd(lang: str | None = None):
         lang: Código do idioma (pt_BR, en_US, es_ES, fr_FR). Se None, usa
               o _current_lang global ou o env PESQUISAI_LANG.
 
+    v0.6.21 (14/10/2026): garantia `ensure_ufvai_agent` antes do spawn — o agente
+    carregado é sempre o UFVAI, nunca `build` (nem outro).
+
     v0.4.2.2: ao invés de `--prompt 'oi'` genérico, usa saudação no idioma
               + instrução "(a partir de agora responda em X)".
     v0.4.2.5: injeta touch handlers (scroll + pinch-zoom) no HTML do ttyd
@@ -1106,6 +1191,7 @@ def start_ttyd(lang: str | None = None):
     v0.6.5: spawn rastreado (_spawn_ttyd) + logs em arquivo; espera curta.
     """
     print(f"\n{next_joke('economia')}")
+    _ensure_ufvai_agent_before_spawn("start_ttyd")
     ttyd_args, env, full_lang = _build_ttyd_cmd(lang)
     _spawn_ttyd(ttyd_args, env)
     print(f"🚀 Terminal iniciado (idioma: {full_lang}, touch: {'ON' if '--index' in ttyd_args else 'OFF'}).")
@@ -1133,6 +1219,11 @@ def restart_ttyd_with_lang(lang: str) -> bool:
         # Persiste o idioma
         _current_lang = lang
         _persist_lang(lang)
+
+        # Ajuste 14/10/2026 (v0.6.21): troca de idioma E de chave de API passam
+        # por aqui (via _apply_opencode_env_change_async) — é EXATAMENTE o fluxo
+        # em que o autor viu o motor iniciar com `build` ao adicionar chave.
+        _ensure_ufvai_agent_before_spawn("restart_ttyd_with_lang")
 
         def _spawn():
             ttyd_args, env, _full = _build_ttyd_cmd(lang)
@@ -2635,6 +2726,11 @@ def start_wrapper_server():
                 # 'opencode' na cmdline e deixava porta morta sem verificação)
                 _stop_terminal()
 
+                # Ajuste 14/10/2026 (v0.6.21): o fallback deste comando é o
+                # próprio opencode (`; opencode; exec bash`) — sem a garantia,
+                # ele poderia iniciar com `build` se o config tivesse mudado.
+                _ensure_ufvai_agent_before_spawn("api/run_terminal")
+
                 # Build bash -c command string de forma segura
                 # O comando do usuario (cmd) ja foi sanitizado acima.
                 # O suffixo "; exec bash" e adicionado pelo codigo (nao pelo usuario),
@@ -2647,7 +2743,7 @@ def start_wrapper_server():
 
                 # v0.4.2.5: usar --index com touch handlers se disponível
                 base_ttyd = ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
-                     "bash", "-i", "-c", bash_cmd]
+                     *_ttyd_shell_argv(bash_cmd)]
                 ttyd_cmd = _build_ttyd_args(base_ttyd, _env)
 
                 # v0.6.5: spawn rastreado + ESPERAR a porta abrir antes de
@@ -2932,12 +3028,19 @@ def start_wrapper_server():
                     try:
                         _stop_terminal()
 
+                        # Ajuste 14/10/2026 (v0.6.21): garantia antes do
+                        # reinício pós-import. A V2 não troca o agente de uma
+                        # sessão já gravada (doc agents/"Selection"); sessões
+                        # exportadas do UFVAI já gravam UFVAI — e novas
+                        # sessões, abertas depois, seguem com o default.
+                        _ensure_ufvai_agent_before_spawn("api/session-import")
+
                         def _spawn():
                             opencode_bin, env = resolve_opencode()
                             bash_cmd = f'{opencode_bin} -s "{session_id}" ; exec bash'
                             # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
                             base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable",
-                                         "bash", "-i", "-c", bash_cmd]
+                                         *_ttyd_shell_argv(bash_cmd)]
                             _spawn_ttyd(_build_ttyd_args(base_args, env), env)
 
                         ttyd_restarted = _ensure_terminal_ready(_spawn, timeout_s=18.0)

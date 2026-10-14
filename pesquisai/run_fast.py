@@ -419,6 +419,8 @@ def _install_system_deps() -> None:
         tasks.append("xclip")
     if not _check_bin("xsel"):
         tasks.append("xsel")
+    if not _check_bin("tmux"):  # v0.6.22: mantém a sessão viva entre quedas do WebSocket
+        tasks.append("tmux")
     tasks = list(set(tasks))
 
     if tasks:
@@ -477,52 +479,37 @@ def _install_python_deps() -> None:
     )
 
 
-def _setup_theme_and_agent() -> None:
-    """Configura tema, agente UFVAI e opencode.json para o OpenCode V2.
+def ensure_ufvai_agent() -> bool:
+    """Garante que o terminal do OpenCode V2 SEMPRE carregue o agente UFVAI.
 
-    OpenCode V2 (v0.6.21):
-    - tema UFVAI completo no formato V1 (50 chaves) em themes/pesquisai.json;
-      dark e light no MESMO arquivo — o modo vai em cli.json (theme.mode);
-    - cli.json é a única configuração do terminal (tui.json não é mais gravado);
-    - agente em agents/UFVAI.md com frontmatter aceito pela V2 (sem `name` — a V2
-      deriva o ID do nome do arquivo; testado em 13/10: um `name:` no frontmatter
-      é ignorado). O ID gravado é "UFVAI", como pede o autor;
-    - agents/pesquisai.md e agents/ufvai.md são removidos na migração;
-    - default_agent gravado em opencode.json (config.json não é lido pela V2).
-      Arquivo do usuário que não pode ser interpretado NÃO é sobrescrito.
+    Regra do autor (14/10/2026, ajuste na v0.6.21 — SEM bump de versão):
+    "sempre que atualizar o terminal o agente a ser carregado deve ser o
+    ufvai, nunca deve carregar outro agente". Reprodução do defeito: ao
+    adicionar uma nova chave de API o terminal reiniciava e o motor iniciava
+    com o agente `build`. Causa (doc oficial V2, opencode.ai/v2/docs/agents):
+    a V2 só usa `default_agent` quando o agente existe, é visível e aceita
+    `primary`; caso contrário cai em `build`. Como a garantia do agente era
+    regravada APENAS no boot (`_setup_theme_and_agent` via `setup_dependencies`),
+    qualquer reinício do terminal fora do boot (troca de chave, idioma,
+    restore/import de sessão) podia rodar sem o agente em vigor.
+
+    Idempotente e auto-suficiente, para poder ser chamada ANTES de cada
+    (re)spawn do terminal (launch_app chama `_ensure_ufvai_agent_before_spawn`
+    em start_ttyd, restart_ttyd_with_lang, /api/run_terminal e /api/session):
+
+    - regenera agents/UFVAI.md (AGENTS.md + autopilot + skills personalizadas);
+    - remove agentes legados (pesquisai.md / ufvai.md) — sem duplicatas;
+    - (re)grava `default_agent: "UFVAI"` em opencode.json preservando o resto.
+
+    Returns:
+        False somente quando opencode.json EXISTE mas não pôde ser
+        interpretado — arquivo ilegível do usuário NUNCA é sobrescrito
+        (a V2, nesse caso, cairá em `build`; o chamador registra o alerta).
     """
-    os.makedirs(THEME_DIR, exist_ok=True)
     os.makedirs(AGENT_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(OPENCODE_CFG), exist_ok=True)
 
-    # ── Tema UFVAI (um arquivo, dois modos) ───────────────────
-    write_json_atomic(os.path.join(THEME_DIR, f"{THEME_NAME}.json"), build_ufvai_theme())
-    for legacy_theme in LEGACY_THEME_FILES:
-        legacy_path = os.path.join(THEME_DIR, legacy_theme)
-        if os.path.exists(legacy_path):
-            try:
-                os.remove(legacy_path)
-            except OSError:
-                pass
-
-    # ── cli.json: nome e modo do tema (preserva a escolha do usuário) ──
-    ok_cli, existing_cli = load_json_config(CLI_JSON)
-    if ok_cli:
-        theme_cfg = existing_cli.get("theme")
-        if isinstance(theme_cfg, dict):
-            name = theme_cfg.get("name")
-            mode = theme_cfg.get("mode")
-        else:
-            name, mode = theme_cfg, None
-        if not isinstance(name, str) or not name:
-            name = THEME_NAME
-        if mode not in ("dark", "light"):
-            mode = "dark"
-        write_json_atomic(CLI_JSON, merge_cli_theme(existing_cli, name, mode))
-    else:
-        logger.warning("cli.json não pôde ser lido; tema do terminal mantido como está.")
-
-    # ── Agente UFVAI (agents/ufvai.md) ────────────────────────
+    # ── Agente UFVAI (agents/UFVAI.md) ────────────────────────
     agents_md = os.path.join(os.path.dirname(os.path.dirname(__file__)), "AGENTS.md")
     if os.path.exists(agents_md):
         with open(agents_md, encoding="utf-8") as fh:
@@ -637,8 +624,10 @@ Existe uma pasta persistente de skills personalizadas em:
     with open(os.path.join(AGENT_DIR, AGENT_FILE), "w", encoding="utf-8") as f:
         f.write(build_agent_markdown(UFVAI_AGENT_DESCRIPTION, "#b29149", agent_body))
 
-    # v0.6.21: o ID do agente na V2 é o nome do arquivo. O "pesquisai.md" antigo
-    # é removido para não sobrar um agente duplicado na lista da V2.
+    # O ID do agente na V2 é o nome do arquivo. Legados ("pesquisai.md" da
+    # identidade antiga e "ufvai.md" minúsculo) são removidos para não sobrar
+    # agente duplicado na lista da V2 — a presença deles NÃO impede o
+    # default_agent, mas polui a lista (e o 'ufvai.md' seria um agente novo).
     for legacy_agent in LEGACY_AGENT_FILES:
         legacy_path = os.path.join(AGENT_DIR, legacy_agent)
         if os.path.exists(legacy_path):
@@ -650,12 +639,65 @@ Existe uma pasta persistente de skills personalizadas em:
     # ── opencode.json: agente padrão (V2) ─────────────────────
     ok_cfg, cfg = load_json_config(OPENCODE_CFG)
     if ok_cfg:
+        current = cfg.get("default_agent")
+        if current != AGENT_NAME:
+            logger.info(
+                "default_agent fora do padrão (era %r → regravando %r). "
+                "Sem isso o motor inicia com o agente `build`.",
+                current, AGENT_NAME,
+            )
         write_json_atomic(OPENCODE_CFG, merge_default_agent(cfg, AGENT_NAME))
+        return True
+    logger.warning(
+        "opencode.json não pôde ser interpretado (JSONC inválido?); o arquivo "
+        "do usuário NÃO é sobrescrito e o motor pode iniciar com `build`."
+    )
+    return False
+
+
+def _setup_theme_and_agent() -> None:
+    """Configura tema, agente UFVAI e opencode.json para o OpenCode V2.
+
+    OpenCode V2 (v0.6.21):
+    - tema UFVAI completo no formato V1 (50 chaves) em themes/pesquisai.json;
+      dark e light no MESMO arquivo — o modo vai em cli.json (theme.mode);
+    - cli.json é a única configuração do terminal (tui.json não é mais gravado);
+    - agente e default_agent ficam a cargo de `ensure_ufvai_agent()` (definida
+      acima), que também é chamada por launch_app ANTES de cada reinício do
+      terminal — garantia do autor de 14/10/2026: nunca carregar outro agente.
+      Arquivo do usuário que não pode ser interpretado NÃO é sobrescrito.
+    """
+    os.makedirs(THEME_DIR, exist_ok=True)
+
+    # ── Tema UFVAI (um arquivo, dois modos) ───────────────────
+    write_json_atomic(os.path.join(THEME_DIR, f"{THEME_NAME}.json"), build_ufvai_theme())
+    for legacy_theme in LEGACY_THEME_FILES:
+        legacy_path = os.path.join(THEME_DIR, legacy_theme)
+        if os.path.exists(legacy_path):
+            try:
+                os.remove(legacy_path)
+            except OSError:
+                pass
+
+    # ── cli.json: nome e modo do tema (preserva a escolha do usuário) ──
+    ok_cli, existing_cli = load_json_config(CLI_JSON)
+    if ok_cli:
+        theme_cfg = existing_cli.get("theme")
+        if isinstance(theme_cfg, dict):
+            name = theme_cfg.get("name")
+            mode = theme_cfg.get("mode")
+        else:
+            name, mode = theme_cfg, None
+        if not isinstance(name, str) or not name:
+            name = THEME_NAME
+        if mode not in ("dark", "light"):
+            mode = "dark"
+        write_json_atomic(CLI_JSON, merge_cli_theme(existing_cli, name, mode))
     else:
-        logger.warning(
-            "opencode.json não pôde ser interpretado (JSONC inválido?); "
-            "default_agent não foi alterado."
-        )
+        logger.warning("cli.json não pôde ser lido; tema do terminal mantido como está.")
+
+    # ── Agente UFVAI + default_agent (garantia reexecutável) ──
+    ensure_ufvai_agent()
 
 
 def setup_dependencies() -> None:

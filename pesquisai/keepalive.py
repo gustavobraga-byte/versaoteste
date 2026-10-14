@@ -11,8 +11,10 @@ Por que uma célula bloqueante (e não um subprocesso)?
 Limites honestos: nenhum código garante a sessão para sempre. Este módulo NÃO
 simula cliques na interface do Colab (isso contraria os termos do serviço).
 
-Recuperação: se o terminal (ttyd) ou o servidor da interface caírem, o
-keep-alive tenta reiniciá-los (via `on_unhealthy`, passado pela célula).
+Recuperação: OPCIONAL (`on_unhealthy`). A célula do UFVAI NÃO a usa: reiniciar o
+ttyd derruba a sessão do opencode em andamento. Se algum serviço cair, o painel
+mostra e basta executar a célula de novo. A sessão do terminal sobrevive a quedas
+do WebSocket graças ao tmux (launch_app._ttyd_shell_argv).
 """
 
 from __future__ import annotations
@@ -87,6 +89,7 @@ def run_keepalive(
     ports: Iterable[int] = (TERMINAL_PORT, WRAPPER_PORT),
     max_hours: Optional[float] = None,
     clock: Callable[[], float] = time.monotonic,
+    on_tick: Optional[Callable[[dict], None]] = None,
 ) -> str:
     """Bloqueia a célula, verificando as portas a cada `interval_s` segundos.
 
@@ -97,6 +100,10 @@ def run_keepalive(
         ports: portas de serviço a verificar.
         max_hours: teto opcional de duração do laço.
         clock: relógio (injetável para testes).
+        on_tick: chamado a CADA ciclo (inclusive o primeiro) com
+            {"healthy", "snap", "failures", "elapsed_s"}. O notebook usa para
+            atualizar o painel da célula: essa saída é atividade do kernel, que
+            é o que o Colab mede para decidir ociosidade. Laço silencioso não conta.
 
     Returns:
         Motivo da saída: 'parado' (request_stop) ou 'limite' (max_hours).
@@ -123,6 +130,16 @@ def run_keepalive(
                     except Exception as exc:  # noqa: BLE001
                         _log(log_path, f"recuperação falhou: {exc}")
                     failures = 0
+            if on_tick is not None:
+                try:
+                    on_tick({
+                        "healthy": healthy,
+                        "snap": snap,
+                        "failures": failures,
+                        "elapsed_s": clock() - started,
+                    })
+                except Exception as exc:  # noqa: BLE001
+                    _log(log_path, f"heartbeat falhou: {exc}")
             if max_hours is not None and clock() - started >= max_hours * 3600:
                 _log(log_path, "limite de duração atingido")
                 return "limite"
