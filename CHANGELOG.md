@@ -1,11 +1,36 @@
 # Changelog — PesquisAI
 
-## [Não lançado] — 2026-10-13 — 🔧 Migração do motor para a **OpenCode V2** · 🍪 Aviso de cookies de terceiros · 🫀 Keep-alive por célula bloqueante
+## [0.6.21] — 2026-10-13 — 🔧 Migração do motor para a **OpenCode V2** · 🍪 Aviso de cookies de terceiros · 🫀 Keep-alive por célula bloqueante
 
-> **Sem bump de versão (decisão do autor):** a migração ainda não foi validada em
-> execução real no Colab com o motor 2.x instalado — por isso ela fica em
-> "Não lançado" e o número continua **0.6.20**. Promover para uma versão própria
-> (0.7.0) só depois da validação de campo.
+### 🔄 Ajuste de 14/10/2026 (sem bump — a versão continua 0.6.21, por decisão do autor)
+- **Sintoma reportado:** ao adicionar uma nova chave de API, o terminal reiniciava e o motor iniciava com o agente **`build`** em vez do **UFVAI**.
+- **Causa (doc oficial V2, `opencode.ai/v2/docs/agents` §Selection):** a V2 só usa o `default_agent` de `opencode.json` quando o agente **existe, é visível e aceita `primary`**; caso contrário cai em `build`. A regeneração de `agents/UFVAI.md` + `default_agent` acontecia **apenas no boot** (`setup_dependencies` → `_setup_theme_and_agent`), então reinícios fora do boot (troca de chave via `_apply_opencode_env_change_async`, troca de idioma, `/api/run_terminal`, restore de sessão) podiam rodar sem a config em vigor.
+- **Correção:** nova função **`run_fast.ensure_ufvai_agent()`** (idempotente: regenera o agente, remove legados `pesquisai.md`/`ufvai.md` e (re)grava `default_agent: "UFVAI"` preservando as demais chaves) + wrapper **`launch_app._ensure_ufvai_agent_before_spawn()`** chamado **antes de todo (re)spawn do terminal** — `start_ttyd`, `restart_ttyd_with_lang`, `/api/run_terminal` e restart pós-import de sessão. Best-effort: nunca impede o terminal de abrir; falha é logada.
+- **Limites honestos:** a inicialização do terminal que leva `opencode -s <id>` restaura a sessão importada **com o agente gravado nela** (comportamento da V2: config não troca o agente de sessão existente). Sessões exportadas do UFVAI gravam UFVAI. Comando do agente em execuções pontuais (`opencode run --agent …`) não é afetado.
+- **Versão do motor e do UFVAI:** **mantidas** — `pesquisai` segue 0.6.21 e nada toca no binário do OpenCode.
+
+## Outros itens da v0.6.21 (13/10/2026)
+
+> **Bump para 0.6.21 (decisão do autor, 13/10/2026):** a versão saiu do
+> "Não publicado" e ganhou número próprio — a atualização do motor para a
+> OpenCode V2 passa a estar registrada **nesta entrada, a 0.6.21**. A promoção
+> a **0.7.0** fica reservada para quando houver breaking change de fato.
+>
+> **Validação de campo:** o ciclo `auth export` → cifragem → `auth import` foi
+> **executado de verdade** contra a V2.0.28 nesta release, com uma credencial de
+> teste de descarte (ver a seção "Validação de campo do backup de credenciais").
+> **Não** foi validado com uma credencial real do autor. O que resta é a
+> **retomada de sessão** e a validação com credencial real.
+
+> **Registro corrigido nesta release:** a seção "Não lançado" afirmava que
+> README/MANUAL/AGENTS/citação já tinham a seção do motor V2 e do aviso de
+> cookies. **Não tinham** — a auditoria de 13/10 encontrou **zero** menções a
+> "OpenCode V2" nesses quatro arquivos (as ocorrências de "cookie" existentes
+> eram todas sobre telemetria/LGPD, não sobre o proxy). **Corrigido nesta release:**
+> README (novidades + tabela de versões), MANUAL (§1.4.1 + tabela de versões),
+> AGENTS (§0.1 — motor OpenCode V2) e a citação (metadados) foram escritos de fato,
+> com a mesma regra do CHANGELOG: só entra no documento o que foi verificado no
+> código ou em execução real.
 
 ### 🔧 Motor OpenCode V2 (a mudança de fundo)
 - **O que mudou:** o UFVAI passou a rodar sobre o **OpenCode 2.x**. A V2 abandonou `config.json` e `tui.json`; a configuração do motor vive em `~/.config/opencode/opencode.json` e a do cliente de terminal em `~/.config/opencode/cli.json`.
@@ -15,13 +40,13 @@
 - **Tema do terminal em um arquivo só:** `themes/pesquisai.json` traz **dark e light juntos**; o modo passa a ficar em `cli.json` (`theme.mode`). O tema legado `pesquisai-light.json` é removido quando existe. A interface web continua usando os nomes `pesquisai` / `pesquisai-light`.
 - **As 50 chaves do tema:** o conversor da V2 exige as mesmas 50 chaves do tema embutido; a paleta foi convertida papel a papel. A ausência de qualquer uma faria o motor cair no tema padrão.
 - **`tui.json` não é mais gravado:** é formato V1; a V2 só o lê para migrar quando `cli.json` ainda não existe.
-- **Agente:** `agents/pesquisai.md` com o frontmatter aceito pela V2 (`description`, `mode: primary`, `color`) — **sem `name`**, porque a V2 define o ID pelo caminho do arquivo. `default_agent` vai para `opencode.json`.
+- **Agente:** `agents/UFVAI.md` com o frontmatter aceito pela V2 (`description`, `mode: primary`, `color`) — **sem `name`**, porque a V2 define o ID pelo caminho do arquivo. O ID gravado é **`UFVAI`**, como pede o autor, e `default_agent: "UFVAI"` vai para `opencode.json`. Validado na V2.0.28 em execução real: `/api/agent` devolve `id: "UFVAI"`, `name: "UFVAI"`, com o prompt do UFVAI; `agents/pesquisai.md` e `agents/ufvai.md` são removidos na migração.
 - **Credenciais:** a V2 guarda credenciais em SQLite (`~/.local/share/opencode/opencode.db`). O backup no Drive voltou a ser feito com **`opencode auth export` → JSON cifrado** e restaurado com `opencode auth import`. O banco em si nunca é copiado.
 
 ### 🍪 Aviso de cookies de terceiros do proxy do Colab
 - **Problema:** a interface abre pelo proxy do Colab (`https://<porta>-<id>.prod.colab.dev`). Se o navegador bloquear cookies de terceiros, **o endereço simplesmente não abre** — sem mensagem de erro útil.
-- **Solução:** `colab_cookies.py` sobe um servidor efêmero em `127.0.0.1` e o teste roda num **iframe** apontando para uma página mínima servida pelo próprio kernel. A página tenta gravar um cookie e responde por `postMessage`; a célula confirma em verde ou mostra o alerta **vermelho** com as instruções por navegador (Chrome/Edge, Firefox, Brave, Safari), sempre num `<details>` para funcionar mesmo sem JavaScript.
-- **Não bloqueia o boot:** o resultado chega pelo navegador; se nada responder no prazo, o estado é "não confirmado". Fora do Colab a função devolve `skipped` e nada acontece.
+- **Solução:** `colab_cookies.py` sobe um servidor efêmero em `127.0.0.1` e o teste roda num **iframe** apontando para uma página mínima servida pelo próprio kernel. A página tenta gravar um cookie e responde por `postMessage`.
+- **O aviso só aparece quando o bloqueio é detectado.** O bloco nasce **invisível** (fundo transparente, sem borda) e só vira cartão no estado `blocked` — isto é, a página carregou e o cookie **não** voltou. Com os cookies liberados **nada aparece**; e como não houve detecção, também ficam em silêncio o timeout, a falha de rede e o erro do próprio teste.
 - **Sem duplicar aviso:** `ensure_cookie_check()` é idempotente — o notebook e o `run_fast` pedem o mesmo teste, e o usuário vê **um** bloco.
 - **Privacidade:** a página de teste não lê nem grava nada do usuário; só testa o próprio cookie.
 
@@ -56,13 +81,30 @@
 - A imagem **continua terminando em `USER ufvai`** e `HEALTHCHECK` inalterado.
 
 ### 📚 Documentação
-- `README.md`, `MANUAL.md`, `AGENTS.md` + `agents/AGENTS.{en,es,fr,zh}.md` e `citacao_pesquisai.md`: adicionada a seção do motor **OpenCode V2**, do aviso de cookies de terceiros e do keep-alive por célula. Versão permanece 0.6.20 em todos os arquivos.
-- `PesquisAI.ipynb`: instruções de uso atualizadas (passo 2 = teste de cookies, passo 4 = keep-alive em célula), boot chamando `ensure_cookie_check()`.
+- `README.md`, `MANUAL.md`, `AGENTS.md` + `agents/AGENTS.{en,es,fr,zh}.md` e `citacao_pesquisai.md`: **escritas nesta release** as seções do motor **OpenCode V2**, do aviso de cookies de terceiros e do keep-alive por célula. Versão propagada para **0.6.21** em todos os arquivos.
+- `MANUAL.md` §1.4.1 corrigido: a descrição do keep-alive em **subprocesso** (que era o comportamento da 0.6.20) foi atualizada para a **célula bloqueante** da 0.6.21.
+- `PesquisAI.ipynb`: instruções de uso atualizadas (passo 2 = teste de cookies, passo 4 = keep-alive em célula), boot chamando `ensure_cookie_check()`, citação ABNT em v0.6.21.
+
+### 🔗 Ligação do aviso de cookies no `launch_app`
+- `launch_app.launch()` agora também chama `ensure_cookie_check()` antes de exibir o botão de abertura. Sem isso, quem chamasse o `launch()` **diretamente** (é o caminho do `__main__` do módulo e de integrações) ficaria **sem** o aviso, porque a chamada vivia só no `run_fast.setup_launch()`.
+- A ligação é **idempotente** por construção: `ensure_cookie_check()` tem flag de módulo (`_COOKIE_CHECK_DONE`) e devolve `{'state': 'done'}` sem repetir o aviso. O fluxo do Colab (notebook → `run_fast` → `launch`) **não duplica nada**.
+- Falha no teste de cookies é registrada em log e **nunca** interrompe o boot — o aviso é acessório, oUFVAI abre de qualquer forma.
+
+### ✅ Validação de campo do backup de credenciais (13/10/2026, V2.0.28)
+- **Ciclo `auth export` → cifragem → `auth import` executado de verdade** contra o motor V2.0.28, com uma **credencial de teste de descarte** (`integration: openrouter`, label "UFVAI Teste Validação"). Resultado: **funciona ponta a ponta**. **Limite honesto do que isso prova:** valida o *caminho* (schema, cifragem, round-trip, idempotência) — **não** valida uma credencial real do autor, nem o uso do modelo.
+- **O cofre NÃO volta a `[]` por conta própria — correção em relação a um registro anterior.** Ao final da validação o cofre foi limpo (`auth export` → `[]`), **mas** `restore_opencode_auth_from_drive()` roda **a cada boot** (`launch_app.py:4006`) e o backup no Drive **continha** a credencial de teste. No boot seguinte ela foi **reimportada automaticamente**: a entrada `cred_ufvaiteste0000000000` tem `time_created` = 20:04:15 UTC, e `save_opencode_auth_to_drive()` no encerramento (`launch_app.py:3927`) regrava o backup com o mesmo conteúdo — o teste **se autoperpeta**. Enquanto `backups/opencode_auth.json` contiver a credencial de descarte, todo boot a reinyeta. **Consequência prática: remover a credencial de teste do cofre e o arquivo de backup antes da validação com credencial real**, sob pena de o `restore` recusar por já haver credencial no motor (`launch_app.py:1417`) e mascarar o diagnóstico.
+- **O schema que o motor exige foi extraído do próprio binário**, não adivinhado. `Credential.Entry = { id, integrationID, label, active, value }`, e `Credential.Value` é uma **união discriminada por `type`** com três formatos — `oauth` (`methodID`, `refresh`, `access`, `expires?`, `metadata?`), `key` (`key`, `metadata?`, `configuration?`) e `external` (`methodID`, `metadata?`). O `id` é do tipo `Credential.ID` (prefixo `cred_`). Sem esse contrato, o `auth import` rejeita campo a campo (`Missing key at [0]["id"]` → `["integrationID"]` → `["label"]` → `Expected boolean` → `Expected Credential.Value`).
+- **Round-trip verificado ponta a ponta:** após importar uma credencial `{type: "key", key: ...}`, o `auth export` devolve **o mesmo segredo intacto** — a criptografia e a decifragem do UFVAI não perdem nada. Reimportar a mesma entrada responde `Imported 1 credential` (idempotente do lado do motor: não duplica).
+- **Comportamento seguro confirmado:** uma exportação vazia (`[]`) **nunca sobrescreve** um backup já gravado — `save_opencode_auth_to_drive()` só escreve se trouxer ao menos uma credencial. Testado: com o export vazio a função devolve `False` e o envelope `opencode-auth-export-v2` permanece íntegro.
+- **Envelope cifrado conferido:** o arquivo no Drive é `{_ufvai_enc, data, format}` com `format: "opencode-auth-export-v2"`; o segredo **não aparece em claro** no arquivo (273 B para um payload de teste). O arquivo temporário do `auth import` é removido em `finally`, então **segredos não ficam em `/tmp`**.
+- **Nota de operação:** `auth logout` em terminal não interativo exige **dois** argumentos — `opencode auth logout <integration> <credential>`; com um só, ou com o ID/label no lugar errado, o motor abre seletor interativo e falha. Afeta apenas a limpeza manual, não o fluxo automático do UFVAI.
 
 ### ❗ Pendências (autor)
-- **Validar em execução real no Colab** com o motor 2.x instalado: `auth export`/`auth import` com credencial salva e retomada de sessão.
-- **Decidir o bump** para uma versão própria (0.7.0) quando a validação passar.
+- **Limpar a credencial de teste antes da validação real** — o cofre ainda contém `cred_ufvaiteste0000000000` (`openrouter`) e `backups/opencode_auth.json` a contém cifrada; como o `restore` roda a cada boot, ela **volta sozinha**. A limpeza exige **os dois**: `opencode auth logout openrouter "UFVAI Teste Validação"` **e** a remoção do arquivo de backup no Drive. (Ver a seção de validação acima.)
+- **Validação de campo com credencial REAL** — o caminho está validado com credencial sintética; falta o round-trip com a credencial do autor (login → `auth export` → backup cifrado → `auth import` → retomada de sessão).
+- **Retomada de sessão** no Colab com o motor 2.x: subir a interface, reconectar e confirmar que a sessão volta com o histórico — ainda não foi exercitada em execução real.
 - **Push para o GitHub** — `git push` segue bloqueado por falta de credencial (`gh auth login` pendente).
+- Rebuild do `.deb` offline em 0.6.21 (o pacote atual continua em 0.6.19).
 
 ---
 
