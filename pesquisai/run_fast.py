@@ -988,7 +988,7 @@ def setup_obsidian_vault() -> None:
 def seed_ufvai_greeting(
     session_id,
     greeting,
-    model="opencode-go/cat-jam-free",
+    model=None,
     timeout_s=25.0,
     opencode_bin=None,
     env=None,
@@ -1001,10 +1001,25 @@ def seed_ufvai_greeting(
     if not bin_path:
         bin_path = shutil.which("opencode") or "/root/.opencode/bin/opencode"
     run_env = env if isinstance(env, dict) else dict(_os.environ)
+    # Verifica disponibilidade do "big pickle free" (OpenCode Zen).
+    if model is None:
+        try:
+            listed = subprocess.run(
+                [bin_path, "models"], capture_output=True, text=True,
+                timeout=10, env=run_env,
+            ).stdout or ""
+            if "opencode/big-pickle" in listed:
+                model = "opencode/big-pickle"
+            else:
+                model = None
+        except Exception:
+            model = None
     try:
-        result = subprocess.run(
-            [bin_path, "run", "--session", str(session_id),
-             "--model", model, greeting],
+        cmd = [bin_path, "run", "--session", str(session_id)]
+        if model:
+            cmd += ["--model", str(model)]
+        cmd += [greeting]
+        result = subprocess.run(cmd,
             capture_output=True, text=True, timeout=timeout_s,
             cwd=_os.getcwd(), env=run_env,
         )

@@ -1185,11 +1185,17 @@ def _build_ttyd_cmd(lang: str | None = None):
     except Exception as exc:  # noqa: BLE001
         logger.debug("preflight_ufvai_session falhou inesperadamente: %s", exc)
     if session_id:
-        seeded = seed_ufvai_greeting(
-            session_id, safe_prompt, opencode_bin=opencode_bin, env=env,
-        )
-        if not seeded:
-            logger.debug("seed da saudação (greeting) falhou; seguindo com sessão vazia")
+        # Envia a saudação em background para não bloquear o spawn do TUI.
+        # Sem isso, o opencode run espera ~6s e adia a aparição do terminal.
+        try:
+            subprocess.Popen(
+                [opencode_bin, "run", "--session", str(session_id),
+                 "--model", "opencode/big-pickle", greeting],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                cwd=os.getcwd(), env=env, start_new_session=True,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("seed assíncrono da saudação não iniciado (ttyd continua)")
         bash_cmd = f"{opencode_bin} --session \"{session_id}\" {_yolo} ; exec bash"
     else:
         bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" {_yolo} ; exec bash'
