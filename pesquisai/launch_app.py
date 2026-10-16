@@ -1179,9 +1179,15 @@ def _build_ttyd_cmd(lang: str | None = None):
     # leaves the saudação unanswered). Best-effort: any failure (key/model/quota)
     # leaves the pinned session available; later typed messages still target
     # the UFVAI (post-baseline session agent persiste).
+    try:
+        from .constants import DRIVE_PATH as _DRIVE_PATH
+    except Exception:  # noqa: BLE001
+        _DRIVE_PATH = os.path.join(os.environ.get("HOME", "/"), "PesquisAI")
+    project_dir = _DRIVE_PATH if _DRIVE_PATH and os.path.isdir(_DRIVE_PATH) else os.getcwd()
+
     session_id: str | None = None
     try:
-        session_id = preflight_ufvai_session(cwd=os.getcwd())
+        session_id = preflight_ufvai_session(cwd=project_dir)
     except Exception as exc:  # noqa: BLE001
         logger.debug("preflight_ufvai_session falhou inesperadamente: %s", exc)
     if session_id:
@@ -1189,16 +1195,15 @@ def _build_ttyd_cmd(lang: str | None = None):
         # Sem isso, o opencode run espera ~6s e adia a aparição do terminal.
         try:
             subprocess.Popen(
-                [opencode_bin, "run", "--session", str(session_id),
-                 "--model", "opencode/big-pickle", greeting],
+                [opencode_bin, "run", "--session", str(session_id), greeting],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                cwd=os.getcwd(), env=env, start_new_session=True,
+                cwd=project_dir, env=env, start_new_session=True,
             )
         except Exception:  # noqa: BLE001
             logger.debug("seed assíncrono da saudação não iniciado (ttyd continua)")
-        bash_cmd = f"{opencode_bin} --session \"{session_id}\" {_yolo} ; exec bash"
+        bash_cmd = f"cd \"{project_dir}\" && {opencode_bin} --session \"{session_id}\" {_yolo} ; exec bash"
     else:
-        bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" {_yolo} ; exec bash'
+        bash_cmd = f"cd \"{project_dir}\" && {opencode_bin} --prompt \"{safe_prompt}\" {_yolo} ; exec bash"
 
     # v0.4.2.5: construir args com --index (touch handlers)
     # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
