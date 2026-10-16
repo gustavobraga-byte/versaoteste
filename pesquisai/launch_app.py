@@ -62,7 +62,7 @@ from .opencode_utils import (
     is_opencode_v2,
 )
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
-from .run_fast import ensure_ufvai_agent, preflight_ufvai_session
+from .run_fast import ensure_ufvai_agent, preflight_ufvai_session, seed_ufvai_greeting
 
 
 def _ensure_ufvai_agent_before_spawn(where: str = "terminal") -> None:
@@ -1185,15 +1185,11 @@ def _build_ttyd_cmd(lang: str | None = None):
     except Exception as exc:  # noqa: BLE001
         logger.debug("preflight_ufvai_session falhou inesperadamente: %s", exc)
     if session_id:
-        try:
-            subprocess.run(
-                [opencode_bin, "run", "--session", session_id,
-                 "--model", "google/gemini-3.1-flash-lite", safe_prompt],
-                capture_output=True, text=True, timeout=25,
-                cwd=os.getcwd(), env=env,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("seed da saudação (greeting) falhou (%s); seguindo com sessão vazia", exc)
+        seeded = seed_ufvai_greeting(
+            session_id, safe_prompt, opencode_bin=opencode_bin, env=env,
+        )
+        if not seeded:
+            logger.debug("seed da saudação (greeting) falhou; seguindo com sessão vazia")
         bash_cmd = f"{opencode_bin} --session \"{session_id}\" {_yolo} ; exec bash"
     else:
         bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" {_yolo} ; exec bash'

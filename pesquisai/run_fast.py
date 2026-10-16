@@ -988,7 +988,7 @@ def setup_obsidian_vault() -> None:
 def seed_ufvai_greeting(
     session_id,
     greeting,
-    model="google/gemini-3.1-flash-lite",
+    model="opencode-go/cat-jam-free",
     timeout_s=25.0,
     opencode_bin=None,
     env=None,
