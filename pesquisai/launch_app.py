@@ -62,7 +62,7 @@ from .opencode_utils import (
     is_opencode_v2,
 )
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
-from .run_fast import ensure_ufvai_agent
+from .run_fast import ensure_ufvai_agent, preflight_ufvai_session
 
 
 def _ensure_ufvai_agent_before_spawn(where: str = "terminal") -> None:
@@ -1166,7 +1166,37 @@ def _build_ttyd_cmd(lang: str | None = None):
     # Auto-aprovação de permissões (flag do OpenCode V2 é --auto; antes --yolo).
     # Mantido ligado por padrão (decisão do usuário). Para desligar: PESQUISAI_YOLO=0
     _yolo = "" if os.environ.get("PESQUISAI_YOLO", "1").strip().lower() in ("0", "false", "off", "no") else " --auto"
-    bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" {_yolo} ; exec bash'
+    # v0.6.22b (ajuste 15/10/2026 — SEM bump): o TUI criava a sessão nova com o
+    # agente `build` na primeira mensagem, mesmo com default_agent UFVAI válido
+    # (defeito reproduzido: "switched agent from Build to UFVAI" após o clique).
+    # Solução: pré-criar a sessão via API já com agent=UFVAI e abrir o TUI
+    # nela (`--session`); best-effort — qualquer falha volta ao comportamento
+    # anterior (default_agent + build/plan desabilitados continuam ativos).
+    # O cwd bate com o do TUI que será spawnado (projeção de projeto do serviço).
+    # Seed the initial greeting ALREADY in the UFVAI-pinned session, via the
+    # headless `opencode run`, instead of passing `--prompt` to the
+    # interactive TUI (which on V2 restarts/leaks into a `build` session and
+    # leaves the saudação unanswered). Best-effort: any failure (key/model/quota)
+    # leaves the pinned session available; later typed messages still target
+    # the UFVAI (post-baseline session agent persiste).
+    session_id: str | None = None
+    try:
+        session_id = preflight_ufvai_session(cwd=os.getcwd())
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("preflight_ufvai_session falhou inesperadamente: %s", exc)
+    if session_id:
+        try:
+            subprocess.run(
+                [opencode_bin, "run", "--session", session_id,
+                 "--model", "google/gemini-3.1-flash-lite", safe_prompt],
+                capture_output=True, text=True, timeout=25,
+                cwd=os.getcwd(), env=env,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("seed da saudação (greeting) falhou (%s); seguindo com sessão vazia", exc)
+        bash_cmd = f"{opencode_bin} --session \"{session_id}\" {_yolo} ; exec bash"
+    else:
+        bash_cmd = f'{opencode_bin} --prompt "{safe_prompt}" {_yolo} ; exec bash'
 
     # v0.4.2.5: construir args com --index (touch handlers)
     # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
