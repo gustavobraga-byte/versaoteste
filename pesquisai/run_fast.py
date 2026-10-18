@@ -62,7 +62,9 @@ from .opencode_config import (
     build_ufvai_theme,
     load_json_config,
     merge_agent_policy,
+    merge_cli_preset,
     merge_cli_theme,
+    merge_opencode_config,
     strip_frontmatter,
     write_json_atomic,
 )
@@ -655,7 +657,10 @@ Existe uma pasta persistente de skills personalizadas em:
         # `build` e `plan` em `agents` do opencode.json — regra do autor
         # ("exclua o build e o plan; tem que SEMPRE carregar o ufvai").
         # Assim o único fallback visível da V2 continua sendo o UFVAI.
-        write_json_atomic(OPENCODE_CFG, merge_agent_policy(cfg, AGENT_NAME))
+        # v0.6.22 (16/10, SEM bump): `merge_opencode_config` também instala os
+        # comandos slash em PT (merge_ufvai_commands) — nunca sobrescreve os
+        # comandos já definidos pelo usuário.
+        write_json_atomic(OPENCODE_CFG, merge_opencode_config(cfg, AGENT_NAME))
         return True
     logger.warning(
         "opencode.json não pôde ser interpretado (JSONC inválido?); o arquivo "
@@ -793,7 +798,11 @@ def _setup_theme_and_agent() -> None:
             name = THEME_NAME
         if mode not in ("dark", "light"):
             mode = "dark"
-        write_json_atomic(CLI_JSON, merge_cli_theme(existing_cli, name, mode))
+        # v0.6.22 (16/10, SEM bump): preset cli.json do UFVAI preenche
+        # SOMENTE chaves ausentes (session/diffs/tabs/highlights) —
+        # escolhas já gravadas pelo usuário são preservadas.
+        merged_cli = merge_cli_preset(merge_cli_theme(existing_cli, name, mode))
+        write_json_atomic(CLI_JSON, merged_cli)
     else:
         logger.warning("cli.json não pôde ser lido; tema do terminal mantido como está.")
 

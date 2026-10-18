@@ -167,6 +167,139 @@ def merge_default_agent(existing: dict[str, Any], agent_name: str) -> dict[str, 
     return merged
 
 
+# v0.6.22 (16/10/2026, SEM bump): presets de personalização da TUI
+# (recomendações 1 e 2 do estudo de 16/10 — cli.json + comandos PT).
+# Filosofia: preencher somente chaves AUSENTES (a escolha do usuário vence) e
+# usar apenas chaves documentadas na V2 (a V2 rejeita desconhecidas em cli.json).
+CLI_PRESET: dict[str, Any] = {
+    # session.* — configuração de sessão (docs cli/config.md#sessions)
+    "session": {"thinking": "show", "markdown": "rendered"},
+    # diffs.* — revisão de mudanças (docs cli/config.md#diffs)
+    "diffs": {"wrap": "word"},
+    # tabs.* — faixa de abas (docs cli/config.md#tabs)
+    "tabs": {"mode": "auto"},
+    # banner de release da TUI desligado (docs cli/config.md#highlights)
+    "highlights": False,
+}
+
+
+def merge_cli_preset(existing: dict[str, Any]) -> dict[str, Any]:
+    """Aplica ``CLI_PRESET`` em cli.json preenchendo somente chaves ausentes.
+
+    Regras:
+    - valor presente do usuário é preservado (não sobrescreve, nem por nível);
+    - chaves de grupo existentes recebem apenas os subitens ausentes;
+    - nunca muta o argumento recebido (cópia em dois níveis).
+    """
+    merged = dict(existing)
+    for key, value in CLI_PRESET.items():
+        if key not in merged:
+            merged[key] = dict(value) if isinstance(value, dict) else value
+            continue
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            sub = dict(merged[key])  # preserva subitens já definidos pelo usuário
+            for sub_key, sub_value in value.items():
+                sub.setdefault(sub_key, sub_value)
+            merged[key] = sub
+    return merged
+
+
+# Comandos slash em português para o fluxo científico do UFVAI.
+# São PROMPT TEMPLATES (docs opencode.ai/v2/docs/commands/): rodam em sessão
+# com o agente padrão (UFVAI). Comandos que abrem diálogos do motor
+# (ex.: lista de sessões/modelos) continuam com nomes nativos em inglês —
+# substituí-los exige plugin (issue upstream #37216 aberto).
+UFVAI_COMMANDS: dict[str, dict[str, str]] = {
+    "pesquisar": {
+        "description": "Pesquisa científica completa sobre um tema",
+        "template": (
+            "Conduza uma pesquisa científica sobre: $ARGUMENTS.\n"
+            "- Colete somente dados reais das skills adequadas (ibge-br, opendatasus etc.)\n"
+            "  e papers validados (citation-management).\n"
+            "- Marque cada afirmação com [DADO CONFIRMADO], [ESTIMATIVA FUNDAMENTADA]\n"
+            "  ou [SEM DADOS SUFICIENTES].\n"
+            "- Registre parâmetros e achados em Minha memória."
+        ),
+    },
+    "revisar": {
+        "description": "Revisão de literatura sobre um tema",
+        "template": (
+            "Faça uma revisão de literatura sobre: $ARGUMENTS.\n"
+            "- Busque papers nas bases acadêmicas e registre cada referência em "
+            "Minha memória, com DOI/ISBN validado.\n"
+            "- Sintetize por eixo temático e indique lacunas de pesquisa."
+        ),
+    },
+    "dados": {
+        "description": "Dados oficiais brasileiros sobre um tema",
+        "template": (
+            "Consulte dados oficiais brasileiros sobre: $ARGUMENTS.\n"
+            "- Use ibge-br, opendatasus, dados-brasil ou agrobr conforme o domínio.\n"
+            "- Reporte cada número com fonte, série/ano e período; nunca invente dados."
+        ),
+    },
+    "referencias": {
+        "description": "Valida as referências citadas nesta conversa",
+        "template": (
+            "Valide todas as referências desta conversa com um identificador "
+            "persistente (DOI/ISBN/ISSN/URL oficial) em Minha memória.\n"
+            "- Reporte o status de cada uma (validada/inválida/pendente)\n"
+            "  e corrija o que puder, sem inventar campos."
+        ),
+    },
+    "abnt": {
+        "description": "Normaliza texto ou referências no padrão UFV/ABNT",
+        "template": "Normalize no padrão UFV/ABNT o texto ou as referências indicadas: $ARGUMENTS.",
+    },
+    "ajuda": {
+        "description": "Help do UFVAI: uso, skills, comandos e atalhos (em PT)",
+        "template": (
+            "Explique de forma prática como usar o UFVAI: fluxo de trabalho\n"
+            "(seções do §3), marcadores de evidência (§4.2), skills disponíveis\n"
+            "e como registrar a sessão em Minha memória. Responda em português.\n"
+            "Se o usuário indicar um tema, foque nele: $ARGUMENTS"
+        ),
+    },
+    "memoria": {
+        "description": "Consulta/salva na memória persistente (Minha memória)",
+        "template": (
+            "Trabalhe com Minha memória (vault do PesquisAI): $ARGUMENTS\n"
+            "- Sem argumento: mostre o último estado (moc/last-state.md),\n"
+            "  as 3 últimas dailies e o que está pendente (fila/próximos passos).\n"
+            "- Para salvar: crie a nota com o template oficial da pasta certa\n"
+            "  e o frontmatter obrigatório (created, created_by, updated,\n"
+            "  tags da taxonomia oficial pesquisai/*)."
+        ),
+    },
+}
+
+
+def merge_ufvai_commands(existing: dict[str, Any]) -> dict[str, Any]:
+    """Instala ``UFVAI_COMMANDS`` em opencode.json sem sobrescrever o usuário.
+
+    Comandos já definidos pelo usuário (ou em outro nível de configuração)
+    mantêm prioridade: aqui só adicionamos os que ainda não existem.
+    """
+    merged = dict(existing)
+    commands = dict(merged.get("commands") or {})
+    for name, spec in UFVAI_COMMANDS.items():
+        if name not in commands:
+            commands[name] = dict(spec)
+    merged["commands"] = commands
+    merged.setdefault("$schema", CONFIG_SCHEMA_URL)
+    return merged
+
+
+def merge_opencode_config(existing: dict[str, Any], agent_name: str) -> dict[str, Any]:
+    """Cadeia oficial de boot: política de agentes + comandos UFVAI (PT).
+
+    A referência a ``merge_agent_policy`` é resolvida no momento da chamada
+    (o run_fast só invoca com todos os nomes já definidos), então posicioná-la
+    antes da outra definição é apenas questão de leitura do fluxo de boot.
+    """
+    return merge_ufvai_commands(merge_agent_policy(existing, agent_name))
+
+
 # v0.6.22 (15/10/2026): agentes embutidos que NUNCA podem ser usados pelo
 # UFVAI. Regra do autor: "exclua o build e o plan… tem que SEMPRE carregar
 # o ufvai". Como docs oficiais da V2 (opencode.ai/v2/docs/agents) não
