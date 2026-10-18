@@ -24,6 +24,35 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
+  v0.6.24 — 18/10/2026: 🈯 TUI 100% em português (comandos, menus e frases de
+            abertura) + 🌍 4 idiomas no mesmo plugin
+            • Comandos barra da TUI em PT-BR/es/fr/zh: plugin de CLI
+              `ufvai-pt` (37 comandos nativos traduzidos pelo keymap, mesmo
+              `id` do nativo, `palette`/atalhos preservados) + comando
+              `/idioma` com troca ao vivo; catálogo em
+              `~/.config/opencode/tui/ufvai-pt/` (revisto no boot por
+              `install_pt_plugin` + `merge_cli_plugins`).
+            • Frases iniciais da tela de nova sessão em pt-BR (placeholder
+              "O que buscar…", "Execute algo…" e 3 exemplos científicos):
+              `pesquisai/tui_prompt.py` faz patch do binário do motor por
+              substituição de MESMO tamanho (UTF-8/UTF-16), atômico, com
+              backup `.orig-ufvai` e verificação pós-patch.
+            • Idioma resolvido por `_resolve_prompt_locale()`: `/idioma` →
+              UFVAI_LANG/PESQUISAI_LOCALE → navegador (i18n v0.6.23) → LANG →
+              pt-BR, mantendo comandos e frases no MESMO idioma.
+            • 2 novos comandos de prompt em PT: `/iniciar` (≈ /init) e
+              `/revisar-codigo` (≈ /review).
+            • Testes novos: tests/test_comandos_pt.py e
+              tests/test_prompt_texts.py (27 casos).
+  v0.6.23 — 17/10/2026: 🌐 i18n do TUI em PT-BR (plugin opencode-i18n-v2)
+            • Locale pt-BR COMPLETO (190 comandos + grupos + 49 slash
+              commands) implantado em ~/.config/opencode/i18n/locales/.
+            • Detecção de idioma: PESQUISAI_LOCALE → língua do navegador
+              (Accept-Language gravado pela UI web) → LANG/LC_ALL → pt-BR.
+            • Novo módulo pesquisai/opencode_i18n.py (fail-open) + asset
+              pesquisai/assets/i18n/pt-BR.json + testes dedicados.
+            • Cadeia de boot: merge_opencode_config agora garante o plugin
+              na lista `plugins`; apply_i18n implanta locale + estado.
   v0.6.22 — 15/10/2026: 🔒 exclusão efetiva dos agentes `build` e `plan`
             • Regra do autor: "exclua o build e o plan… tem que SEMPRE
               carregar o ufvai, inclusive na mensagem inicial do usuário
@@ -344,7 +373,7 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.22"
+__version__: str = "0.6.24"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 

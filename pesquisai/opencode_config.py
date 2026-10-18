@@ -204,11 +204,38 @@ def merge_cli_preset(existing: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def merge_cli_plugins(existing: dict[str, Any], plugin_path: str) -> dict[str, Any]:
+    """Habilita um plugin de CLI (TUI) em ``cli.json`` sem duplicar entradas.
+
+    A lista ``plugins`` do cli.json aceita nomes de pacote, caminhos locais e
+    o formato ``{"package": ...}``. Só acrescentamos o caminho do plugin do
+    UFVAI se ele ainda não estiver presente (em qualquer das duas formas) e
+    preservamos a ordem e as escolhas do usuário.
+
+    Plugins de TUI são "CLI-only" (docs: opencode.ai/v2/docs/plugins): ficam
+    em ``cli.json`` e continuam ativos mesmo quando a TUI se conecta a um
+    servidor remoto.
+    """
+    merged = dict(existing)
+    current = merged.get("plugins")
+    items: list[Any] = list(current) if isinstance(current, list) else []
+    if not any(
+        item == plugin_path
+        or (isinstance(item, dict) and item.get("package") == plugin_path)
+        for item in items
+    ):
+        items.append(plugin_path)
+    merged["plugins"] = items
+    merged.setdefault("$schema", CLI_SCHEMA_URL)
+    return merged
+
+
 # Comandos slash em português para o fluxo científico do UFVAI.
 # São PROMPT TEMPLATES (docs opencode.ai/v2/docs/commands/): rodam em sessão
-# com o agente padrão (UFVAI). Comandos que abrem diálogos do motor
-# (ex.: lista de sessões/modelos) continuam com nomes nativos em inglês —
-# substituí-los exige plugin (issue upstream #37216 aberto).
+# com o agente padrão (UFVAI). Os comandos NATIVOS da TUI (/new, /undo,
+# /themes, /help, /models…) também estão em português desde a v0.6.24, mas por
+# outra via: o plugin de CLI em `pesquisai/tui_pt.py`, que traduz o token
+# digitado no próprio keymap (aqui ficam apenas os comandos de PROMPT).
 UFVAI_COMMANDS: dict[str, dict[str, str]] = {
     "pesquisar": {
         "description": "Pesquisa científica completa sobre um tema",
@@ -271,6 +298,28 @@ UFVAI_COMMANDS: dict[str, dict[str, str]] = {
             "  tags da taxonomia oficial pesquisai/*)."
         ),
     },
+    # Equivalentes em PT dos comandos de servidor nativos do motor
+    # (/init e /review). São prompt templates: reproduzem o fluxo, não o
+    # diálogo interativo original.
+    "iniciar": {
+        "description": "Configuração guiada do AGENTS.md (regras do projeto)",
+        "template": (
+            "Faça a configuração guiada do AGENTS.md deste projeto: $ARGUMENTS\n"
+            "- Inspecione a estrutura, a stack e os comandos de build/teste reais.\n"
+            "- Crie ou atualize AGENTS.md com o que um agente precisa saber\n"
+            "  (arquitetura, como rodar, convenções, armadilhas).\n"
+            "- Não invente comandos: confirme cada um no repositório."
+        ),
+    },
+    "revisar-codigo": {
+        "description": "Revisa mudanças de código (commit, branch ou PR)",
+        "template": (
+            "Revise as mudanças de código indicadas: $ARGUMENTS\n"
+            "- Sem argumento, use as alterações não commitadas (git diff).\n"
+            "- Aponte bugs, riscos, regressões e testes faltando, com arquivo:linha.\n"
+            "- Não reescreva o código sem pedir; priorize achados acionáveis."
+        ),
+    },
 }
 
 
@@ -291,13 +340,16 @@ def merge_ufvai_commands(existing: dict[str, Any]) -> dict[str, Any]:
 
 
 def merge_opencode_config(existing: dict[str, Any], agent_name: str) -> dict[str, Any]:
-    """Cadeia oficial de boot: política de agentes + comandos UFVAI (PT).
+    """Cadeia oficial de boot: agentes + comandos UFVAI (PT) + plugin i18n.
 
     A referência a ``merge_agent_policy`` é resolvida no momento da chamada
     (o run_fast só invoca com todos os nomes já definidos), então posicioná-la
     antes da outra definição é apenas questão de leitura do fluxo de boot.
+    v0.6.23: também garante o plugin ``opencode-i18n-v2`` (TUI em pt-BR).
     """
-    return merge_ufvai_commands(merge_agent_policy(existing, agent_name))
+    from .opencode_i18n import merge_i18n_plugin  # import tardio evita ciclo
+
+    return merge_i18n_plugin(merge_ufvai_commands(merge_agent_policy(existing, agent_name)))
 
 
 # v0.6.22 (15/10/2026): agentes embutidos que NUNCA podem ser usados pelo

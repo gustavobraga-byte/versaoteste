@@ -1666,6 +1666,13 @@ def start_wrapper_server():
             self.end_headers()
         
         def do_GET(self):
+            # v0.6.23: registra a língua do navegador (Accept-Language) para o
+            # i18n do TUI detectar o idioma do usuário (fail-open, 1 linha).
+            try:
+                from .opencode_i18n import record_browser_locale
+                record_browser_locale(self.headers.get("Accept-Language"))
+            except Exception:
+                pass
             p = urlparse(self.path).path
             if p.startswith("/api/") and not self._authorized():
                 return self._reject_token()
@@ -2451,6 +2458,12 @@ def start_wrapper_server():
             self.send_error(404)
 
         def do_POST(self):
+            # v0.6.23: mesma captura de Accept-Language do do_GET (fail-open).
+            try:
+                from .opencode_i18n import record_browser_locale
+                record_browser_locale(self.headers.get("Accept-Language"))
+            except Exception:
+                pass
             p = urlparse(self.path).path
             # v0.6.0: rate limit generoso nos mutantes (120/min/IP)
             ip = self.client_address[0] if self.client_address else "?"

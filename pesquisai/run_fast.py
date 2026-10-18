@@ -62,13 +62,17 @@ from .opencode_config import (
     build_ufvai_theme,
     load_json_config,
     merge_agent_policy,
+    merge_cli_plugins,
     merge_cli_preset,
     merge_cli_theme,
     merge_opencode_config,
     strip_frontmatter,
     write_json_atomic,
 )
+from .opencode_i18n import apply_i18n, browser_locale, merge_i18n_plugin
 from .opencode_utils import find_opencode, reset_opencode_cache
+from .tui_prompt import patch_prompt_texts
+from .tui_pt import PT_LOCALES, detect_locale, install_pt_plugin, read_saved_locale
 
 # Descrição do agente UFVAI (aparece na lista de agentes da V2)
 UFVAI_AGENT_DESCRIPTION = (
@@ -661,6 +665,12 @@ Existe uma pasta persistente de skills personalizadas em:
         # comandos slash em PT (merge_ufvai_commands) — nunca sobrescreve os
         # comandos já definidos pelo usuário.
         write_json_atomic(OPENCODE_CFG, merge_opencode_config(cfg, AGENT_NAME))
+        # v0.6.23: implanta o locale pt-BR/estado do plugin opencode-i18n-v2
+        # (detecção de idioma: PESQUISAI_LOCALE → navegador → LANG → pt-BR).
+        try:
+            apply_i18n()
+        except Exception:  # i18n é sempre fail-open
+            logger.exception("i18n: falha ao implantar locale/estado (boot segue).")
         return True
     logger.warning(
         "opencode.json não pôde ser interpretado (JSONC inválido?); o arquivo "
@@ -761,6 +771,41 @@ def preflight_ufvai_session(
         return None
 
 
+def _resolve_prompt_locale() -> str:
+    """Idioma das frases do prompt (tela de nova sessão) e das sugestões.
+
+    Ordem (do mais explícito ao mais automático):
+      1. escolha feita em ``/idioma`` (arquivo do plugin ``ufvai-pt``);
+      2. ``UFVAI_LANG``/``PESQUISAI_LOCALE`` (override de ambiente);
+      3. língua do NAVEGADOR registrada pela UI web (módulo i18n — v0.6.23);
+      4. ``LANG``/``LC_ALL`` do sistema;
+      5. padrão do produto: ``pt-BR``.
+
+    Mantém as frases do prompt no MESMO idioma dos comandos ``/`` — o motor
+    não oferece configuração para esses textos (vivem no binário), por isso
+    o patch de ``tui_prompt`` precisa do idioma resolvido aqui.
+    """
+    saved = read_saved_locale()
+    if saved:
+        return saved
+    explicit = os.environ.get("UFVAI_LANG") or os.environ.get("PESQUISAI_LOCALE") or ""
+    explicit = explicit.strip().lower().replace("_", "-")
+    if explicit.startswith("pt"):
+        return "pt-BR"
+    for prefix, locale in (("es", "es"), ("fr", "fr"), ("zh", "zh"), ("en", "en")):
+        if explicit.startswith(prefix):
+            return locale
+    # `browser_locale()` só devolve algo quando a UI web já registrou a
+    # língua do navegador — evita que o fallback (pt-BR) do módulo i18n
+    # mascare um sistema em es/fr.
+    browser = browser_locale()
+    if isinstance(browser, str) and browser:
+        mapped = {"zh-Hans": "zh", "zh-Hant": "zh"}.get(browser, browser)
+        if mapped in PT_LOCALES:
+            return mapped
+    return detect_locale()
+
+
 def _setup_theme_and_agent() -> None:
     """Configura tema, agente UFVAI e opencode.json para o OpenCode V2.
 
@@ -785,6 +830,15 @@ def _setup_theme_and_agent() -> None:
             except OSError:
                 pass
 
+    # ── Plugin de TUI: comandos barra em português (v0.6.24) ──────────
+    # Instala o pacote local ANTES de ler o cli.json: o caminho precisa
+    # existir quando o motor carregar o plugin no próximo start da TUI.
+    try:
+        pt_plugin_dir = install_pt_plugin()
+    except OSError as exc:  # sem permissão/FS somente leitura: não aborta o boot
+        logger.warning(f"Plugin PT da TUI não pôde ser instalado: {exc}")
+        pt_plugin_dir = ""
+
     # ── cli.json: nome e modo do tema (preserva a escolha do usuário) ──
     ok_cli, existing_cli = load_json_config(CLI_JSON)
     if ok_cli:
@@ -802,12 +856,35 @@ def _setup_theme_and_agent() -> None:
         # SOMENTE chaves ausentes (session/diffs/tabs/highlights) —
         # escolhas já gravadas pelo usuário são preservadas.
         merged_cli = merge_cli_preset(merge_cli_theme(existing_cli, name, mode))
+        if pt_plugin_dir:
+            # Habilita o plugin PT (idempotente; preserva plugins do usuário).
+            merged_cli = merge_cli_plugins(merged_cli, pt_plugin_dir)
         write_json_atomic(CLI_JSON, merged_cli)
     else:
         logger.warning("cli.json não pôde ser lido; tema do terminal mantido como está.")
 
     # ── Agente UFVAI + default_agent (garantia reexecutável) ──
     ensure_ufvai_agent()
+
+    # ── Textos do prompt no idioma do usuário (v0.6.24) ──────────────
+    # Frases de exemplo da tela inicial + "Ask anything"/"Run a command".
+    # São internos ao binário do motor: o patch preserva o tamanho em bytes
+    # e é idempotente (ver pesquisai/tui_prompt.py). Nunca interrompe o boot.
+    try:
+        locale = _resolve_prompt_locale()
+        binary = find_opencode()
+        result = patch_prompt_texts(binary, locale)
+        status = result.get("status")
+        if status == "patched":
+            logger.info(f"Textos do prompt atualizados para {locale} ({result.get('changes')} trocas).")
+        elif status == "restored":
+            logger.warning("Textos do prompt: patch revertido (binário não validou).")
+        elif status == "not-found":
+            logger.info("Textos do prompt: frases originais não encontradas (versão diferente do motor?).")
+        elif status not in ("already",):
+            logger.info(f"Textos do prompt: {status}.")
+    except Exception as exc:  # noqa: BLE001 — boot nunca deve quebrar por isso
+        logger.warning(f"Textos do prompt não puderam ser aplicados: {exc}")
 
 
 def setup_dependencies() -> None:
