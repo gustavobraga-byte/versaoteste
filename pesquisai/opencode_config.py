@@ -339,17 +339,90 @@ def merge_ufvai_commands(existing: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def cleanup_i18n_leftovers() -> list[str]:
+    """Remove instalações/resíduos do plugin ``opencode-i18n`` (v0.6.24).
+
+    Apaga ``~/.config/opencode/i18n/``, ``~/.local/state/opencode/i18n-state.json``
+    e ``~/.local/state/opencode/pesquisai-browser-locale.json`` — arquivos que a
+    v0.6.23 criava e que, se ficarem no disco, reativariam a camada de tradução
+    concorrente assim que o plugin fosse reinstalado pelo usuário. Fail-open:
+    qualquer erro de I/O é ignorado e o boot continua.
+
+    Returns:
+        Lista dos caminhos efetivamente removidos (para log).
+    """
+    removed: list[str] = []
+    home = os.path.expanduser("~")
+    config_root = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.join(home, ".config")), "opencode")
+    state_root = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.join(home, ".local", "state")), "opencode")
+    targets = [
+        os.path.join(config_root, "i18n"),
+        os.path.join(state_root, "i18n-state.json"),
+        os.path.join(state_root, "pesquisai-browser-locale.json"),
+    ]
+    for path in targets:
+        try:
+            if os.path.isdir(path):
+                import shutil
+                shutil.rmtree(path, ignore_errors=True)
+                removed.append(path)
+            elif os.path.exists(path):
+                os.remove(path)
+                removed.append(path)
+        except OSError:
+            continue
+    return removed
+
+
+def strip_i18n_plugin(existing: dict[str, Any]) -> dict[str, Any]:
+    """Remove o plugin ``opencode-i18n`` (v1/v2) da lista de plugins.
+
+    v0.6.24 (ajuste 18/10/2026, SEM bump): o plugin de i18n de terceiros
+    duplicava os comandos na paleta (ele e o ``ufvai-pt`` criam camadas de
+    espelho para os MESMOS ids) e injetava comandos próprios com título em
+    chinês ("界面语言"). A tradução da TUI é responsabilidade exclusiva do
+    plugin autoral ``ufvai-pt`` (``cli.json``), então o ``opencode.json``
+    nunca deve conter o plugin de i18n.
+
+    Preserva qualquer outro plugin do usuário; remove apenas entradas cujo
+    nome/pacote comece por ``opencode-i18n``.
+    """
+    merged = dict(existing)
+    plugins = list(merged.get("plugins") or [])
+
+    def _is_i18n(entry: Any) -> bool:
+        if isinstance(entry, str):
+            return entry.split("/")[-1].startswith("opencode-i18n")
+        if isinstance(entry, dict):
+            package = entry.get("package")
+            if isinstance(package, str):
+                return package.split("/")[-1].startswith("opencode-i18n")
+            if len(entry) == 1:
+                key = next(iter(entry))
+                if isinstance(key, str):
+                    return key.split("/")[-1].startswith("opencode-i18n")
+        return False
+
+    filtered = [entry for entry in plugins if not _is_i18n(entry)]
+    if filtered:
+        merged["plugins"] = filtered
+    elif "plugins" in merged:
+        merged["plugins"] = filtered
+    return merged
+
+
 def merge_opencode_config(existing: dict[str, Any], agent_name: str) -> dict[str, Any]:
-    """Cadeia oficial de boot: agentes + comandos UFVAI (PT) + plugin i18n.
+    """Cadeia oficial de boot: agentes + comandos UFVAI (PT), SEM plugin i18n.
 
     A referência a ``merge_agent_policy`` é resolvida no momento da chamada
     (o run_fast só invoca com todos os nomes já definidos), então posicioná-la
     antes da outra definição é apenas questão de leitura do fluxo de boot.
-    v0.6.23: também garante o plugin ``opencode-i18n-v2`` (TUI em pt-BR).
+    v0.6.24 (ajuste 18/10/2026): o plugin ``opencode-i18n-v2`` da v0.6.23 foi
+    REMOVIDO — ele duplicava os comandos na paleta e injetava entradas em
+    chinês. O ``ufvai-pt`` (``cli.json``) é a única camada de tradução da TUI.
     """
-    from .opencode_i18n import merge_i18n_plugin  # import tardio evita ciclo
+    return strip_i18n_plugin(merge_ufvai_commands(merge_agent_policy(existing, agent_name)))
 
-    return merge_i18n_plugin(merge_ufvai_commands(merge_agent_policy(existing, agent_name)))
 
 
 # v0.6.22 (15/10/2026): agentes embutidos que NUNCA podem ser usados pelo

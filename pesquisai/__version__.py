@@ -32,18 +32,28 @@ Histórico de versões:
               `/idioma` com troca ao vivo; catálogo em
               `~/.config/opencode/tui/ufvai-pt/` (revisto no boot por
               `install_pt_plugin` + `merge_cli_plugins`).
-            • Frases iniciais da tela de nova sessão em pt-BR (placeholder
-              "O que buscar…", "Execute algo…" e 3 exemplos científicos):
-              `pesquisai/tui_prompt.py` faz patch do binário do motor por
-              substituição de MESMO tamanho (UTF-8/UTF-16), atômico, com
-              backup `.orig-ufvai` e verificação pós-patch.
-            • Idioma resolvido por `_resolve_prompt_locale()`: `/idioma` →
-              UFVAI_LANG/PESQUISAI_LOCALE → navegador (i18n v0.6.23) → LANG →
-              pt-BR, mantendo comandos e frases no MESMO idioma.
+            • Frases iniciais da tela de nova sessão: NÃO se faz patch no binário
+              do motor (decisão de 18/10/2026). `pesquisai/tui_prompt.py` foi
+              reduzido a `restore_if_needed()` — ele apenas restaura o original
+              (`<binário>.orig-ufvai`) se uma versão anterior tiver alterado o
+              bytecode, e remove o backup. Textos internos ("Ask anything…",
+              exemplos da tela inicial, rótulos do rodapé) permanecem no idioma
+              original do motor: literais do bytecode são compartilhados com
+              contratos internos (renomear `commands` quebrava o SQLite com
+              `table project has no column named comandos`).
+            • Idioma resolvido por `tui_pt.detect_locale()`: `/idioma` (arquivo
+              `ufvai-language.json`) → UFVAI_LANG/PESQUISAI_LOCALE → LANG →
+              pt-BR; a troca no seletor da UI web (`/api/lang`) chama
+              `launch_app._sync_terminal_locale()`, que grava o arquivo e só
+              então reinicia o ttyd — terminal e interface no mesmo idioma.
+            • Plugin `opencode-i18n-v2` REMOVIDO (duplicava comandos na paleta
+              e trazia títulos em chinês): `strip_i18n_plugin()` +
+              `cleanup_i18n_leftovers()`; removidos `pesquisai/opencode_i18n.py`
+              e `pesquisai/assets/i18n/`.
             • 2 novos comandos de prompt em PT: `/iniciar` (≈ /init) e
               `/revisar-codigo` (≈ /review).
-            • Testes novos: tests/test_comandos_pt.py e
-              tests/test_prompt_texts.py (27 casos).
+            • Testes novos: tests/test_comandos_pt.py,
+              tests/test_prompt_restore.py e tests/test_sem_i18n.py.
   v0.6.23 — 17/10/2026: 🌐 i18n do TUI em PT-BR (plugin opencode-i18n-v2)
             • Locale pt-BR COMPLETO (190 comandos + grupos + 49 slash
               commands) implantado em ~/.config/opencode/i18n/locales/.

@@ -206,7 +206,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                           "description": "Copia a última resposta do assistente para a área de transferência", "group": "session"},
         "session.export": {"slug": "exportar", "title": "Exportar conversa",
                            "description": "Exporta a conversa em Markdown e abre no editor", "group": "session"},
-        "session.terminal": {"slug": "terminal", "title": "Terminal",
+        "session.terminal": {"slug": "terminal", "title": "Novo terminal",
                              "description": "Abre o terminal integrado na pasta do projeto", "group": "session"},
         "session.aside": {"slug": "aparte", "title": "Pergunta paralela",
                           "description": "Faz uma pergunta paralela sem interromper o fluxo principal",
@@ -217,7 +217,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                          "description": "Gerencia áreas de trabalho (worktrees) do projeto", "group": "session"},
         "prompt.editor": {"slug": "editor", "title": "Abrir editor",
                           "description": "Abre o editor externo para escrever a mensagem", "group": "session"},
-        "prompt.skills": {"slug": "habilidades", "aliases": ["skills"], "title": "Skills",
+        "prompt.skills": {"slug": "habilidades", "aliases": ["skills"], "title": "Habilidades",
                           "description": "Lista as skills disponíveis e insere uma na mensagem", "group": "prompt"},
         "model.list": {"slug": "modelos", "title": "Trocar modelo",
                        "description": "Lista os modelos disponíveis e troca o modelo em uso", "group": "agent"},
@@ -246,8 +246,8 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                            "description": "Mostra informações de depuração do ambiente", "group": "system"},
         "theme.switch": {"slug": "temas", "title": "Trocar tema",
                          "description": "Lista os temas disponíveis e troca o tema", "group": "system"},
-        "help.show": {"slug": "atalhos", "aliases": ["teclas", "comandos"], "title": "Ajuda",
-                      "description": "Mostra a ajuda e os atalhos de teclado", "group": "system"},
+        "help.show": {"slug": "ajuda", "aliases": ["atalhos", "ajudar", "help"], "title": "Ajuda",
+                      "description": "Mostra a ajuda do OpenCode", "group": "system"},
         "app.exit": {"slug": "sair", "aliases": ["encerrar"], "title": "Sair",
                      "description": "Fecha o OpenCode e encerra a sessão", "group": "system"},
         "diff.open": {"slug": "diff", "aliases": ["diferencas"], "title": "Ver diferenças",
@@ -284,7 +284,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                           "description": "Copia la última respuesta del asistente al portapapeles", "group": "session"},
         "session.export": {"slug": "exportar", "title": "Exportar conversación",
                            "description": "Exporta la conversación en Markdown y la abre en el editor", "group": "session"},
-        "session.terminal": {"slug": "terminal", "title": "Terminal",
+        "session.terminal": {"slug": "terminal", "title": "Nuevo terminal",
                              "description": "Abre el terminal integrado en la carpeta del proyecto", "group": "session"},
         "session.aside": {"slug": "aparte", "title": "Pregunta paralela",
                           "description": "Hace una pregunta paralela sin interrumpir el flujo principal",
@@ -295,7 +295,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                          "description": "Gestiona las áreas de trabajo (worktrees) del proyecto", "group": "session"},
         "prompt.editor": {"slug": "editor", "title": "Abrir editor",
                           "description": "Abre el editor externo para escribir el mensaje", "group": "session"},
-        "prompt.skills": {"slug": "habilidades", "aliases": ["skills"], "title": "Skills",
+        "prompt.skills": {"slug": "habilidades", "aliases": ["skills"], "title": "Habilidades",
                           "description": "Lista las skills disponibles e inserta una en el mensaje", "group": "prompt"},
         "model.list": {"slug": "modelos", "title": "Cambiar modelo",
                        "description": "Lista los modelos disponibles y cambia el modelo en uso", "group": "agent"},
@@ -324,8 +324,8 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                            "description": "Muestra información de depuración del entorno", "group": "system"},
         "theme.switch": {"slug": "temas", "title": "Cambiar tema",
                          "description": "Lista los temas disponibles y cambia el tema", "group": "system"},
-        "help.show": {"slug": "ayuda", "aliases": ["atalhos", "comandos"], "title": "Ayuda",
-                      "description": "Muestra la ayuda y los atajos de teclado", "group": "system"},
+        "help.show": {"slug": "ayuda", "aliases": ["atajos", "ayudar"], "title": "Ayuda",
+                      "description": "Muestra la ayuda de OpenCode", "group": "system"},
         "app.exit": {"slug": "salir", "aliases": ["cerrar"], "title": "Salir",
                      "description": "Cierra OpenCode y termina la sesión", "group": "system"},
         "diff.open": {"slug": "diff", "aliases": ["diferencias"], "title": "Ver diferencias",
@@ -362,7 +362,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                           "description": "Copie la dernière réponse de l'assistant dans le presse-papiers", "group": "session"},
         "session.export": {"slug": "exporter", "title": "Exporter la conversation",
                            "description": "Exporte la conversation en Markdown et l'ouvre dans l'éditeur", "group": "session"},
-        "session.terminal": {"slug": "terminal", "title": "Terminal",
+        "session.terminal": {"slug": "terminal", "title": "Nouveau terminal",
                              "description": "Ouvre le terminal intégré dans le dossier du projet", "group": "session"},
         "session.aside": {"slug": "aparte", "title": "Question parallèle",
                           "description": "Pose une question en parallèle sans interrompre le flux",
@@ -373,7 +373,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                          "description": "Gère les espaces de travail (worktrees) du projet", "group": "session"},
         "prompt.editor": {"slug": "editeur", "title": "Ouvrir l’éditeur",
                           "description": "Ouvre l'éditeur externe pour rédiger le message", "group": "session"},
-        "prompt.skills": {"slug": "competences", "aliases": ["skills"], "title": "Skills",
+        "prompt.skills": {"slug": "competences", "aliases": ["skills"], "title": "Compétences",
                           "description": "Liste les skills disponibles et en insère une", "group": "prompt"},
         "model.list": {"slug": "modeles", "title": "Changer de modèle",
                        "description": "Liste les modèles disponibles et change de modèle", "group": "agent"},
@@ -402,8 +402,8 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                            "description": "Affiche des informations de débogage", "group": "system"},
         "theme.switch": {"slug": "themes", "title": "Changer de thème",
                          "description": "Liste les thèmes disponibles et change de thème", "group": "system"},
-        "help.show": {"slug": "aide", "aliases": ["raccourcis", "commandes"], "title": "Aide",
-                      "description": "Affiche l'aide et les raccourcis clavier", "group": "system"},
+        "help.show": {"slug": "aide", "aliases": ["raccourcis", "aider"], "title": "Aide",
+                      "description": "Affiche l'aide d'OpenCode", "group": "system"},
         "app.exit": {"slug": "quitter", "aliases": ["sortir"], "title": "Quitter",
                      "description": "Ferme OpenCode et termine la session", "group": "system"},
         "diff.open": {"slug": "diff", "aliases": ["differences"], "title": "Voir les différences",
@@ -440,7 +440,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                           "description": "复制助手最后一条回复到剪贴板", "group": "session"},
         "session.export": {"slug": "导出", "title": "导出对话",
                            "description": "将对话导出为 Markdown 并在编辑器中打开", "group": "session"},
-        "session.terminal": {"slug": "终端", "title": "终端",
+        "session.terminal": {"slug": "终端", "title": "新建终端",
                              "description": "在项目目录中打开内置终端", "group": "session"},
         "session.aside": {"slug": "旁问", "title": "旁支提问",
                           "description": "在不打断主流程的情况下提出旁支问题",
@@ -480,7 +480,7 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
         "theme.switch": {"slug": "主题", "title": "切换主题",
                          "description": "列出并切换主题", "group": "system"},
         "help.show": {"slug": "帮助", "aliases": ["快捷键"], "title": "帮助",
-                      "description": "显示帮助和键盘快捷键", "group": "system"},
+                      "description": "显示 OpenCode 帮助", "group": "system"},
         "app.exit": {"slug": "退出", "title": "退出",
                      "description": "关闭 OpenCode 并结束会话", "group": "system"},
         "diff.open": {"slug": "差异", "title": "查看差异",
@@ -619,6 +619,19 @@ export default Plugin.define({
     // enabled, arguments etc. — sem isso os comandos somem da paleta ctrl+p.
     const originals = new Map<string, KeymapCommand>()
 
+    // Acesso ao catálogo de comandos do keymap. A chamada canônica é
+    // `commands()`; a leitura alternativa (`comandos`) é defensiva — a v0.6.24
+    // chegou a renomear esse literal no binário e, naquele estado, a
+    // propriedade do host passa a se chamar `comandos` (o rename global foi
+    // revertido por quebrar o esquema SQLite, mas a tolerância fica).
+    const keymapCommands = (): KeymapCommand[] => {
+      const keymap = context.keymap as unknown as Record<string, unknown>
+      const fn = (keymap["commands"] ?? keymap["comandos"]) as
+        | undefined
+        | (() => KeymapCommand[])
+      return typeof fn === "function" ? fn.call(context.keymap) : []
+    }
+
     const detect = detectLocale()
     // O arquivo gravado por `/idioma` (ou pelo painel) tem prioridade sobre o
     // ambiente: mantém TUI e textos do prompt no mesmo idioma.
@@ -629,7 +642,7 @@ export default Plugin.define({
 
     const capture = () => {
       let changed = false
-      for (const command of context.keymap.commands()) {
+      for (const command of keymapCommands()) {
         const id = command.id
         if (!id || !DATA.catalog[DATA.fallback].commands[id] || originals.has(id)) continue
         // Ignora o nosso próprio espelho (título já traduzido).

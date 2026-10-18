@@ -432,7 +432,6 @@ SUPPORTED_LANGUAGES: list[dict[str, str]] = [
     {"code": "en_US", "name": "English (United States)", "flag": "🇺🇸", "short": "EN"},
     {"code": "es_ES", "name": "Español (España)",     "flag": "🇪🇸", "short": "ES"},
     {"code": "fr_FR", "name": "Français (France)",    "flag": "🇫🇷", "short": "FR"},
-    {"code": "zh_CN", "name": "中文（简体）",           "flag": "🇨🇳", "short": "ZH"},
 ]
 
 
@@ -1435,7 +1434,7 @@ def create_wrapper_html(
       if (nav.startsWith("en")) return "en_US";
       if (nav.startsWith("es")) return "es_ES";
       if (nav.startsWith("fr")) return "fr_FR";
-      if (nav.startsWith("zh")) return "zh_CN";
+      if (nav.startsWith("zh")) return "en_US";
       // 5. Padrão
       return "pt_BR";
     }
@@ -1522,13 +1521,14 @@ def create_wrapper_html(
     function buildLangMenu() {
       const menu = document.getElementById("lang-menu");
       if (!menu) return;
+      const dict = I18N[_currentLang] || I18N["pt_BR"];
       menu.innerHTML = Object.values(LANGS).map(l => `
         <button class="lang-option" data-lang="${l.code}"
                 onclick="setLang('${l.code}')"
                 role="menuitem"
                 aria-current="${l.code === _currentLang ? 'true' : 'false'}">
           <span class="lang-flag">${l.flag}</span>
-          <span class="lang-name">${l.name}</span>
+          <span class="lang-name">${dict["languages." + l.code] || l.name}</span>
           <span class="lang-check">✓</span>
         </button>
       `).join("");
@@ -4131,6 +4131,8 @@ def create_wrapper_html(
             "boot.failed": "Falha ao reiniciar o terminal. Tente novamente.",
             "boot.retry": "↻ Recarregar",
             "languages.label": "Idioma", "languages.switched_to": "Idioma alterado para",
+            "languages.pt_BR": "Português (Brasil)", "languages.en_US": "Inglês (Estados Unidos)",
+            "languages.es_ES": "Espanhol (Espanha)", "languages.fr_FR": "Francês (França)",
             "success_messages.backup_saved": "Backup salvo",
             # v0.5.1.2 — Memória UFVAI
             "memory.title": "Memória UFVAI",
@@ -4232,6 +4234,8 @@ def create_wrapper_html(
             "boot.failed": "Failed to restart the terminal. Please try again.",
             "boot.retry": "↻ Reload",
             "languages.label": "Language", "languages.switched_to": "Language switched to",
+            "languages.pt_BR": "Portuguese (Brazil)", "languages.en_US": "English (United States)",
+            "languages.es_ES": "Spanish (Spain)", "languages.fr_FR": "French (France)",
             "success_messages.backup_saved": "Backup saved",
             # v0.5.1.2 — PesquisAI Memory
             "memory.title": "UFVAI Memory",
@@ -4333,6 +4337,8 @@ def create_wrapper_html(
             "boot.failed": "No se pudo reiniciar el terminal. Inténtalo de nuevo.",
             "boot.retry": "↻ Recargar",
             "languages.label": "Idioma", "languages.switched_to": "Idioma cambiado a",
+            "languages.pt_BR": "Portugués (Brasil)", "languages.en_US": "Inglés (Estados Unidos)",
+            "languages.es_ES": "Español (España)", "languages.fr_FR": "Francés (Francia)",
             "success_messages.backup_saved": "Copia guardada",
             # v0.5.1.2 — Memoria PesquisAI
             "memory.title": "Memoria UFVAI",
@@ -4434,6 +4440,8 @@ def create_wrapper_html(
             "boot.failed": "Échec du redémarrage du terminal. Veuillez réessayer.",
             "boot.retry": "↻ Recharger",
             "languages.label": "Langue", "languages.switched_to": "Langue changée en",
+            "languages.pt_BR": "Portugais (Brésil)", "languages.en_US": "Anglais (États-Unis)",
+            "languages.es_ES": "Espagnol (Espagne)", "languages.fr_FR": "Français (France)",
             "success_messages.backup_saved": "Sauvegarde enregistrée",
             # v0.5.1.2 — Mémoire PesquisAI
             "memory.title": "Mémoire UFVAI",
@@ -4619,7 +4627,7 @@ def main() -> None:
     print(f"🌐 Contém seletor de idioma: {'lang-btn' in html}")
     print(f"🎨 Contém toggleTheme com reload: {'terminal_reloaded' in html}")
     print(f"📐 Media queries: {html.count('@media')}")
-    print(f"🗣️ Idiomas suportados: {len(SUPPORTED_LANGUAGES)} (pt_BR, en_US, es_ES, fr_FR, zh_CN)")
+    print(f"🗣️ Idiomas suportados: {len(SUPPORTED_LANGUAGES)} (pt_BR, en_US, es_ES, fr_FR)")
 
 
 if __name__ == "__main__":
