@@ -25,6 +25,24 @@ Como funciona (testado contra opencode v2.0.32):
 - `slash.arguments: true` preserva o texto digitado após o comando nos nativos
   que recebem argumento (`renomear`, `diretório`, `aparte`).
 
+Cobertura (revisão de 18/10/2026, dentro da v0.6.24 — sem bump):
+- `PT_CATALOG` (37 comandos) = traduções que **também** viram comando `/barra`;
+- `LABELS` (80 ids) = traduções de **menu** (sem slug), cobrindo toda a paleta
+  `ctrl+p` e os comandos de tecla exibidos no painel de atalhos;
+- `CATEGORIES` = categoria nativa (`Session`, `Agent`, `System`, `Integration`,
+  `VCS`) → rótulo localizado, aplicado a **qualquer** comando — sem isso os
+  itens não catalogados ficavam sob "Session"/"System"/"Agent";
+- o espelho é rastreado pelo conjunto `mirrored`. A revisão anterior descartava
+  o próprio espelho **comparando títulos**: comandos cuja tradução é igual ao
+  inglês (`Plugins`, `Status`) nunca eram capturados e sobravam título e
+  categoria em inglês (`Close tab` era o sintoma visível na paleta).
+
+Textos internos do motor (tela de Configurações, descrições de teclas, chrome
+da paleta `Commands`/`Search`/`Suggested`, `Ask anything…`, rodapé, logo) **não**
+são traduzíveis pela API de plugins da V2: a tabela das Configurações
+(`bn=[{title:"Theme",category:"Appearance",…}]`) é hardcoded no módulo compilado
+e não há slot/hook para ela. Decisão de 18/10/2026: **não** patchar o binário.
+
 Detecção de idioma (ordem):
   1. escolha do usuário feita com `/idioma` (persistida no storage do plugin);
   2. `UFVAI_LANG` / `PESQUISAI_LANG` (ex.: `UFVAI_LANG=es`);
@@ -177,6 +195,367 @@ GROUPS: dict[str, dict[str, str]] = {
            "integration": "集成", "vcs": "VCS", "prompt": "提示"},
 }
 
+# Categorias nativas da paleta (campo `category` do OpenCode) → rótulo localizado.
+# Sem isto, comandos não catalogados aparecem sob "Session"/"System"/"Agent".
+CATEGORIES: dict[str, dict[str, str]] = {
+    "pt-BR": {"Session": "Sessão", "Agent": "Agente", "System": "Sistema",
+              "Integration": "Integração", "VCS": "VCS", "Prompt": "Prompt",
+              "Tabs": "Abas", "Storybook": "Storybook", "Custom": "Personalizado"},
+    "es": {"Session": "Sesión", "Agent": "Agente", "System": "Sistema",
+           "Integration": "Integración", "VCS": "VCS", "Prompt": "Prompt",
+           "Tabs": "Pestañas", "Storybook": "Storybook", "Custom": "Personalizado"},
+    "fr": {"Session": "Session", "Agent": "Agent", "System": "Système",
+           "Integration": "Intégration", "VCS": "VCS", "Prompt": "Prompt",
+           "Tabs": "Onglets", "Storybook": "Storybook", "Custom": "Personnalisé"},
+    "zh": {"Session": "会话", "Agent": "代理", "System": "系统",
+           "Integration": "集成", "VCS": "VCS", "Prompt": "提示",
+           "Tabs": "标签页", "Storybook": "Storybook", "Custom": "自定义"},
+}
+
+
+def _labels(pt: dict[str, str], es: dict[str, str], fr: dict[str, str],
+            zh: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Monta `LABELS` garantindo que os 4 idiomas tenham as MESMAS chaves."""
+    if not (len(pt) == len(es) == len(fr) == len(zh)
+            and set(pt) == set(es) == set(fr) == set(zh)):
+        raise ValueError("LABELS: chaves divergentes entre idiomas")
+    return {"pt-BR": pt, "es": es, "fr": fr, "zh": zh}
+
+
+# Rótulos de comando (sem slug de barra). Cobrem TODO comando que aparece na
+# paleta ctrl+p e os comandos de tecla exibidos no painel de atalhos/ajuda.
+# `PT_CATALOG` continua sendo a lista dos que também ganham comando `/barra`.
+LABELS: dict[str, dict[str, str]] = _labels(
+    pt={
+        "session.tab.close": "Fechar aba",
+        "session.tab.reopen": "Reabrir aba fechada",
+        "session.tab.next": "Próxima aba",
+        "session.tab.previous": "Aba anterior",
+        "session.tab.next_unread": "Próxima aba não lida",
+        "session.tab.previous_unread": "Aba anterior não lida",
+        "session.tab.history.back": "Voltar no histórico",
+        "session.tab.history.forward": "Avançar no histórico",
+        "session.delete": "Excluir sessão",
+        "session.copy": "Copiar transcrição",
+        "session.copy.id": "Copiar ID da sessão",
+        "session.interrupt": "Interromper sessão",
+        "session.background": "Enviar a segundo plano",
+        "session.queued_prompts": "Ver prompts na fila",
+        "session.pin.toggle": "Fixar ou desafixar sessão",
+        "session.sidebar.toggle": "Alternar barra lateral",
+        "session.toggle.scrollbar": "Barra de rolagem",
+        "session.toggle.thinking": "Mostrar ou ocultar pensar",
+        "session.toggle.exploration_grouping": "Agrupar ferramentas",
+        "session.verbosity.cycle": "Detalhamento da conversa",
+        "session.child.first": "Seletor de subagentes",
+        "session.child.next": "Próxima sessão filha",
+        "session.child.previous": "Sessão filha anterior",
+        "session.parent": "Ir para a sessão mãe",
+        "session.message.next": "Próxima mensagem",
+        "session.message.previous": "Mensagem anterior",
+        "session.messages_last_user": "Última mensagem do usuário",
+        "queued_prompt.undo": "Desfazer prompt da fila",
+        "queued_prompt.delete": "Excluir prompt da fila",
+        "agent.cycle": "Ciclar agentes",
+        "agent.cycle.reverse": "Ciclar agentes (inverso)",
+        "model.cycle_recent": "Ciclar modelos recentes",
+        "model.cycle_recent_reverse": "Modelos recentes (inverso)",
+        "model.cycle_favorite": "Ciclar modelos favoritos",
+        "model.cycle_favorite_reverse": "Favoritos (inverso)",
+        "model.dialog.provider": "Abrir lista de provedores",
+        "model.dialog.favorite": "Favoritar modelo",
+        "variant.cycle": "Ciclar variantes",
+        "app.console": "Alternar console",
+        "app.debug": "Painel de depuração",
+        "app.clear": "Limpar tela",
+        "app.scrap": "Abrir tela de rascunho",
+        "docs.open": "Abrir documentação",
+        "terminal.suspend": "Suspender terminal",
+        "terminal.toggle": "Painel do terminal",
+        "terminal.close": "Fechar painel do terminal",
+        "terminal.select": "Selecionar terminal",
+        "pane.focus.left": "Focar painel da sessão",
+        "pane.focus.right": "Focar painel direito",
+        "prompt.queue": "Enfileirar prompt",
+        "prompt.clear": "Limpar campo de entrada",
+        "prompt.paste": "Colar",
+        "prompt.images.view": "Ver imagens anexadas",
+        "prompt.editor_context.clear": "Limpar contexto do editor",
+        "prompt.stash": "Guardar prompt",
+        "prompt.stash.pop": "Restaurar prompt guardado",
+        "prompt.stash.list": "Listar prompts guardados",
+        "stash.delete": "Excluir item guardado",
+        "diff.close": "Fechar visualizador",
+        "diff.switch_source": "Escopo das diferenças",
+        "diff.toggle_view": "Dividida ou unificada",
+        "diff.toggle_file_tree": "Árvore de arquivos",
+        "diff.toggle_fullscreen": "Alternar tela cheia",
+        "diff.mark_reviewed": "Marcar como revisado",
+        "diff.single_patch": "Visão de patch único",
+        "plugins.toggle": "Ativar ou desativar plugin",
+        "dialog.mcp.toggle": "Ativar servidor MCP",
+        "dialog.plugins.update": "Atualizar plugin",
+        "dialog.plugins.check": "Buscar atualizações",
+        "which-key.toggle": "Alternar painel de atalhos",
+        "which-key.layout.toggle": "Layout dos atalhos",
+        "which-key.pending.toggle": "Atalhos pendentes",
+        "which-key.group.previous": "Grupo de atalhos anterior",
+        "which-key.group.next": "Próximo grupo de atalhos",
+        "which-key.scroll.up": "Rolar atalhos para cima",
+        "which-key.scroll.down": "Rolar atalhos para baixo",
+        "which-key.page.up": "Página anterior de atalhos",
+        "which-key.page.down": "Próxima página de atalhos",
+        "which-key.home": "Primeiro atalho",
+        "which-key.end": "Último atalho",
+    },
+    es={
+        "session.tab.close": "Cerrar pestaña",
+        "session.tab.reopen": "Reabrir pestaña cerrada",
+        "session.tab.next": "Pestaña siguiente",
+        "session.tab.previous": "Pestaña anterior",
+        "session.tab.next_unread": "Pestaña sig. sin leer",
+        "session.tab.previous_unread": "Pestaña ant. sin leer",
+        "session.tab.history.back": "Atrás en el historial",
+        "session.tab.history.forward": "Adelante en el historial",
+        "session.delete": "Eliminar sesión",
+        "session.copy": "Copiar transcripción",
+        "session.copy.id": "Copiar ID de la sesión",
+        "session.interrupt": "Interrumpir sesión",
+        "session.background": "Enviar a segundo plano",
+        "session.queued_prompts": "Ver prompts en cola",
+        "session.pin.toggle": "Fijar o desfijar sesión",
+        "session.sidebar.toggle": "Alternar barra lateral",
+        "session.toggle.scrollbar": "Barra de desplazamiento",
+        "session.toggle.thinking": "Mostrar u ocultar pensar",
+        "session.toggle.exploration_grouping": "Agrupar herramientas",
+        "session.verbosity.cycle": "Nivel de detalle",
+        "session.child.first": "Selector de subagentes",
+        "session.child.next": "Sesión hija siguiente",
+        "session.child.previous": "Sesión hija anterior",
+        "session.parent": "Ir a la sesión madre",
+        "session.message.next": "Mensaje siguiente",
+        "session.message.previous": "Mensaje anterior",
+        "session.messages_last_user": "Último mensaje del usuario",
+        "queued_prompt.undo": "Deshacer prompt en cola",
+        "queued_prompt.delete": "Eliminar prompt en cola",
+        "agent.cycle": "Cambiar de agente",
+        "agent.cycle.reverse": "Agente anterior",
+        "model.cycle_recent": "Cambiar modelo reciente",
+        "model.cycle_recent_reverse": "Modelo reciente (inverso)",
+        "model.cycle_favorite": "Cambiar modelo favorito",
+        "model.cycle_favorite_reverse": "Modelo favorito (inverso)",
+        "model.dialog.provider": "Lista de proveedores",
+        "model.dialog.favorite": "Marcar como favorito",
+        "variant.cycle": "Cambiar variante",
+        "app.console": "Alternar consola",
+        "app.debug": "Panel de depuración",
+        "app.clear": "Limpiar pantalla",
+        "app.scrap": "Abrir pantalla de borrador",
+        "docs.open": "Abrir documentación",
+        "terminal.suspend": "Suspender terminal",
+        "terminal.toggle": "Panel del terminal",
+        "terminal.close": "Cerrar panel del terminal",
+        "terminal.select": "Seleccionar terminal",
+        "pane.focus.left": "Enfocar panel de sesión",
+        "pane.focus.right": "Enfocar panel derecho",
+        "prompt.queue": "Encolar prompt",
+        "prompt.clear": "Limpiar campo de entrada",
+        "prompt.paste": "Pegar",
+        "prompt.images.view": "Ver imágenes adjuntas",
+        "prompt.editor_context.clear": "Limpiar contexto editor",
+        "prompt.stash": "Guardar prompt",
+        "prompt.stash.pop": "Restaurar prompt guardado",
+        "prompt.stash.list": "Listar prompts guardados",
+        "stash.delete": "Eliminar elemento guardado",
+        "diff.close": "Cerrar diferencias",
+        "diff.switch_source": "Alcance de diferencias",
+        "diff.toggle_view": "Vista dividida o unificada",
+        "diff.toggle_file_tree": "Alternar árbol de archivos",
+        "diff.toggle_fullscreen": "Alternar pantalla completa",
+        "diff.mark_reviewed": "Marcar como revisado",
+        "diff.single_patch": "Vista de parche único",
+        "plugins.toggle": "Activar plugin",
+        "dialog.mcp.toggle": "Servidor MCP",
+        "dialog.plugins.update": "Actualizar plugin",
+        "dialog.plugins.check": "Buscar actualizaciones",
+        "which-key.toggle": "Panel de atajos",
+        "which-key.layout.toggle": "Diseño panel de atajos",
+        "which-key.pending.toggle": "Atajos pendientes",
+        "which-key.group.previous": "Grupo de atajos anterior",
+        "which-key.group.next": "Grupo de atajos siguiente",
+        "which-key.scroll.up": "Atajos hacia arriba",
+        "which-key.scroll.down": "Atajos hacia abajo",
+        "which-key.page.up": "Página anterior de atajos",
+        "which-key.page.down": "Página sig. de atajos",
+        "which-key.home": "Primer atajo",
+        "which-key.end": "Último atajo",
+    },
+    fr={
+        "session.tab.close": "Fermer l’onglet",
+        "session.tab.reopen": "Rouvrir l’onglet fermé",
+        "session.tab.next": "Onglet suivant",
+        "session.tab.previous": "Onglet précédent",
+        "session.tab.next_unread": "Onglet suiv. non lu",
+        "session.tab.previous_unread": "Onglet préc. non lu",
+        "session.tab.history.back": "Reculer (historique)",
+        "session.tab.history.forward": "Avancer (historique)",
+        "session.delete": "Supprimer la session",
+        "session.copy": "Copier la transcription",
+        "session.copy.id": "Copier l’ID de session",
+        "session.interrupt": "Interrompre la session",
+        "session.background": "Outils en arrière-plan",
+        "session.queued_prompts": "Voir les prompts en file",
+        "session.pin.toggle": "Épingler la session",
+        "session.sidebar.toggle": "Barre latérale",
+        "session.toggle.scrollbar": "Barre de défilement",
+        "session.toggle.thinking": "Afficher/masquer penser",
+        "session.toggle.exploration_grouping": "Regrouper les outils",
+        "session.verbosity.cycle": "Niveau de détail",
+        "session.child.first": "Choisir le sous-agent",
+        "session.child.next": "Session enfant suivante",
+        "session.child.previous": "Session enfant précédente",
+        "session.parent": "Aller à la session parente",
+        "session.message.next": "Message suivant",
+        "session.message.previous": "Message précédent",
+        "session.messages_last_user": "Dernier message",
+        "queued_prompt.undo": "Annuler le prompt en file",
+        "queued_prompt.delete": "Supprimer prompt en file",
+        "agent.cycle": "Changer d’agent",
+        "agent.cycle.reverse": "Agent précédent",
+        "model.cycle_recent": "Modèle récent suivant",
+        "model.cycle_recent_reverse": "Modèle récent (inverse)",
+        "model.cycle_favorite": "Modèle favori suivant",
+        "model.cycle_favorite_reverse": "Modèle favori (inverse)",
+        "model.dialog.provider": "Liste des fournisseurs",
+        "model.dialog.favorite": "Marquer comme favori",
+        "variant.cycle": "Changer de variante",
+        "app.console": "Console",
+        "app.debug": "Panneau de débogage",
+        "app.clear": "Effacer l’écran",
+        "app.scrap": "Écran de brouillon",
+        "docs.open": "Ouvrir la documentation",
+        "terminal.suspend": "Suspendre le terminal",
+        "terminal.toggle": "Panneau du terminal",
+        "terminal.close": "Fermer le terminal",
+        "terminal.select": "Choisir le terminal",
+        "pane.focus.left": "Panneau de session",
+        "pane.focus.right": "Panneau de droite",
+        "prompt.queue": "Mettre le prompt en file",
+        "prompt.clear": "Effacer la saisie",
+        "prompt.paste": "Coller",
+        "prompt.images.view": "Voir les images jointes",
+        "prompt.editor_context.clear": "Contexte de l’éditeur",
+        "prompt.stash": "Prompt mis de côté",
+        "prompt.stash.pop": "Restaurer le prompt",
+        "prompt.stash.list": "Prompts mis de côté",
+        "stash.delete": "Élément mis de côté",
+        "diff.close": "Fermer le visualiseur",
+        "diff.switch_source": "Portée des différences",
+        "diff.toggle_view": "Vue divisée ou unifiée",
+        "diff.toggle_file_tree": "Arborescence",
+        "diff.toggle_fullscreen": "Basculer plein écran",
+        "diff.mark_reviewed": "Marquer comme révisé",
+        "diff.single_patch": "Vue patch unique",
+        "plugins.toggle": "Activer le plugin",
+        "dialog.mcp.toggle": "Serveur MCP",
+        "dialog.plugins.update": "Mettre à jour le plugin",
+        "dialog.plugins.check": "Chercher les mises à jour",
+        "which-key.toggle": "Panneau des raccourcis",
+        "which-key.layout.toggle": "Disposition raccourcis",
+        "which-key.pending.toggle": "Aperçu raccourcis",
+        "which-key.group.previous": "Raccourcis : groupe préc.",
+        "which-key.group.next": "Raccourcis : groupe suiv.",
+        "which-key.scroll.up": "Raccourcis vers le haut",
+        "which-key.scroll.down": "Raccourcis vers le bas",
+        "which-key.page.up": "Raccourcis : page préc.",
+        "which-key.page.down": "Raccourcis : page suiv.",
+        "which-key.home": "Premier raccourci",
+        "which-key.end": "Dernier raccourci",
+    },
+    zh={
+        "session.tab.close": "关闭标签页",
+        "session.tab.reopen": "重新打开标签页",
+        "session.tab.next": "下一个标签页",
+        "session.tab.previous": "上一个标签页",
+        "session.tab.next_unread": "下个未读标签页",
+        "session.tab.previous_unread": "上个未读标签页",
+        "session.tab.history.back": "标签页历史后退",
+        "session.tab.history.forward": "标签页历史前进",
+        "session.delete": "删除会话",
+        "session.copy": "复制会话记录",
+        "session.copy.id": "复制会话 ID",
+        "session.interrupt": "中断会话",
+        "session.background": "工具转后台",
+        "session.queued_prompts": "查看排队提示",
+        "session.pin.toggle": "固定会话",
+        "session.sidebar.toggle": "显示/隐藏侧栏",
+        "session.toggle.scrollbar": "显示/隐藏滚动条",
+        "session.toggle.thinking": "显示/隐藏思考",
+        "session.toggle.exploration_grouping": "合并工具调用",
+        "session.verbosity.cycle": "对话详细程度",
+        "session.child.first": "选择子代理",
+        "session.child.next": "下一个子会话",
+        "session.child.previous": "上一个子会话",
+        "session.parent": "转到父会话",
+        "session.message.next": "下一条消息",
+        "session.message.previous": "上一条消息",
+        "session.messages_last_user": "最后一条用户消息",
+        "queued_prompt.undo": "撤销排队提示",
+        "queued_prompt.delete": "删除排队提示",
+        "agent.cycle": "切换代理",
+        "agent.cycle.reverse": "上一个代理",
+        "model.cycle_recent": "切换最近模型",
+        "model.cycle_recent_reverse": "最近模型（反向）",
+        "model.cycle_favorite": "切换收藏模型",
+        "model.cycle_favorite_reverse": "收藏模型（反向）",
+        "model.dialog.provider": "打开提供商列表",
+        "model.dialog.favorite": "收藏模型",
+        "variant.cycle": "切换变体",
+        "app.console": "切换控制台",
+        "app.debug": "调试面板",
+        "app.clear": "清屏",
+        "app.scrap": "打开草稿屏",
+        "docs.open": "打开文档",
+        "terminal.suspend": "挂起终端",
+        "terminal.toggle": "终端面板",
+        "terminal.close": "关闭终端面板",
+        "terminal.select": "选择终端",
+        "pane.focus.left": "聚焦会话面板",
+        "pane.focus.right": "聚焦右侧面板",
+        "prompt.queue": "提示入队",
+        "prompt.clear": "清空输入框",
+        "prompt.paste": "粘贴",
+        "prompt.images.view": "查看图片附件",
+        "prompt.editor_context.clear": "清除编辑器上下文",
+        "prompt.stash": "暂存提示",
+        "prompt.stash.pop": "恢复暂存提示",
+        "prompt.stash.list": "列出暂存提示",
+        "stash.delete": "删除暂存项",
+        "diff.close": "关闭差异查看器",
+        "diff.switch_source": "切换差异范围",
+        "diff.toggle_view": "切换分栏视图",
+        "diff.toggle_file_tree": "显示/隐藏文件树",
+        "diff.toggle_fullscreen": "切换全屏",
+        "diff.mark_reviewed": "标记已审阅",
+        "diff.single_patch": "单补丁视图",
+        "plugins.toggle": "启用插件",
+        "dialog.mcp.toggle": "MCP 服务器",
+        "dialog.plugins.update": "更新插件",
+        "dialog.plugins.check": "检查插件更新",
+        "which-key.toggle": "快捷键面板",
+        "which-key.layout.toggle": "快捷键面板布局",
+        "which-key.pending.toggle": "待定快捷键预览",
+        "which-key.group.previous": "上一组快捷键",
+        "which-key.group.next": "下一组快捷键",
+        "which-key.scroll.up": "快捷键上滚",
+        "which-key.scroll.down": "快捷键下滚",
+        "which-key.page.up": "快捷键上一页",
+        "which-key.page.down": "快捷键下一页",
+        "which-key.home": "第一个快捷键",
+        "which-key.end": "最后一个快捷键",
+    },
+)
+
 # Catálogo: id do comando nativo → slug, aliases, título e descrição.
 # Títulos são a tradução fiel do comando em inglês (identificáveis na paleta
 # ctrl+p); as descrições ficam guardadas como documentação e NÃO são emitidas.
@@ -212,7 +591,8 @@ PT_CATALOG: dict[str, dict[str, dict[str, object]]] = {
                           "description": "Faz uma pergunta paralela sem interromper o fluxo principal",
                           "group": "session", "args": True},
         "session.cd": {"slug": "diretorio", "aliases": ["cd"], "title": "Mudar diretório",
-                       "description": "Altera o diretório de trabalho da sessão", "args": True},
+                       "description": "Altera o diretório de trabalho da sessão",
+                       "group": "session", "args": True},
         "session.move": {"slug": "areas", "aliases": ["worktrees"], "title": "Gerenciar workspaces",
                          "description": "Gerencia áreas de trabalho (worktrees) do projeto", "group": "session"},
         "prompt.editor": {"slug": "editor", "title": "Abrir editor",
@@ -507,6 +887,8 @@ def build_locales_payload() -> dict[str, object]:
         "fallback": "pt-BR",
         "languages": PT_LANGUAGES,
         "switcher": PT_SWITCHER,
+        "categories": CATEGORIES,
+        "labels": LABELS,
         "catalog": catalog,
     }
 
@@ -531,7 +913,7 @@ import { dirname, join } from "node:path"
  */
 
 type Entry = {
-  slug: string
+  slug?: string
   aliases?: string[]
   title: string
   description: string
@@ -548,6 +930,8 @@ const DATA = LOCALES as unknown as {
   fallback: string
   languages: Record<string, string>
   switcher: Record<string, Entry>
+  categories: Record<string, Record<string, string>>
+  labels: Record<string, Record<string, string>>
   catalog: Record<string, LocaleData>
 }
 
@@ -640,15 +1024,28 @@ export default Plugin.define({
       updateSettings((draft) => { draft.locale = savedLocale })
     }
 
+    // IDs traduzíveis: catálogo de comandos `/barra` + rótulos de menu
+    // (`labels`). Capturamos o objeto nativo de cada um para espelhar título e
+    // categoria sem perder palette/suggested/enabled/binding.
+    const tracked = new Set<string>()
+    for (const data of Object.values(DATA.catalog)) {
+      for (const id of Object.keys(data.commands ?? {})) tracked.add(id)
+    }
+    for (const table of Object.values(DATA.labels ?? {})) {
+      for (const id of Object.keys(table ?? {})) tracked.add(id)
+    }
+
+    // IDs que já emitimos como espelho — nunca devem voltar para `originals`.
+    const mirrored = new Set<string>()
+
     const capture = () => {
       let changed = false
       for (const command of keymapCommands()) {
         const id = command.id
-        if (!id || !DATA.catalog[DATA.fallback].commands[id] || originals.has(id)) continue
-        // Ignora o nosso próprio espelho (título já traduzido).
-        const current = currentLocale()
-        const translated = DATA.catalog[current]?.commands[id]?.title
-        if (translated && command.title === translated) continue
+        // `mirrored` evita capturar o NOSSO próprio espelho de volta: comparar
+        // títulos não serve, pois comandos como "Plugins" têm tradução igual ao
+        // inglês e ficariam sem espelho (categoria em inglês na paleta).
+        if (!id || !tracked.has(id) || originals.has(id) || mirrored.has(id)) continue
         originals.set(id, command)
         changed = true
       }
@@ -675,29 +1072,47 @@ export default Plugin.define({
       const locale = currentLocale()
       state.revision
       const localeData = DATA.catalog[locale]
+      const categories = DATA.categories?.[locale] ?? {}
+      const labels = DATA.labels?.[locale] ?? {}
       const commands: KeymapCommand[] = []
+      // Categoria nativa (ex.: "Session") → rótulo localizado; desconhecidas
+      // são preservadas como estão.
+      const group = (value?: string) => (value && categories[value]) || value
 
-      if (localeData && locale !== "en") {
-        for (const [id, spec] of Object.entries(localeData.commands)) {
+      if (locale !== "en") {
+        const ids = new Set<string>([
+          ...Object.keys(localeData?.commands ?? {}),
+          ...Object.keys(labels),
+        ])
+        for (const id of ids) {
           const base = originals.get(id)
           if (!base) continue
+          const spec = localeData?.commands?.[id]
+          const title = labels[id] ?? spec?.title
+          if (!title) continue
           const { bind: _bind, title: _title, description: _description, group: _group, slash: _slash, ...rest } = base
           commands.push({
             ...rest,
             id,
-            title: spec.title,
+            title,
             // Sem descrição na paleta/autocompletar: o usuário pediu "só o
             // comando" (a lista ficava poluída). As descrições continuam no
             // catálogo para documentação/ajuda futura, mas não são emitidas.
-            group: spec.group ? localeData.groups[spec.group] : undefined,
+            group: group(spec?.group ? localeData!.groups[spec.group] : base.group),
             bind: false,
-            slash: {
-              name: spec.slug,
-              ...(spec.aliases ? { aliases: spec.aliases } : {}),
-              ...(spec.args ?? _slash?.arguments ? { arguments: true as const } : {}),
-            },
+            // Só comandos do catálogo ganham atalho `/barra`.
+            ...(spec?.slug
+              ? {
+                  slash: {
+                    name: spec.slug,
+                    ...(spec.aliases ? { aliases: spec.aliases } : {}),
+                    ...(spec.args ?? _slash?.arguments ? { arguments: true as const } : {}),
+                  },
+                }
+              : {}),
             run: () => false,
           })
+          mirrored.add(id)
         }
       }
 
