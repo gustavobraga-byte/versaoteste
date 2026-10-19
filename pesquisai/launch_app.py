@@ -1319,7 +1319,7 @@ def restart_ttyd_with_lang(lang: str) -> bool:
 # Mudanças aplicadas:
 #   1. 📱 Site responsivo (6 media queries + hamburger menu)
 #   2. 🎨 Tema claro/escuro com reload do iframe do ttyd
-#   3. 🌐 Seletor de idioma na topbar (4 idiomas: pt_BR, en_US, es_ES, fr_FR)
+#   3. 🌐 Seletor de idioma na topbar (5 idiomas: pt_BR, en_US, es_ES, fr_FR, zh_CN)
 #   4. 🌙 Tema padrão ESCURO com anti-flash CSS
 # 
 # Compatibilidade: API inalterada (create_wrapper_html(terminal_url, drive_url))

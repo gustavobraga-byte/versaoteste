@@ -426,7 +426,7 @@ __components__: dict[str, str] = {
 }
 
 # ── Idiomas suportados ─────────────────────────────────────────
-__supported_languages__: list[str] = ["pt_BR", "en_US", "es_ES", "fr_FR"]
+__supported_languages__: list[str] = ["pt_BR", "en_US", "es_ES", "fr_FR", "zh_CN"]
 
 # ── Saudações iniciais por idioma (v0.4.2.2) ───────────────────
 # Usadas pelo ttyd ao iniciar o terminal e ao trocar de idioma.

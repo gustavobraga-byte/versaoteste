@@ -432,6 +432,7 @@ SUPPORTED_LANGUAGES: list[dict[str, str]] = [
     {"code": "en_US", "name": "English (United States)", "flag": "🇺🇸", "short": "EN"},
     {"code": "es_ES", "name": "Español (España)",     "flag": "🇪🇸", "short": "ES"},
     {"code": "fr_FR", "name": "Français (France)",    "flag": "🇫🇷", "short": "FR"},
+    {"code": "zh_CN", "name": "中文（简体）",             "flag": "🇨🇳", "short": "ZH"},
 ]
 
 
@@ -447,7 +448,7 @@ def create_wrapper_html(
 
       1. Responsividade completa (5 breakpoints + hamburger)
       2. toggleTheme() que recarrega o iframe do ttyd
-      3. Seletor de idioma na topbar (4 idiomas, cookie, query param)
+      3. Seletor de idioma na topbar (5 idiomas, cookie, query param)
 
     Args:
         terminal_url: URL do terminal ttyd.
@@ -4133,6 +4134,7 @@ def create_wrapper_html(
             "languages.label": "Idioma", "languages.switched_to": "Idioma alterado para",
             "languages.pt_BR": "Português (Brasil)", "languages.en_US": "Inglês (Estados Unidos)",
             "languages.es_ES": "Espanhol (Espanha)", "languages.fr_FR": "Francês (França)",
+            "languages.zh_CN": "Chinês (simplificado)",
             "success_messages.backup_saved": "Backup salvo",
             # v0.5.1.2 — Memória UFVAI
             "memory.title": "Memória UFVAI",
@@ -4236,6 +4238,7 @@ def create_wrapper_html(
             "languages.label": "Language", "languages.switched_to": "Language switched to",
             "languages.pt_BR": "Portuguese (Brazil)", "languages.en_US": "English (United States)",
             "languages.es_ES": "Spanish (Spain)", "languages.fr_FR": "French (France)",
+            "languages.zh_CN": "Chinese (Simplified)",
             "success_messages.backup_saved": "Backup saved",
             # v0.5.1.2 — PesquisAI Memory
             "memory.title": "UFVAI Memory",
@@ -4339,6 +4342,7 @@ def create_wrapper_html(
             "languages.label": "Idioma", "languages.switched_to": "Idioma cambiado a",
             "languages.pt_BR": "Portugués (Brasil)", "languages.en_US": "Inglés (Estados Unidos)",
             "languages.es_ES": "Español (España)", "languages.fr_FR": "Francés (Francia)",
+            "languages.zh_CN": "Chino (simplificado)",
             "success_messages.backup_saved": "Copia guardada",
             # v0.5.1.2 — Memoria PesquisAI
             "memory.title": "Memoria UFVAI",
@@ -4442,6 +4446,7 @@ def create_wrapper_html(
             "languages.label": "Langue", "languages.switched_to": "Langue changée en",
             "languages.pt_BR": "Portugais (Brésil)", "languages.en_US": "Anglais (États-Unis)",
             "languages.es_ES": "Espagnol (Espagne)", "languages.fr_FR": "Français (France)",
+            "languages.zh_CN": "Chinois (simplifié)",
             "success_messages.backup_saved": "Sauvegarde enregistrée",
             # v0.5.1.2 — Mémoire PesquisAI
             "memory.title": "Mémoire UFVAI",
@@ -4543,6 +4548,9 @@ def create_wrapper_html(
             "boot.failed": "重启终端失败，请重试。",
             "boot.retry": "↻ 重新加载",
             "languages.label": "语言", "languages.switched_to": "语言已切换为",
+            "languages.pt_BR": "葡萄牙语（巴西）", "languages.en_US": "英语（美国）",
+            "languages.es_ES": "西班牙语（西班牙）", "languages.fr_FR": "法语（法国）",
+            "languages.zh_CN": "中文（简体）",
             "success_messages.backup_saved": "备份已保存",
             "memory.title": "UFVAI 记忆库",
             "telemetry.title": "遥测（管理员）",
