@@ -138,7 +138,7 @@ PT_PLUGIN_PACKAGE_JSON: dict[str, object] = {
     "private": True,
     "type": "module",
     "description": "UFVAI — comandos barra localizados para a TUI do OpenCode V2",
-    "exports": {"./tui": "./tui.ts"},
+    "exports": {"./tui": "./tui.tsx"},
 }
 
 # Nome de cada idioma no seletor (`/idioma`).
@@ -1145,8 +1145,19 @@ export default Plugin.define({
       return { mode: "global", priority: 100, commands }
     })
 
+    // ── v0.6.25: marca UFVAI na tela de NOVA SESSÃO ──────────────────────
+    // A arte de blocos do motor ("opencode") vive no bytecode COMPRIMIDO e
+    // não pode ser substituída por bytes. A marca UFVAI é entregue aqui, pela
+    // API pública de plugins, no slot `prompt.footer.status` (mesma linha do
+    // rodapé do prompt, à esquerda das dicas de atalho).
+    const brandSlot = context.ui.slot({
+      append: "prompt.footer.status",
+      render: () => <text fg={context.theme.text.base}>UFVAI</text>,
+    })
+
     return () => {
       if (timer) clearTimeout(timer)
+      brandSlot?.()
     }
   },
 })
@@ -1157,17 +1168,28 @@ def install_pt_plugin(plugin_dir: str | None = None) -> str:
     """Grava o pacote do plugin de TUI e devolve o diretório instalado.
 
     Idempotente: reescreve apenas ``package.json``, ``locales.json`` e
-    ``tui.ts`` (conteúdo determinístico, sem estado do usuário dentro).
+    ``tui.tsx`` (conteúdo determinístico, sem estado do usuário dentro).
     Qualquer outro arquivo que o usuário tenha colocado na pasta é preservado.
     """
     root = plugin_dir or PT_PLUGIN_DIR
     os.makedirs(root, exist_ok=True)
+    # v0.6.25: o plugin virou .tsx — os slots da API de plugins exigem JSX
+    # (``render`` precisa devolver um elemento <text>, não texto solto).
+    # ORDEM IMPORTA: o .tsx é gravado ANTES do package.json, senão há uma
+    # janela em que o package.json aponta para um arquivo inexistente e o
+    # motor recarrega o plugin sem os 37 comandos.
+    with open(os.path.join(root, "tui.tsx"), "w", encoding="utf-8") as f:
+        f.write(PT_PLUGIN_TUI_TS)
     with open(os.path.join(root, "package.json"), "w", encoding="utf-8") as f:
         json.dump(PT_PLUGIN_PACKAGE_JSON, f, ensure_ascii=False, indent=2)
         f.write("\n")
     with open(os.path.join(root, "locales.json"), "w", encoding="utf-8") as f:
         json.dump(build_locales_payload(), f, ensure_ascii=False, indent=2)
         f.write("\n")
-    with open(os.path.join(root, "tui.ts"), "w", encoding="utf-8") as f:
-        f.write(PT_PLUGIN_TUI_TS)
+    legacy = os.path.join(root, "tui.ts")
+    if os.path.exists(legacy):
+        try:
+            os.remove(legacy)
+        except OSError:
+            pass
     return root

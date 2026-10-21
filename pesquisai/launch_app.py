@@ -735,7 +735,16 @@ _LANG_MAP = {"pt": "pt_BR", "en": "en_US", "es": "es_ES", "fr": "fr_FR", "zh": "
 # quando a interface recarrega, os comandos/menus do terminal já abrem no mesmo
 # idioma. NÃO se faz patch no binário do motor (ver `tui_prompt.py`); os textos
 # internos do OpenCode permanecem no idioma original.
-_UI_TO_TUI_LOCALE = {"pt_BR": "pt-BR", "en_US": "en", "es_ES": "es", "fr_FR": "fr"}
+_UI_TO_TUI_LOCALE = {
+    "pt_BR": "pt-BR",
+    "en_US": "en",
+    "es_ES": "es",
+    "fr_FR": "fr",
+    # v0.6.25: sem esta entrada oIDIOMA CHINÊS era aceito pela UI mas
+    # _sync_terminal_locale() devolvia False (silencioso) e o TERMINAL
+    # continuava no idioma anterior. O tui_pt.PT_LOCALES já aceita "zh".
+    "zh_CN": "zh",
+}
 
 
 def _detect_system_lang() -> str:

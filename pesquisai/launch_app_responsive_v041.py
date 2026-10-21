@@ -333,6 +333,98 @@ RESPONSIVE_CSS: str = """
     --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   }
 
+  /* === v0.6.25: Markdown do MANUAL e das DIRETRIZES no TEMA CLARO ==========
+     O wrapper carrega apenas `github-markdown-dark.min.css`; no tema claro o
+     MANUAL.md e as DIRETRIZES do agente saíam com a paleta ESCURA (texto
+     claro sobre fundo claro). Aqui a paleta do markdown é remapeada para as
+     variáveis do tema claro — sem depender de um segundo arquivo do CDN,
+     portanto também funciona no ambiente offline (.deb). ================ */
+  html.theme-light .markdown-body {
+    color: var(--ink) !important;
+    background-color: transparent !important;
+  }
+  html.theme-light .markdown-body h1,
+  html.theme-light .markdown-body h2,
+  html.theme-light .markdown-body h3,
+  html.theme-light .markdown-body h4,
+  html.theme-light .markdown-body h5,
+  html.theme-light .markdown-body h6 {
+    color: var(--ink) !important;
+    border-bottom-color: var(--line) !important;
+  }
+  html.theme-light .markdown-body p,
+  html.theme-light .markdown-body li,
+  html.theme-light .markdown-body dl,
+  html.theme-light .markdown-body dd,
+  html.theme-light .markdown-body td,
+  html.theme-light .markdown-body th,
+  html.theme-light .markdown-body strong,
+  html.theme-light .markdown-body b,
+  html.theme-light .markdown-body summary,
+  html.theme-light .markdown-body label {
+    color: var(--ink) !important;
+  }
+  html.theme-light .markdown-body th {
+    background-color: var(--surface) !important;
+  }
+  html.theme-light .markdown-body a,
+  html.theme-light .markdown-body a:visited {
+    color: var(--accent) !important;
+  }
+  html.theme-light .markdown-body a:hover {
+    color: var(--ink) !important;
+  }
+  html.theme-light .markdown-body blockquote {
+    color: var(--ink-muted) !important;
+    border-left-color: var(--accent) !important;
+    background-color: var(--accent-dim) !important;
+  }
+  html.theme-light .markdown-body code,
+  html.theme-light .markdown-body tt {
+    color: #7a3b1d !important;
+    background-color: #f1efe9 !important;
+    border-color: rgba(0,0,0,.08) !important;
+  }
+  html.theme-light .markdown-body pre {
+    color: var(--ink) !important;
+    background-color: #f1efe9 !important;
+    border-color: rgba(0,0,0,.08) !important;
+  }
+  html.theme-light .markdown-body pre code,
+  html.theme-light .markdown-body pre tt {
+    color: #7a3b1d !important;
+    background-color: transparent !important;
+  }
+  html.theme-light .markdown-body hr {
+    background-color: var(--line) !important;
+    border-color: var(--line) !important;
+  }
+  html.theme-light .markdown-body table th,
+  html.theme-light .markdown-body table td {
+    border-color: var(--line) !important;
+  }
+  html.theme-light .markdown-body table tr {
+    background-color: transparent !important;
+    border-top-color: var(--line) !important;
+  }
+  html.theme-light .markdown-body table tr:nth-child(2n) {
+    background-color: var(--surface) !important;
+  }
+  html.theme-light .markdown-body img {
+    background-color: transparent !important;
+    border-color: var(--line) !important;
+  }
+  html.theme-light .markdown-body kbd {
+    color: var(--ink) !important;
+    background-color: #f1efe9 !important;
+    border-color: rgba(0,0,0,.12) !important;
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,.08) !important;
+  }
+  html.theme-light .markdown-body .highlight,
+  html.theme-light .markdown-body .highlight pre {
+    background-color: #f1efe9 !important;
+  }
+
   /* === Indicador de tema ativo (NOVO em v0.4.1) === */
   #theme-toggle[data-theme="pesquisai-light"] {
     color: var(--amber);
@@ -401,6 +493,9 @@ RESPONSIVE_CSS: str = """
     #memory-editor { min-height: 120px; flex: 1 1 40% !important; }
     #memory-preview { min-height: 150px; flex: 1 1 60% !important; overflow-y:auto !important; -webkit-overflow-scrolling:touch; display:block !important; }
     #memory-overlay .modal-title { font-size: 14px !important; }
+    /* v0.6.25: empilha lista + editor no mobile (o pai era flex ROW). */
+    #memory-body { flex-direction: column !important; }
+    #memory-editor-pane { width: 100% !important; }
     /* v0.6.12 fix: garante preview visível no mobile mesmo quando em modo preview */
     #memory-editor-body #memory-preview[style*="display: none"] { display:none !important; }
     #memory-editor-body #memory-preview:not([style*="display: none"]) { display:block !important; }
@@ -966,7 +1061,9 @@ def create_wrapper_html(
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
     <button class="modal-close" onclick="openMemory(); toggleMobileMenu();">🧠 <span data-i18n="memory.title">Memória UFVAI</span></button>
     <button class="modal-close" onclick="toggleTheme(); toggleMobileMenu();">◑ <span data-i18n="theme.toggle">Alternar Tema</span></button>
-    <button class="modal-close" onclick="toggleLangMenu();">🌐 <span data-i18n="languages.label">Idioma</span></button>
+    <!-- v0.6.25: item "Idioma" REMOVIDO do drawer — o seletor .lang-btn da
+         topbar continua visível no mobile (a media query ≤767px esconde
+         apenas .tb-btn), então o botão aqui era redundante. -->
   </div>
 
   <!-- Dropdown de idioma (NOVO em v0.4.1) -->
@@ -1205,7 +1302,11 @@ def create_wrapper_html(
       </div>
 
       <!-- Split view: lista (esq) + editor (dir) -->
-      <div style="flex:1;display:flex;min-height:0;">
+      <!-- v0.6.25: id no container — sem ele o CSS mobile não consegue
+           empilhar a lista sobre o editor (o pai ficava em flex ROW,
+           a sidebar com width:100% tomava a linha inteira e o pane da
+           NOTA saía da tela). -->
+      <div id="memory-body" style="flex:1;display:flex;min-height:0;">
         <!-- Coluna esquerda: busca + lista -->
         <div id="memory-sidebar" style="width:300px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:rgba(0,0,0,.18);">
           <div style="padding:10px 12px;border-bottom:1px solid var(--line);">
