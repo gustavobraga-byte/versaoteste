@@ -1146,10 +1146,24 @@ export default Plugin.define({
     })
 
     // ── v0.6.25: marca UFVAI na tela de NOVA SESSÃO ──────────────────────
-    // A arte de blocos do motor ("opencode") vive no bytecode COMPRIMIDO e
-    // não pode ser substituída por bytes. A marca UFVAI é entregue aqui, pela
-    // API pública de plugins, no slot `prompt.footer.status` (mesma linha do
-    // rodapé do prompt, à esquerda das dicas de atalho).
+    // A arte de blocos do motor ("opencode") é desenhada PROCEDURALMENTE a
+    // partir de dados que vivem no bytecode COMPRIMIDO (213 MB) — não há
+    // literal substituível (varredura: as 173 ocorrências de "opencode" na
+    // tabela UTF-16 são do catálogo de modelos; na fonte UTF-8 há só 6
+    // escapes de bloco, todos da biblioteca `cfonts` embutida). Trocar a
+    // arte exigiria recompilar o bytecode do motor.
+    //
+    // A identidade UFVAI é entregue pela API PÚBLICA de plugins. Slots
+    // válidos no motor (registro interno): `home.footer`, `prompt.footer`,
+    // `prompt.footer.status`, `sidebar.content`, `sidebar.footer`,
+    // `session.panel`, `storybook`. (`session.composer.top` NÃO é slot de
+    // plugin — é apenas um caminho da árvore de componentes: o registro o
+    // ignora em silêncio.)
+    const brandFooter = context.ui.slot({
+      append: "prompt.footer",
+      render: () => <text fg={context.theme.text.muted}>· pesquisa científica</text>,
+    })
+
     const brandSlot = context.ui.slot({
       append: "prompt.footer.status",
       render: () => <text fg={context.theme.text.base}>UFVAI</text>,
@@ -1157,6 +1171,7 @@ export default Plugin.define({
 
     return () => {
       if (timer) clearTimeout(timer)
+      brandFooter?.()
       brandSlot?.()
     }
   },

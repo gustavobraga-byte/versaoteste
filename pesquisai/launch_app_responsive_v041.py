@@ -855,6 +855,88 @@ def create_wrapper_html(
     .footer-oc a { color:var(--ink-muted); text-decoration:none; }
     .footer-oc a:hover { color:var(--accent); }
 
+    /* ── v0.7.0: chave liga/desliga do AUTOSAVE (canto direito inferior) ── */
+    .autosave-switch {
+      display: inline-flex; align-items: center; gap: 7px;
+      cursor: pointer; user-select: none;
+      font-size: 11px; color: var(--ink-muted);
+      letter-spacing: .03em;
+    }
+    .autosave-switch input { position:absolute; opacity:0; width:0; height:0; }
+    .autosave-track {
+      position: relative; display:inline-block;
+      width: 30px; height: 16px; flex-shrink:0;
+      background: rgba(var(--accent-rgb),.14);
+      border: 1px solid rgba(var(--accent-rgb),.28);
+      border-radius: 999px;
+      transition: background .18s, border-color .18s;
+    }
+    .autosave-knob {
+      position: absolute; top: 1px; left: 1px;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: rgba(var(--accent-rgb),.55);
+      transition: transform .18s, background .18s;
+    }
+    .autosave-switch input:checked + .autosave-track {
+      background: rgba(var(--accent-rgb),.42);
+      border-color: rgba(var(--accent-rgb),.6);
+    }
+    .autosave-switch input:checked + .autosave-track .autosave-knob {
+      transform: translateX(14px);
+      background: var(--accent);
+    }
+    .autosave-switch input:focus-visible + .autosave-track {
+      box-shadow: 0 0 0 2px rgba(var(--accent-rgb),.25);
+    }
+    .autosave-switch.on .autosave-label { color: var(--accent); }
+    .autosave-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent); display: inline-block;
+      opacity: 0; transition: opacity .2s;
+    }
+    .autosave-switch.on .autosave-dot { opacity: 1; }
+
+    /* ── v0.7.0: modal de retomada do autosave ── */
+    #autosave-overlay {
+      position: fixed; inset: 0;
+      background: var(--ov-dim);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 99999; opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    #autosave-overlay.open { opacity: 1; pointer-events: all; }
+    #autosave-modal {
+      background: var(--rail); border: 1px solid var(--line);
+      border-radius: 8px; padding: 22px; width: 420px; max-width: 92vw;
+      box-shadow: 0 24px 64px rgba(0,0,0,.6);
+    }
+    #autosave-modal .as-title {
+      font-family: "Syne", sans-serif; font-weight: 700;
+      font-size: 14px; color: var(--ink); margin: 0 0 10px;
+    }
+    #autosave-modal .as-when {
+      font-size: 11.5px; color: var(--accent); margin: 0 0 6px;
+    }
+    #autosave-modal .as-text {
+      font-size: 11.5px; color: var(--ink-muted);
+      line-height: 1.6; margin: 0 0 18px;
+    }
+    #autosave-modal .as-actions { display:flex; gap:8px; justify-content:flex-end; }
+    #autosave-modal .as-btn {
+      padding: 7px 14px; font-size: 11.5px; cursor: pointer;
+      border-radius: var(--radius); font-family: var(--font-sans);
+      border: 1px solid var(--line); background: transparent;
+      color: var(--ink-muted);
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    #autosave-modal .as-btn:hover { color: var(--ink); border-color: rgba(var(--accent-rgb),.4); }
+    #autosave-modal .as-btn.primary {
+      background: rgba(var(--accent-rgb),.16);
+      border-color: rgba(var(--accent-rgb),.45);
+      color: var(--accent);
+    }
+    #autosave-modal .as-btn.primary:hover { background: rgba(var(--accent-rgb),.26); }
+
     .btn-provider {
       display: inline-flex; align-items: center; gap: 5px;
       padding: 0 10px; height: 24px;
@@ -1117,6 +1199,14 @@ def create_wrapper_html(
     <span class="footer-sep"></span>
 
     <div class="footer-right">
+      <!-- v0.7.0: chave liga/desliga do AUTOSAVE (a cada 3 min, no Drive) -->
+      <label class="autosave-switch" id="autosave-switch" title="Salvar automaticamente a sessão a cada 3 minutos no Google Drive">
+        <input type="checkbox" id="autosave-toggle" onchange="toggleAutosave(this.checked)">
+        <span class="autosave-track"><span class="autosave-knob"></span></span>
+        <span class="autosave-dot"></span>
+        <span class="autosave-label" data-i18n="autosave.title">Autosave</span>
+      </label>
+      <span class="footer-sep"></span>
       <button class="btn-provider" onclick="connectProvider()" title="Conectar novo provedor de IA">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
         <span data-i18n="providers.title">+ provedor</span>
@@ -1142,6 +1232,24 @@ def create_wrapper_html(
         <button onclick="ufvaiExitCancel()" style="padding:9px 14px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink-muted);font-family:var(--font-sans);font-size:12px;cursor:pointer;" data-i18n="ui.cancel">Cancelar</button>
       </div>
       <div class="sair-status" id="sair-status"></div>
+    </div>
+  </div>
+
+  <!-- v0.6.20 — tela "Ambiente desconectado" (após SIM, SAIR) — visual igual à
+       tela de Termos recusados; fica visível quando o runtime é desconectado -->
+  <!-- v0.7.0 — Modal de RETOMADA: ao reabrir com autosave valido, pergunta
+       se o usuario continua do ultimo autosave (mostrando data/hora) ou
+       inicia uma nova sessao. A pergunta nao bloqueia: sem resposta,
+       abre-se uma sessao nova. -->
+  <div id="autosave-overlay" onclick="if(event.target===this)autosaveResumeNew()">
+    <div id="autosave-modal" role="dialog" aria-modal="true" aria-labelledby="autosave-title">
+      <div class="as-title" id="autosave-title">💾 <span data-i18n="autosave.resume.title">Retomar sessão</span></div>
+      <p class="as-when" id="autosave-when"></p>
+      <p class="as-text" data-i18n="autosave.resume.text">Há um salvamento automático. Deseja continuar a partir dele ou iniciar uma nova sessão?</p>
+      <div class="as-actions">
+        <button class="as-btn" onclick="autosaveResumeNew()" data-i18n="autosave.resume.new">Nova sessão</button>
+        <button class="as-btn primary" onclick="autosaveResumeContinue()" data-i18n="autosave.resume.continue">Continuar de onde parei</button>
+      </div>
     </div>
   </div>
 
@@ -3617,11 +3725,156 @@ def create_wrapper_html(
       }
     });
 
+    // ══════════════════════════════════════════════════════════
+    // v0.7.0 — AUTOSAVE: chave liga/desliga, timer de 3 min e
+    // pergunta de retomada (com data/hora, no idioma do usuário).
+    // ══════════════════════════════════════════════════════════
+    const AUTOSAVE_INTERVAL_MS = 180000;      // 3 minutos
+    const AUTOSAVE_KEY = "ufvai_autosave_enabled";
+    let _autosaveTimer = null;
+    let _autosaveBusy = false;
+    let _autosaveLatest = null;               // autosave valido mais recente
+
+    function autosaveDict() {
+      return I18N[_currentLang] || I18N["pt_BR"];
+    }
+
+    function autosaveEnabled() {
+      try { return localStorage.getItem(AUTOSAVE_KEY) === "1"; }
+      catch (e) { return false; }
+    }
+
+    function setAutosaveUI(on) {
+      const box = document.getElementById("autosave-toggle");
+      const sw = document.getElementById("autosave-switch");
+      if (box) box.checked = !!on;
+      if (sw) sw.classList.toggle("on", !!on);
+    }
+
+    function toggleAutosave(on) {
+      try { localStorage.setItem(AUTOSAVE_KEY, on ? "1" : "0"); } catch (e) {}
+      setAutosaveUI(on);
+      if (on) {
+        startAutosaveTimer();
+        // Grava um autosave logo ao ligar (não espera os 3 min)
+        autosaveTick(true);
+      } else {
+        stopAutosaveTimer();
+        toast(autosaveDict()["autosave.off_msg"] || "Autosave desligado", "info");
+      }
+    }
+
+    function startAutosaveTimer() {
+      stopAutosaveTimer();
+      _autosaveTimer = setInterval(() => autosaveTick(false), AUTOSAVE_INTERVAL_MS);
+    }
+
+    function stopAutosaveTimer() {
+      if (_autosaveTimer) { clearInterval(_autosaveTimer); _autosaveTimer = null; }
+    }
+
+    async function autosaveTick(silent) {
+      if (_autosaveBusy) return;
+      if (!autosaveEnabled() && !silent) return;
+      _autosaveBusy = true;
+      try {
+        const r = await fetch(BASE + "/api/autosave", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        const d = await r.json();
+        if (d && d.ok) {
+          _autosaveLatest = d;
+          if (!silent) toast((autosaveDict()["autosave.saved"] || "Sessão salva no Drive"), "ok");
+        } else if (!silent) {
+          toast("❌ " + ((d && d.error) || "Falha no autosave"), "err");
+        }
+      } catch (e) {
+        if (!silent) toast("❌ " + e.message, "err");
+      } finally {
+        _autosaveBusy = false;
+      }
+    }
+
+    /** Mostra a pergunta de retomada (data/hora do último autosave). */
+    function showAutosaveResume(item) {
+      const overlay = document.getElementById("autosave-overlay");
+      const when = document.getElementById("autosave-when");
+      if (!overlay) return;
+      if (when) {
+        const stamp = item.saved_at_local || item.saved_at_iso || "";
+        when.textContent = (autosaveDict()["autosave.resume.when"] || "Autosave de") + " " + stamp;
+      }
+      overlay.classList.add("open");
+    }
+
+    function closeAutosaveResume() {
+      const overlay = document.getElementById("autosave-overlay");
+      if (overlay) overlay.classList.remove("open");
+    }
+
+    /** Continuar do último autosave: restaura o arquivo no motor. */
+    async function autosaveResumeContinue() {
+      closeAutosaveResume();
+      const item = _autosaveLatest;
+      if (!item) { toast("❌ " + (autosaveDict()["autosave.resume.none"] || "Nenhum autosave válido"), "err"); return; }
+      toast(autosaveDict()["autosave.resume.restoring"] || "Restaurando o último autosave…", "info");
+      try {
+        const r = await fetch(BASE + "/api/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: item.file })
+        });
+        const d = await r.json();
+        if (d && d.ok) {
+          toast("✅ " + (autosaveDict()["autosave.resume.done"] || "Sessão restaurada"), "ok");
+          setTimeout(() => location.reload(), 3500);
+        } else {
+          toast("❌ " + ((d && d.error) || "Falha ao restaurar"), "err");
+        }
+      } catch (e) {
+        toast("❌ " + e.message, "err");
+      }
+    }
+
+    /** Iniciar uma nova sessão: descarta a pergunta e segue. */
+    function autosaveResumeNew() {
+      closeAutosaveResume();
+    }
+
+    /** Na abertura: se houver autosave válido, pergunta. Não bloqueia. */
+    async function checkAutosaveResume() {
+      try {
+        const r = await fetch(BASE + "/api/autosave");
+        const d = await r.json();
+        if (d && d.latest) {
+          _autosaveLatest = d.latest;
+          showAutosaveResume(d.latest);
+          // Sem resposta em 20s -> nova sessão (a pergunta não bloqueia)
+          setTimeout(() => closeAutosaveResume(), 20000);
+        }
+      } catch (e) { /* silencioso: sem autosave, segue normal */ }
+    }
+
     // ── Inicialização ────────────────────────────────────────
     window.addEventListener("load", () => {
       // 1. Aplica idioma (síncrono, sem flash)
       applyLang(_currentLang);
       buildLangMenu();
+      // 1.1 v0.7.0: chave do autosave + timer de 3 min + pergunta de retomada
+      setAutosaveUI(autosaveEnabled());
+      if (autosaveEnabled()) startAutosaveTimer();
+      setTimeout(() => checkAutosaveResume(), 2500);
+      // Ao sair da aba, tenta gravar o estado (sendBeacon, não bloqueia)
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden" && autosaveEnabled() && !_autosaveBusy) {
+          try {
+            const payload = new Blob([JSON.stringify({})], { type: "application/json" });
+            navigator.sendBeacon(BASE + "/api/autosave", payload);
+          } catch (e) {}
+        }
+      });
       // v0.6.15: sincroniza prompt inicial com idioma detectado do navegador
       // Se backend ainda está em pt_BR (bug pré-0.6.15) e frontend detectou en/es/fr/zh, reinicia ttyd automaticamente
       try {
@@ -4195,6 +4448,16 @@ def create_wrapper_html(
             "ui.drive": "Drive", "ui.close": "Fechar", "ui.cancel": "Cancelar",
             "ui.loading": "Carregando…", "ui.status_active": "agente ativo",
             "ui.exporting": "Exportando sessão…",
+            "autosave.title": "Autosave", "autosave.saved": "Sessão salva no Drive",
+            "autosave.off_msg": "Autosave desligado",
+            "autosave.resume.title": "Retomar sessão",
+            "autosave.resume.text": "Há um salvamento automático. Deseja continuar a partir dele ou iniciar uma nova sessão?",
+            "autosave.resume.when": "Autosave de",
+            "autosave.resume.continue": "Continuar de onde parei",
+            "autosave.resume.new": "Nova sessão",
+            "autosave.resume.restoring": "Restaurando o último autosave…",
+            "autosave.resume.done": "Sessão restaurada",
+            "autosave.resume.none": "Nenhum autosave válido",
             "dashboard.title": "Dashboard de Saúde",
             "providers.title": "Conectar Provedor de IA",
             "providers.select": "Selecione o provedor para configurar a API key:",
@@ -4299,6 +4562,16 @@ def create_wrapper_html(
             "ui.drive": "Drive", "ui.close": "Close", "ui.cancel": "Cancel",
             "ui.loading": "Loading…", "ui.status_active": "agent active",
             "ui.exporting": "Exporting session…",
+            "autosave.title": "Autosave", "autosave.saved": "Session saved to Drive",
+            "autosave.off_msg": "Autosave off",
+            "autosave.resume.title": "Resume session",
+            "autosave.resume.text": "There is an automatic save. Do you want to continue from it or start a new session?",
+            "autosave.resume.when": "Autosave from",
+            "autosave.resume.continue": "Continue where I left off",
+            "autosave.resume.new": "New session",
+            "autosave.resume.restoring": "Restoring the last autosave…",
+            "autosave.resume.done": "Session restored",
+            "autosave.resume.none": "No valid autosave",
             "dashboard.title": "Health Dashboard",
             "providers.title": "Connect AI Provider",
             "providers.select": "Select the provider to configure the API key:",
@@ -4403,6 +4676,16 @@ def create_wrapper_html(
             "ui.drive": "Drive", "ui.close": "Cerrar", "ui.cancel": "Cancelar",
             "ui.loading": "Cargando…", "ui.status_active": "agente activo",
             "ui.exporting": "Exportando sesión…",
+            "autosave.title": "Autoguardado", "autosave.saved": "Sesión guardada en Drive",
+            "autosave.off_msg": "Autoguardado desactivado",
+            "autosave.resume.title": "Reanudar sesión",
+            "autosave.resume.text": "Hay un guardado automático. ¿Desea continuar desde él o iniciar una sesión nueva?",
+            "autosave.resume.when": "Autoguardado del",
+            "autosave.resume.continue": "Continuar donde lo dejé",
+            "autosave.resume.new": "Sesión nueva",
+            "autosave.resume.restoring": "Restaurando el último autoguardado…",
+            "autosave.resume.done": "Sesión restaurada",
+            "autosave.resume.none": "Ningún autoguardado válido",
             "dashboard.title": "Panel de Salud",
             "providers.title": "Conectar Proveedor de IA",
             "providers.select": "Seleccione el proveedor para configurar la API key:",
@@ -4507,6 +4790,16 @@ def create_wrapper_html(
             "ui.drive": "Drive", "ui.close": "Fermer", "ui.cancel": "Annuler",
             "ui.loading": "Chargement…", "ui.status_active": "agent actif",
             "ui.exporting": "Exportation de la session…",
+            "autosave.title": "Sauvegarde auto", "autosave.saved": "Session enregistrée sur Drive",
+            "autosave.off_msg": "Sauvegarde auto désactivée",
+            "autosave.resume.title": "Reprendre la session",
+            "autosave.resume.text": "Une sauvegarde automatique existe. Voulez-vous continuer à partir d’elle ou démarrer une nouvelle session ?",
+            "autosave.resume.when": "Sauvegarde auto du",
+            "autosave.resume.continue": "Continuer où j’en étais",
+            "autosave.resume.new": "Nouvelle session",
+            "autosave.resume.restoring": "Restauration de la dernière sauvegarde auto…",
+            "autosave.resume.done": "Session restaurée",
+            "autosave.resume.none": "Aucune sauvegarde auto valide",
             "dashboard.title": "Tableau de bord de santé",
             "providers.title": "Connecter un fournisseur d'IA",
             "providers.select": "Sélectionnez le fournisseur pour configurer la clé API:",
@@ -4611,6 +4904,16 @@ def create_wrapper_html(
             "ui.drive": "云端硬盘", "ui.close": "关闭", "ui.cancel": "取消",
             "ui.loading": "加载中…", "ui.status_active": "智能体运行中",
             "ui.exporting": "正在导出会话…",
+            "autosave.title": "自动保存", "autosave.saved": "会话已保存到 Drive",
+            "autosave.off_msg": "已关闭自动保存",
+            "autosave.resume.title": "恢复会话",
+            "autosave.resume.text": "存在一个自动保存。要从它继续，还是开始新会话？",
+            "autosave.resume.when": "自动保存于",
+            "autosave.resume.continue": "继续上次进度",
+            "autosave.resume.new": "新建会话",
+            "autosave.resume.restoring": "正在恢复最近的自动保存…",
+            "autosave.resume.done": "会话已恢复",
+            "autosave.resume.none": "没有有效的自动保存",
             "dashboard.title": "健康状态面板",
             "providers.title": "连接 AI 提供商",
             "providers.select": "选择要配置 API key 的提供商：",

@@ -63,6 +63,7 @@ from .opencode_utils import (
 )
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
 from .run_fast import ensure_ufvai_agent, preflight_ufvai_session, seed_ufvai_greeting
+from . import session_restore as _session_restore
 
 
 def _ensure_ufvai_agent_before_spawn(where: str = "terminal") -> None:
@@ -1651,7 +1652,11 @@ def start_wrapper_server():
         os.makedirs(_base, exist_ok=True)
     DRIVE_BACKUP_DIR = os.path.join(_base, "backups")
     os.makedirs(DRIVE_BACKUP_DIR, exist_ok=True)
+    # v0.7.0: pasta dos autosaves (3 ultimos, rotacionados)
+    AUTOSAVE_DIR = os.path.join(DRIVE_BACKUP_DIR, "autosave")
+    os.makedirs(AUTOSAVE_DIR, exist_ok=True)
     print(f"📁 Backup dir: {DRIVE_BACKUP_DIR}")
+    print(f"💾 Autosave dir: {AUTOSAVE_DIR}")
     
     # v0.4.2.2: restaura idioma persistido (cookie/arquivo)
     # v0.6.15: helper garante detecção ANTES do ttyd (antes bug _current_lang="pt_BR" truthy)
@@ -1812,13 +1817,31 @@ def start_wrapper_server():
                 return
             
             if p == "/api/sessions":
-                cmd = [_opencode_bin or "opencode", "session", "list", "--format", "json"]
-                r = _run(cmd=cmd)
+                # v0.6.25: a listagem vai para o SERVIDOR do motor
+                # (`opencode api session.list`). A listagem por CLI
+                # (`session list --format json`) e escopada por projeto e
+                # resolvida pelo CWD do processo: o wrapper roda no diretorio
+                # do Drive, mas as sessoes da TUI vivem no projeto `/root` ->
+                # a lista voltava VAZIA (historico de sessoes quebrado).
                 try:
-                    sessions = json.loads(r.stdout) if r.stdout.strip() else []
-                except Exception:
-                    sessions = [{"id": l.strip()} for l in r.stdout.splitlines() if l.strip()]
-                self._json(200, {"sessions": sessions})
+                    sessions = _session_restore.list_sessions(_opencode_bin or "opencode", env=_env)
+                except Exception as exc:
+                    logger.warning("Falha ao listar sessoes: %s", exc)
+                    sessions = []
+                # Normaliza o formato: a interface le `date`/`created` (o
+                # servidor devolve `time.created` em epoch ms).
+                normalized = []
+                for s in sessions:
+                    item = dict(s)
+                    created = (s.get("time") or {}).get("created")
+                    if created:
+                        item["created"] = created
+                        item["date"] = time.strftime(
+                            "%d/%m/%Y %H:%M", time.localtime(created / 1000)
+                        )
+                    item.setdefault("title", s.get("id", ""))
+                    normalized.append(item)
+                self._json(200, {"sessions": normalized})
                 return
 
             if p == "/api/lang":
@@ -2845,20 +2868,36 @@ def start_wrapper_server():
             if p == "/api/backup":
                 os.makedirs(DRIVE_BACKUP_DIR, exist_ok=True)
 
-                session_id = body.get("session_id", "")
+                session_id = str(body.get("session_id", "") or "").strip()
                 ts = time.strftime("%H-%M-%S_%d-%m-%Y")
 
-                if not session_id:
-                    r = _run([_opencode_bin, "session", "list", "--format", "json"])
-                    try:
-                        sessions = json.loads(r.stdout)
-                        session_id = sessions[0].get("id", "") if sessions else ""
-                    except Exception:
-                        lines = [l.strip() for l in r.stdout.splitlines() if l.strip()]
-                        session_id = lines[0] if lines else ""
+                # ── Descoberta da sessao (v0.6.25) ──────────────────────
+                # A busca anterior (`session list --format json`) e escopada
+                # por projeto/CWD e voltava vazia — o "Salvar backup" falhava
+                # com "Nenhuma sessao encontrada". Agora consulta o SERVIDOR.
+                sessions = []
+                try:
+                    sessions = _session_restore.list_sessions(_opencode_bin or "opencode", env=_env)
+                except Exception as exc:
+                    logger.warning("Falha ao listar sessoes para backup: %s", exc)
+
+                if session_id and not any(s.get("id") == session_id for s in sessions):
+                    logger.info(
+                        "Backup: sessao %s informada nao esta na lista do servidor; "
+                        "tentando o export direto.", session_id,
+                    )
+
+                if not session_id and sessions:
+                    # a mais recente (a lista vem do servidor, ja ordenada)
+                    session_id = str(sessions[0].get("id") or "")
 
                 if not session_id:
-                    self._json(400, {"error": "Nenhuma sessão encontrada para exportar."})
+                    self._json(400, {
+                        "error": (
+                            "Nenhuma sessao encontrada para exportar. "
+                            "O motor nao respondeu a listagem de sessoes."
+                        )
+                    })
                     return
 
                 sid_safe = re.sub(r"[^A-Za-z0-9_-]", "", str(session_id))[:12] or "sess"
@@ -2866,69 +2905,38 @@ def start_wrapper_server():
                 # ── Etapa 1: exportar para /tmp/ (SSD local, sem FUSE) ─────────
                 tmp_path = os.path.join("/tmp", fname)
 
-                # OpenCode V2: `session export <id>` escreve o JSON no stdout.
-                r = _run(
-                    [_opencode_bin, "session", "export", session_id],
-                    timeout=120,
-                )
-                export_ok = False
-                if r.returncode == 0 and len(r.stdout) > 0:
-                    with open(tmp_path, "w", encoding="utf-8") as f:
-                        f.write(r.stdout)
-                    export_ok = os.path.exists(tmp_path)
-
-                if not export_ok:
-                    r2 = _run(
-                        [_opencode_bin, "export", session_id],
-                        timeout=120,
-                    )
-                    if r2.returncode == 0 and len(r2.stdout) > 0:
-                        with open(tmp_path, "w", encoding="utf-8") as f:
-                            f.write(r2.stdout)
-                        export_ok = os.path.exists(tmp_path)
-
-                if not export_ok:
-                    self._json(500, {
-                        "error": (
-                            r.stderr[:500] if r.stderr
-                            else "Falha ao exportar sessão. Arquivo não foi criado."
-                        )
-                    })
-                    return
-
-                # ── Etapa 1.5: validar JSON do /tmp/ ANTES de copiar ─────────
-                # Evita copiar arquivo truncado/invalido para o Drive
-                tmp_size = os.path.getsize(tmp_path)
-                tmp_json_valid = False
+                # v0.6.25: export DIRETO PARA ARQUIVO (sem pipe) + retentativa.
+                # Capturar a saida do motor por pipe truncava o payload em
+                # blocos de 64 KB (medido: 5 de 6 exports saiam com JSON
+                # invalido — 196608/262144/393216 bytes) e o backup no Drive
+                # ficava corrompido. Escrito direto no arquivo, o export sai
+                # integro; a retentativa cobre o resto.
                 try:
-                    with open(tmp_path, "r", encoding="utf-8") as f:
-                        json.load(f)
-                    tmp_json_valid = True
-                except Exception as je:
-                    logger.error(
-                        "JSON exportado para /tmp/ e invalido (%s, %d bytes): %s. "
-                        "Possivel truncamento no opencode export. Arquivo: %s",
-                        fname, tmp_size, str(je)[:200], tmp_path,
+                    export_text, export_meta = _session_restore.export_session_verified(
+                        _opencode_bin or "opencode", session_id, env=_env, attempts=3,
+                        out_path=tmp_path,
                     )
+                except _session_restore.SessionError as exc:
                     self._json(500, {
                         "error": (
-                            f"Sessao exportada mas JSON invalido ({tmp_size} bytes). "
-                            f"Possivel truncamento no opencode export. "
-                            f"Arquivo temporario preservado em: {tmp_path}"
+                            f"Falha ao exportar a sessao apos 3 tentativas: {exc}. "
+                            f"Nenhum arquivo foi gravado no Drive."
                         )
                     })
                     return
 
-                # ── Etapa 2: copiar para o Drive com validacao robusta ────────
-                # Causa raiz de backups quebrados: Google Drive FUSE trunca
-                # a escrita em limites de buffer interno (64KB/256KB/512KB),
-                # mas getsize() reporta o tamanho alvo (metadata cache).
-                # Solucao: validar JSON lendo de VOLTA do Drive apos copy.
-                outpath = os.path.join(DRIVE_BACKUP_DIR, fname)
+                if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        f.write(export_text)
+                tmp_size = os.path.getsize(tmp_path)
 
-                # Remove arquivo anterior corrompido se existir
-                if os.path.exists(outpath):
-                    os.remove(outpath)
+                # ── Etapa 2: gravar no Drive de forma ATOMICA e verificada ──
+                # Causa raiz dos backups quebrados: o Google Drive (FUSE)
+                # trunca a escrita em limites de buffer interno (64KB/256KB/
+                # 512KB) — o `stat` reporta o tamanho alvo, mas o conteudo
+                # esta truncado. A correcao e gravar em arquivo temporario,
+                # validar lendo de volta e so entao renomear (os.replace).
+                outpath = os.path.join(DRIVE_BACKUP_DIR, fname)
 
                 # Lock para evitar concorrencia entre cliques rapidos
                 import fcntl
@@ -2944,53 +2952,22 @@ def start_wrapper_server():
                     # fcntl ausente (Windows) ou lock ocupado — prossegue sem lock
                     pass
 
-                copy_ok = False
-                copy_error = ""
                 try:
-                    for attempt in range(3):
-                        try:
-                            # Remove parcial de tentativa anterior
-                            if os.path.exists(outpath):
-                                os.remove(outpath)
-                            shutil.copy2(tmp_path, outpath)
-                            # Forcar sincronizacao FUSE: fsync + sleep + sync
-                            try:
-                                with open(outpath, "rb") as fsf:
-                                    os.fsync(fsf.fileno())
-                            except Exception:
-                                pass
-                            time.sleep(0.8 + attempt * 0.5)  # backoff
-                            os.sync()  # flush global
-                            time.sleep(0.3)
-                            # Validacao 1: tamanho
-                            dest_size = os.path.getsize(outpath)
-                            if dest_size != tmp_size:
-                                copy_error = f"tamanho divergente (tmp={tmp_size}, drive={dest_size})"
-                                logger.warning("Backup %s: tentativa %d - %s", fname, attempt+1, copy_error)
-                                continue
-                            # Validacao 2: JSON valido (ler de volta do Drive)
-                            try:
-                                with open(outpath, "r", encoding="utf-8") as vf:
-                                    json.load(vf)
-                            except Exception as je:
-                                copy_error = f"JSON invalido no Drive: {str(je)[:150]}"
-                                logger.warning("Backup %s: tentativa %d - %s", fname, attempt+1, copy_error)
-                                continue
-                            # Validacao 3: heuristica potência-de-2 (FUSE chunk)
-                            # Tamanhos exatos de 64KB/256KB/512KB/1MB sao suspeitos
-                            if dest_size > 1023 and (dest_size & (dest_size - 1)) == 0:
-                                logger.warning(
-                                    "Backup %s: tamanho %d e potencia exata de 2 "
-                                    "(possivel truncamento FUSE) — revalidando",
-                                    fname, dest_size,
-                                )
-                                # Ja validamos JSON acima; se passou, esta ok
-                                # mas logamos para diagnostico
-                            copy_ok = True
-                            break
-                        except Exception as e:
-                            copy_error = str(e)[:200]
-                            time.sleep(1 + attempt)
+                    write_info = _session_restore.write_backup_atomic(
+                        tmp_path, outpath, attempts=3,
+                    )
+                except _session_restore.SessionError as exc:
+                    self._json(500, {
+                        "error": (
+                            f"Exportado e validado em /tmp/ ({tmp_size} bytes, JSON valido), "
+                            f"mas falhou ao gravar no Drive apos 3 tentativas. "
+                            f"Causa provavel: truncamento FUSE em chunk de buffer. "
+                            f"Ultimo erro: {exc}. "
+                            f"Nenhum backup anterior foi sobrescrito. "
+                            f"Arquivo temporario valido preservado em: {tmp_path}"
+                        )
+                    })
+                    return
                 finally:
                     if lock_ok and lock_fd:
                         try:
@@ -3000,18 +2977,6 @@ def start_wrapper_server():
                             pass
 
                 # ── Etapa 3: resposta ────────────────────────────────────────
-                if not copy_ok:
-                    self._json(500, {
-                        "error": (
-                            f"Exportado e validado em /tmp/ ({tmp_size} bytes, JSON valido), "
-                            f"mas falhou ao copiar para o Drive apos 3 tentativas. "
-                            f"Causa provavel: truncamento FUSE em chunk de buffer. "
-                            f"Ultimo erro: {copy_error}. "
-                            f"Arquivo temporario valido preservado em: {tmp_path}"
-                        )
-                    })
-                    return
-
                 try:
                     _tel_event("backup_created", {})
                 except Exception:
@@ -3021,9 +2986,14 @@ def start_wrapper_server():
                     "file": fname,
                     "session_id": session_id,
                     "path": outpath,
-                    "size_bytes": tmp_size,
+                    "size_bytes": write_info.get("size_bytes", tmp_size),
                     "tmp_path": tmp_path,
                     "validated": True,
+                    "atomic": True,
+                    "messages": export_meta.get("messages", 0),
+                    "format": export_meta.get("format", "v2"),
+                    "attempts": write_info.get("attempts", 1),
+                    "title": export_meta.get("title", ""),
                 })
                 return
             
@@ -3040,7 +3010,13 @@ def start_wrapper_server():
                     self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
                     return
 
-                # Verificar integridade: arquivo truncado é rejeitado
+                # ── v0.6.25: restauracao com conversao e ids renovados ──
+                # O import do motor v2 (a) rejeita o esquema legado v1 com
+                # HTTP 400 e (b) devolve HTTP 500 quando os ids de mensagem
+                # ja existem na base (caso comum: restaurar um backup cuja
+                # sessao de origem continua viva). O modulo session_restore
+                # converte o payload legado, remove o que o import nao
+                # aceita e renova os ids antes de importar.
                 file_size = os.path.getsize(fpath)
                 if file_size < 100:
                     self._json(400, {
@@ -3048,27 +3024,7 @@ def start_wrapper_server():
                     })
                     return
 
-                # Validar JSON antes de copiar (FUSE pode ter truncado)
-                try:
-                    with open(fpath, "r", encoding="utf-8") as jf:
-                        json.load(jf)
-                except Exception as je:
-                    import math as _math
-                    is_pow2 = file_size > 0 and (file_size & (file_size - 1)) == 0
-                    hint = (
-                        " (tamanho e potencia exata de 2 — truncamento FUSE classico)"
-                        if is_pow2 else ""
-                    )
-                    self._json(400, {
-                        "error": (
-                            f"Arquivo de backup corrompido: JSON invalido ({file_size} bytes{hint}). "
-                            f"Causa: {str(je)[:150]}. "
-                            f"Remova este backup e gere um novo via 'Salvar backup'."
-                        )
-                    })
-                    return
-
-                # 1. Copiar para /tmp/ primeiro (Drive FUSE é lento para leitura grande)
+                # 1. Copiar para /tmp/ primeiro (Drive FUSE e lento para leitura grande)
                 tmp_restore = os.path.join("/tmp", f"restore_{fname}")
                 try:
                     shutil.copy2(fpath, tmp_restore)
@@ -3076,27 +3032,33 @@ def start_wrapper_server():
                     self._json(500, {"error": f"Falha ao copiar backup para /tmp/: {e}"})
                     return
 
-                # 2. Importar do /tmp/ (rápido e confiável)
-                r = _run([_opencode_bin, "session", "import", tmp_restore], timeout=120)
-                if r.returncode != 0:
+                # 2. Preparar o payload (validacao + conversao v1->v2 + ids novos)
+                try:
+                    payload, src_format = _session_restore.prepare_import_payload(
+                        tmp_restore,
+                        project_id=str(body.get("project_id", "") or ""),
+                        fallback_directory=str(body.get("directory", "") or ""),
+                    )
+                except _session_restore.SessionError as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+
+                # 3. Importar (ids renovados evitam a colisao que dava HTTP 500)
+                try:
+                    session_id = _session_restore.import_session(
+                        _opencode_bin or "opencode", payload, env=_env, timeout=180,
+                    )
+                except _session_restore.SessionError as exc:
                     self._json(500, {
-                        "error": r.stderr.strip()[:500] or "Falha ao importar."
+                        "error": (
+                            f"Falha ao importar a sessao: {exc}. "
+                            f"O backup e valido e esta preservado em: {tmp_restore}"
+                        )
                     })
                     return
-                
-                # 2. Extract full session_id from file content via regex
-                session_id = ""
+
                 parse_error = ""
-                try:
-                    import re as _re
-                    with open(fpath, "r", encoding="utf-8") as jf:
-                        raw = jf.read(4096)
-                    # Matches "id": "ses_XXXX" anywhere in the first 4KB
-                    m = _re.search(r'"id"\s*:\s*"(ses_[a-zA-Z0-9]+)"', raw)
-                    if m:
-                        session_id = m.group(1)
-                except Exception as e:
-                    parse_error = str(e)
+                import_stdout = f"Imported session: {session_id}"
                 
                 # 3. v0.5.1.6 — REINICIAR ttyd com `opencode -s <session_id>`
                 # Bug antigo: importava a sessão mas o ttyd continuava com --prompt,
@@ -3146,7 +3108,8 @@ def start_wrapper_server():
                     "file": fname,
                     "session_id": session_id,
                     "parse_error": parse_error,
-                    "import_stdout": r.stdout.strip()[:300],
+                    "import_stdout": import_stdout,
+                    "source_format": src_format,
                     "ttyd_restarted": ttyd_restarted,
                     "ttyd_restart_error": ttyd_restart_error,
                     "message": (
@@ -3158,6 +3121,56 @@ def start_wrapper_server():
                 })
                 return
             
+            if p == "/api/autosave":
+                # v0.7.0: autosave da sessao a cada 3 minutos (chave
+                # liga/desliga na interface). Mantem os 3 ULTIMOS no Drive:
+                # o mais recente e `autosave_1.json`; se ele estiver
+                # corrompido (truncamento FUSE), o fallback assume.
+                if method == "GET":
+                    try:
+                        items = _session_restore.list_autosaves(AUTOSAVE_DIR)
+                    except Exception as exc:
+                        logger.warning("Falha ao listar autosaves: %s", exc)
+                        items = []
+                    self._json(200, {
+                        "autosaves": items,
+                        "latest": items[0] if items else None,
+                        "dir": AUTOSAVE_DIR,
+                    })
+                    return
+
+                # POST: grava o autosave
+                os.makedirs(AUTOSAVE_DIR, exist_ok=True)
+                session_id = str(body.get("session_id", "") or "").strip()
+                if not session_id:
+                    try:
+                        sessions = _session_restore.list_sessions(
+                            _opencode_bin or "opencode", env=_env,
+                        )
+                    except Exception:
+                        sessions = []
+                    if sessions:
+                        session_id = str(sessions[0].get("id") or "")
+                if not session_id:
+                    self._json(400, {
+                        "error": "Nenhuma sessao ativa para salvar automaticamente."
+                    })
+                    return
+                try:
+                    info = _session_restore.save_autosave(
+                        _opencode_bin or "opencode", session_id, AUTOSAVE_DIR, env=_env,
+                    )
+                except _session_restore.SessionError as exc:
+                    logger.warning("Autosave falhou: %s", exc)
+                    self._json(500, {"error": str(exc)[:300]})
+                    return
+                try:
+                    _tel_event("autosave_created", {})
+                except Exception:
+                    pass
+                self._json(200, {"ok": True, **info})
+                return
+
             if p == "/api/theme":
                 # Persiste escolha de tema (escuro/claro) — v0.6.20 grava em
                 # tui.json (OpenCode V1) E cli.json (OpenCode V2).

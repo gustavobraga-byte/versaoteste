@@ -24,7 +24,7 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
-  v0.6.25 — 21/10/2026: 🏷️ Marca UFVAI na tela de NOVA SESSÃO + 4 correções
+  v0.7.0 — 21/10/2026: 🏷️ Marca UFVAI na tela de NOVA SESSÃO + 4 correções
             de interface
             • LOGO: a arte de blocos "opencode" da tela de nova sessão foi
               redesenhada como "UFVAI" (5 letras, mesma grade de 4 linhas x 19
@@ -413,7 +413,7 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.6.25"
+__version__: str = "0.7.0"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 

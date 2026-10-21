@@ -1268,6 +1268,7 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
+| **0.7.0** | 21/10/2026 | 🏷️ Marca **UFVAI** na tela de nova sessão (logo redesenhado + sugestões do prompt com uso UFVAI/agêntico, via patch cirúrgico de mesmo comprimento no motor) · 🇨🇳 Chinês também troca o terminal · 🎨 Manual e Diretrizes no tema claro · 📱 "Idioma" fora do sanduíche e nota da Memória visível no responsivo |
 | **0.6.20** | 01/10/2026 | 🫀 Boot simplificado do Colab (ipynb: clone + `run()` no kernel + keep-alive em subprocesso, log `ufvai_keepalive.log`) + botão **SAIR** com confirmação (encerra o keep-alive e chama `runtime.unassign()` — desconecta e exclui o ambiente) |
 | **0.6.19** | 29/09/2026 | 📱 Menu mobile sem SVG (`.tb-icon{display:none}` ≤767px, drawer sem SVG) + hamburger alinhado à direita (`#topbar .sep{display:none}` ≤767px, evita `flex:1` × `margin-left:auto`) + teste de regressão de cascata + docs em paridade (§2.1.0 skills personalizadas) |
 | **0.6.18** | 19/09/2026 | 🧩 Skills personalizadas (`backups/skills-personalizadas/` a cada boot) |
