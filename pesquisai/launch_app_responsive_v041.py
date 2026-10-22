@@ -4296,10 +4296,11 @@ def create_wrapper_html(
     });
 
     // ══════════════════════════════════════════════════════════
-    // v0.7.0 — AUTOSAVE: chave liga/desliga, timer de 3 min e
-    // pergunta de retomada (com data/hora, no idioma do usuário).
+    // v0.7.0 — AUTOSAVE: chave liga/desliga, timer e pergunta de
+    // retomada (com data/hora, no idioma do usuário).
+    // v0.7.3: o intervalo caiu de 3 min para 1 min.
     // ══════════════════════════════════════════════════════════
-    const AUTOSAVE_INTERVAL_MS = 180000;      // 3 minutos
+    const AUTOSAVE_INTERVAL_MS = 60000;       // v0.7.3: 1 minuto
     const AUTOSAVE_KEY = "ufvai_autosave_enabled";
     let _autosaveTimer = null;
     let _autosaveBusy = false;
@@ -4332,7 +4333,7 @@ def create_wrapper_html(
       setAutosaveUI(on);
       if (on) {
         startAutosaveTimer();
-        // Grava um autosave logo ao ligar (não espera os 3 min)
+        // Grava um autosave logo ao ligar (não espera o intervalo)
         autosaveTick(true);
       } else {
         stopAutosaveTimer();
@@ -4384,28 +4385,38 @@ def create_wrapper_html(
       }
     }
 
-    // ── v0.7.2 — a pergunta de retomada é OFERTADA UMA VEZ ──────
+    // ── v0.7.3 — a pergunta de retomada: UMA VEZ na entrada, sem loop ──
     // BUG (v0.7.1): "Continuar de onde parei" fazia location.reload()
     // -> a página recarregava -> checkAutosaveResume() oferecia a
     // pergunta DE NOVO -> o usuário clicava de novo -> LOOP INFINITO.
-    // Correção: flag em sessionStorage (sobrevive ao reload da MESMA
-    // aba; morre ao fechar a aba). Depois de oferecida — por resposta
-    // ou pelo timeout de 20 s — a pergunta não volta.
+    // BUG (v0.7.2): a flag "oferecida" ficava no sessionStorage da aba
+    // para sempre -> QUALQUER recarga posterior (mesmo um F5 do autor)
+    // nunca mais perguntava -> o autor entrou e a pergunta NAO
+    // apareceu ("deve pedir uma vez sem loop").
+    // v0.7.3 — estado em sessionStorage:
+    //   "restored" -> pula a carga seguinte (o reload do restore) e
+    //                 CONSOME o estado (a proxima entrada pergunta);
+    //   "new"      -> o usuário escolheu "Nova sessão": não pergunta
+    //                 de novo nesta aba;
+    //   (vazio)    -> entrada normal: PERGUNTA (uma vez).
     // O menu "Restaurar" (calendário) continua disponível sempre.
-    const AUTOSAVE_RESUME_FLAG = "ufvai_autosave_resume_offered";
+    const AUTOSAVE_RESUME_STATE = "ufvai_autosave_resume_state";
 
-    function autosaveResumeOffered() {
-      try { return sessionStorage.getItem(AUTOSAVE_RESUME_FLAG) === "1"; }
-      catch (e) { return false; }
+    function autosaveResumeState() {
+      try { return sessionStorage.getItem(AUTOSAVE_RESUME_STATE) || ""; }
+      catch (e) { return ""; }
     }
 
-    function markAutosaveResumeOffered() {
-      try { sessionStorage.setItem(AUTOSAVE_RESUME_FLAG, "1"); } catch (e) {}
+    function setAutosaveResumeState(value) {
+      try {
+        if (value) sessionStorage.setItem(AUTOSAVE_RESUME_STATE, value);
+        else sessionStorage.removeItem(AUTOSAVE_RESUME_STATE);
+      } catch (e) {}
     }
 
-    /** v0.7.2 — reabrir a pergunta de retomada sob demanda (botão ↻). */
+    /** v0.7.3 — reabrir a pergunta de retomada sob demanda (botão ↻). */
     async function reofferAutosaveResume() {
-      try { sessionStorage.removeItem(AUTOSAVE_RESUME_FLAG); } catch (e) {}
+      setAutosaveResumeState("");
       await checkAutosaveResume();
     }
 
@@ -4414,8 +4425,10 @@ def create_wrapper_html(
       const overlay = document.getElementById("autosave-overlay");
       const when = document.getElementById("autosave-when");
       if (!overlay) return;
-      // v0.7.2: uma vez oferecida, a pergunta nao volta (evita o loop).
-      markAutosaveResumeOffered();
+      // v0.7.3: a oferta NAO marca nada — quem decide se a proxima
+      // entrada pergunta e' a resposta do usuario (restored/new) ou o
+      // fim da aba. Marcar na oferta impedia a pergunta de voltar
+      // (bug v0.7.2: "não perguntou quando entrei").
       if (when) {
         const stamp = item.saved_at_local || item.saved_at_iso || "";
         when.textContent = (autosaveDict()["autosave.resume.when"] || "Autosave de") + " " + stamp;
@@ -4455,8 +4468,10 @@ def create_wrapper_html(
           });
           const d = await r.json();
           if (d && d.ok) {
-            // v0.7.2: garante que o reload NAO reofereca a pergunta.
-            markAutosaveResumeOffered();
+            // v0.7.3: marca "restored" — o reload seguinte NAO
+            // reoferece a pergunta; o estado e consumido no load, de
+            // modo que a PROXIMA entrada volta a perguntar.
+            setAutosaveResumeState("restored");
             toast("✅ " + (autosaveDict()["autosave.resume.done"] || "Sessão restaurada"), "ok");
             setTimeout(() => location.reload(), 3500);
             return;
@@ -4472,13 +4487,22 @@ def create_wrapper_html(
     /** Iniciar uma nova sessão: descarta a pergunta e segue. */
     function autosaveResumeNew() {
       closeAutosaveResume();
+      // v0.7.3: o usuário respondeu "Nova sessão" — não perguntar de
+      // novo nesta aba.
+      setAutosaveResumeState("new");
     }
 
     /** Na abertura: se houver autosave válido, pergunta. Não bloqueia. */
     async function checkAutosaveResume() {
-      // v0.7.2: se a pergunta JÁ foi oferecida nesta aba, não oferece
-      // de novo — nem chega a consultar o backend.
-      if (autosaveResumeOffered()) return;
+      // v0.7.3: maquina de estados (ver bloco acima).
+      const state = autosaveResumeState();
+      if (state === "restored") {
+        // consome: pula ESTA carga (o reload do restore) e volta a
+        // perguntar na proxima entrada.
+        setAutosaveResumeState("");
+        return;
+      }
+      if (state === "new") return;   // o usuário já escolheu "Nova sessão"
       try {
         const r = await fetch(BASE + "/api/autosave");
         const d = await r.json();
@@ -4498,7 +4522,7 @@ def create_wrapper_html(
       // 1. Aplica idioma (síncrono, sem flash)
       applyLang(_currentLang);
       buildLangMenu();
-      // 1.1 v0.7.0: chave do autosave + timer de 3 min + pergunta de retomada
+      // 1.1 v0.7.0/v0.7.3: chave do autosave + timer de 1 min + pergunta de retomada
       setAutosaveUI(autosaveEnabled());
       if (autosaveEnabled()) startAutosaveTimer();
       setTimeout(() => checkAutosaveResume(), 2500);

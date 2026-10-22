@@ -1579,6 +1579,44 @@ def _resolve_restore_path(fname_raw: str, backup_dir: str,
     return path, ""
 
 
+def _ttyd_session_id() -> str:
+    """Id da sessao que o TERMINAL esta usando (v0.7.3).
+
+    O ttyd e' iniciado com `opencode -s "<ses_id>"`; esse id e' a conversa
+    que o usuario ve. Sem ele, o autosave caia em `sessions[0]` — a
+    sessao mais recente do motor, que nem sempre e' a do terminal (com
+    varias conversas abertas, os slots do autosave misturavam duas).
+    """
+    try:
+        proc = subprocess.run(["ps", "-eo", "cmd"], capture_output=True,
+                              text=True, timeout=10)
+    except Exception:  # noqa: BLE001 — best effort
+        return ""
+    for line in (proc.stdout or "").splitlines():
+        if "ttyd" not in line or "opencode" not in line:
+            continue
+        match = re.search(r"(?:--session|-s)\s+\"?(ses_[A-Za-z0-9_-]+)\"?", line)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _active_session_id(sessions: list) -> str:
+    """Sessao mais recentemente atualizada do motor (v0.7.3)."""
+    def _updated(session: dict) -> int:
+        info = session.get("time") if isinstance(session, dict) else None
+        if not isinstance(info, dict):
+            return 0
+        try:
+            return int(info.get("updated") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    ordered = sorted([s for s in (sessions or []) if isinstance(s, dict)],
+                     key=_updated, reverse=True)
+    return str(ordered[0].get("id") or "") if ordered else ""
+
+
 def _opencode_bin_or_find() -> str:
     """Binário do OpenCode V2 (cache do boot ou busca)."""
     try:
@@ -3315,8 +3353,13 @@ def start_wrapper_server():
                         )
                     except Exception:
                         sessions = []
-                    if sessions:
-                        session_id = str(sessions[0].get("id") or "")
+                    # v0.7.3: prioriza a sessao do TERMINAL (o ttyd roda
+                    # `opencode -s <id>`) — e' a conversa que o usuario
+                    # esta usando; so depois a mais recentemente
+                    # atualizada do motor.
+                    session_id = _ttyd_session_id()
+                    if not session_id and sessions:
+                        session_id = _active_session_id(sessions)
                 if not session_id:
                     self._json(400, {
                         "error": "Nenhuma sessao ativa para salvar automaticamente."

@@ -650,6 +650,15 @@ def import_session(binary: str, payload: Dict[str, Any],
 #: Quantidade de autosaves mantidos no Drive (o mais recente + 2 de fallback).
 AUTOSAVE_SLOTS = 3
 
+#: v0.7.3 — Quantidade de COPIAS PRESERVADAS de interacoes anteriores.
+#: Cada copia e' o ULTIMO autosave de uma interacao distinta (a conversa
+#: que terminou quando o usuario entrou numa nova). Vivem nos slots
+#: `autosave_4..6`; os slots 1..3 continuam sendo a rotacao da interacao
+#: ATUAL. Com isso o autosave de agora NUNCA destroi o backup da sessao
+#: anterior — a exigencia do autor: "manter uma copia do ultimo backup das
+#: ultimas tres interacoes e depois comecar com o autosave atual".
+AUTOSAVE_HISTORY_SLOTS = 3
+
 #: Prefixo dos arquivos de autosave.
 AUTOSAVE_PREFIX = "autosave_"
 
@@ -659,6 +668,20 @@ def autosave_paths(directory: str) -> List[str]:
     return [
         os.path.join(directory, f"{AUTOSAVE_PREFIX}{i}.json")
         for i in range(1, AUTOSAVE_SLOTS + 1)
+    ]
+
+
+def autosave_history_paths(directory: str) -> List[str]:
+    """Slots de HISTORICO (v0.7.3): 4..6.
+
+    Guardam a copia preservada do ULTIMO autosave de cada uma das ultimas
+    3 interacoes. Vivem na MESMA pasta (e com o mesmo padrao de nome
+    `autosave_<n>.json`) para que o `POST /api/restore` e o calendario do
+    "Restaurar" os tratem exatamente como os demais autosaves.
+    """
+    return [
+        os.path.join(directory, f"{AUTOSAVE_PREFIX}{AUTOSAVE_SLOTS + i}.json")
+        for i in range(1, AUTOSAVE_HISTORY_SLOTS + 1)
     ]
 
 
@@ -703,10 +726,87 @@ def content_digest(path: str) -> str:
     messages = data.get("messages")
     if not isinstance(messages, list):
         return ""
-    blob = json.dumps({"id": info.get("id", ""), "messages": messages},
+    # v0.7.3: a chave ESTAVEL do digest e' `info.time.created` (o instante
+    # em que a conversa nasceu) e NAO `info.id`. O motor RE-GEROU o id da
+    # sessao a cada reinicio do terminal (a MESMA conversa aparece com
+    # `time.created` igual e `id` diferente) — usar o id fazia o digest
+    # mudar a cada restart e o autosave gravar "versoes distintas" do
+    # MESMO conteudo, misturando duas conversas nos 3 slots.
+    time_info = info.get("time") if isinstance(info.get("time"), dict) else {}
+    stable_key = time_info.get("created") or info.get("id", "")
+    blob = json.dumps({"key": stable_key, "messages": messages},
                       sort_keys=True, ensure_ascii=False,
                       separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
+
+
+def logical_session_key(path: str) -> str:
+    """Chave ESTAVEL da conversa de um autosave (v0.7.3).
+
+    E' o `info.time.created` do export (o instante em que a conversa
+    nasceu). O `info.id` NAO serve: o motor re-gera o id a cada reinicio
+    do terminal, entao a MESMA conversa aparece com ids diferentes. Sem
+    essa distincao, o "ultimo backup" da conversa anterior era
+    sobrescrito pelo autosave da nova — e o fallback misturava as duas.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    info = data.get("info") if isinstance(data.get("info"), dict) else {}
+    time_info = info.get("time") if isinstance(info.get("time"), dict) else {}
+    return str(time_info.get("created") or info.get("id", ""))
+
+
+def preserve_autosave_history(directory: str) -> Optional[Dict[str, Any]]:
+    """Preserva o ULTIMO autosave da interacao que terminou (v0.7.3).
+
+    Chamado quando o autosave detecta que a conversa mudou (nova
+    interacao). Copia o slot 1 (o ultimo backup da conversa anterior)
+    para um slot de historico (4..6), preservando o mtime original — o
+    calendario do "Restaurar" continua mostrando a data real do backup.
+    No maximo 3 copias: as 3 interacoes mais recentes.
+    """
+    live = autosave_paths(directory)
+    if not live or not os.path.exists(live[0]):
+        return None
+    key = logical_session_key(live[0])
+    if not key:
+        return None
+    history = autosave_history_paths(directory)
+    # ja preservado? (mesma interacao) -> nao duplica
+    for hpath in history:
+        if os.path.exists(hpath) and logical_session_key(hpath) == key:
+            return None
+    # alvo: o slot de historico mais antigo (rotacao)
+    target: Optional[str] = None
+    target_mtime: Optional[float] = None
+    for hpath in history:
+        if not os.path.exists(hpath):
+            target = hpath
+            break
+        try:
+            mtime = os.path.getmtime(hpath)
+        except OSError:
+            mtime = 0.0
+        if target_mtime is None or mtime < target_mtime:
+            target, target_mtime = hpath, mtime
+    if not target:
+        return None
+    tmp = target + ".tmp-preserve"
+    try:
+        shutil.copy2(live[0], tmp)
+        os.replace(tmp, target)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return None
+    return {"path": target, "key": key}
 
 
 def save_autosave(binary: str, session_id: str, directory: str,
@@ -757,6 +857,15 @@ def save_autosave(binary: str, session_id: str, directory: str,
                          "reason": "conteudo_identico",
                          "slots": AUTOSAVE_SLOTS})
             return meta
+    # v0.7.3: se a CONVERSA mudou (nova interacao), preserva o ultimo
+    # autosave da conversa anterior antes de rotacionar — o autosave de
+    # agora nao pode destruir o backup da sessao anterior. A copia vai
+    # para os slots de historico (4..6).
+    new_key = logical_session_key(tmp_export)
+    if new_key and os.path.exists(paths[0]):
+        old_key = logical_session_key(paths[0])
+        if old_key and old_key != new_key:
+            preserve_autosave_history(directory)
     # 1. rotaciona (o slot 1 fica livre; se a gravacao falhar, o anterior
     #    continua no slot 2 e o fallback assume)
     rotate_autosave(directory)
@@ -778,7 +887,12 @@ def list_autosaves(directory: str) -> List[Dict[str, Any]]:
     exigido: se o ultimo falhar, o anterior assume.
     """
     found: List[Dict[str, Any]] = []
-    for path in autosave_paths(directory):
+    # v0.7.3: slots 1..3 (rotacao da interacao atual) + 4..6 (copias
+    # preservadas das ultimas 3 interacoes) — o fallback da retomada
+    # alcanca as conversas anteriores.
+    live_paths = autosave_paths(directory)
+    history_paths = autosave_history_paths(directory)
+    for path in live_paths + history_paths:
         if not os.path.exists(path):
             continue
         try:
@@ -806,6 +920,8 @@ def list_autosaves(directory: str) -> List[Dict[str, Any]]:
             # list_backups, funcionava).
             "file": "autosave/" + os.path.basename(path),
             "name": os.path.basename(path),
+            # v0.7.3: True = copia preservada de uma interacao anterior.
+            "history": path in history_paths,
             "session_id": info.get("id", ""),
             "title": info.get("title", ""),
             "messages": len(messages),
