@@ -31,7 +31,7 @@ success() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-VERSION="0.7.2"
+VERSION="0.7.3"
 UI_PORT="8001"      # interface web (wrapper HTTP)
 TERM_PORT="8000"    # terminal ttyd
 
@@ -67,8 +67,23 @@ install_python_deps() {
     || python3 -m pip install --user \
         "cryptography>=41.0" "requests>=2.31" "beautifulsoup4>=4.12" "pyyaml>=6.0" 2>/dev/null \
     || warn "Falha ao instalar dependências via pip — instale manualmente."
-    # Instala o pacote pesquisai a partir desta árvore
-    python3 -m pip install --user -e "$SCRIPT_DIR" 2>/dev/null || true
+    # v0.7.3 — instala o pacote `pesquisai` (API do autopilot) a partir
+    # desta árvore. Antes o erro era ENGOULDO (`2>/dev/null || true`) e a
+    # API do autopilot ficava indisponivel sem ninguem perceber.
+    if python3 -m pip install --user --break-system-packages -e "$SCRIPT_DIR" 2>&1 | tail -3 \
+       || python3 -m pip install --user -e "$SCRIPT_DIR" 2>&1 | tail -3; then
+        success "Pacote `pesquisai` instalado"
+    else
+        warn "Falha ao instalar o pacote `pesquisai` — a API do autopilot pode nao funcionar."
+    fi
+    # VERIFICAÇÃO real: importa a API a partir de um diretório NEUTRO
+    # (é exatamente assim que o agente a usa).
+    if (cd / && python3 -c "from pesquisai.obsidian.autopilot import recall, save" 2>/dev/null); then
+        success "API do autopilot verificada (pesquisai.obsidian.autopilot)"
+    else
+        warn "A API do autopilot nao pode ser importada fora de $SCRIPT_DIR — "
+        warn "o PYTHONPATH do launcher cobre o app, mas scripts externos precisam do pacote instalado."
+    fi
     success "Dependências Python instaladas"
 }
 

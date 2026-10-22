@@ -492,6 +492,33 @@ Desde a **v0.6.20**, o notebook mantém o runtime do Colab ativo com um **keep-a
 
 **Para encerrar por completo (economiza cota):** no card **ENCERRAR SESSÃO** exibido abaixo da barra de carregamento, clique em **SAIR**. O UFVAI **pede confirmação** (SIM, SAIR / CANCELAR) e, ao confirmar, desconecta e **exclui o ambiente de execução** (equivalente a *Runtime ▸ Desconectar e excluir ambiente*, via `google.colab.runtime.unassign()`). Tudo em memória é perdido — **os arquivos no seu Drive continuam salvos**. Não há como desfazer após confirmar.
 
+### 1.4.2 O pacote `pesquisai` no ambiente (v0.7.3)
+
+O boot do Colab **instala o pacote Python `pesquisai`** no ambiente (editable, a partir do
+repositório clonado) e **prova** que a API do autopilot responde antes de seguir:
+
+```bash
+pip show pesquisai                      # deve listar o pacote
+python3 -c "from pesquisai.obsidian.autopilot import recall, save"
+```
+
+> **Por que isso importa:** antes da v0.7.3 o boot só fazia
+> `sys.path.insert(0, "/tmp/pesquisai")`. Isso tornava o pacote importável **apenas dentro
+> da pasta do repo** — e o **terminal (e o agente) rodam em outro processo, com outro diretório
+> de trabalho**. Resultado: `from pesquisai.obsidian.autopilot import recall` falhava com
+> `ModuleNotFoundError` e a **"Minha memória" não salvava nada**, sem erro visível.
+> Relato de um novo usuário (Colab): *"o pacote python pesquisai (api autopilot) não está
+> instalado no ambiente"*.
+
+**Se o boot avisar que não conseguiu instalar** (sem rede, por exemplo), rode manualmente:
+
+```bash
+pip install -e /tmp/pesquisai
+```
+
+E, na instalação **offline (.deb)**, o `install-offline.sh` já faz a instalação **e a
+verificação** (sem esconder a falha do `pip`).
+
 ### 1.5 O aceite obrigatório (Termos de Uso) — a primeira tela
 
 > **Sem o aceite, o UFVAI não abre.** A tela de Termos de Uso é a **única tela de abertura** do aplicativo — não existe modal intermediário nem forma de pular.
@@ -1306,7 +1333,7 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
-| **0.7.3** | 22/10/2026 | ⏱️ **Autosave a cada 1 minuto** · 🗂️ **Fallback das 3 últimas interações** (`autosave_4..6` preservam o backup da conversa anterior; o autosave atual não destrói o anterior) · 🔄 **Retomada uma vez na entrada, sem loop** (máquina de estados em `sessionStorage`: entrada pergunta → "restored" consome o estado → "new" suprime na aba) · 🔧 Autosave passa a salvar a **sessão do terminal** e a reconhecer a mesma conversa após o reatribuir o `id` (chave `info.time.created`) |
+| **0.7.3** | 22/10/2026 | 📦 **O pacote `pesquisai` passa a ser INSTALADO no ambiente** (o boot do Colab faz `pip install -e` e prova a API do autopilot a partir de um CWD neutro — antes a "Minha memória" não salvava nada fora da pasta do repo) · 🔄 **Retomada uma vez na entrada, sem loop** (máquina de estados em `sessionStorage`) · ⏱️ **Autosave a cada 1 minuto** · 🗂️ **Fallback das 3 últimas interações** (`autosave_4..6` preservam o backup da conversa anterior) · 📅 **Calendário do "Restaurar" corrigido** (chips dos meses com backup, contagem nos dias, tooltip, item sem data visível) |
 | **0.7.2** | 22/10/2026 | 🔄 **Retomada sem laço**: a pergunta "continuar do autosave" é oferecida **uma única vez por aba** (flag em `sessionStorage`) — antes o `location.reload()` após o restore reoferecia a pergunta e criava um laço · 📅 **Calendário do "Restaurar" corrigido**: contagem de backups em cada dia, tooltip correto, chips dos meses que têm backup, item sem data nunca some do filtro, estado vazio acionável |
 | **0.7.1** | 22/10/2026 | 🔧 **Retomada corrigida na entrada** (`list_autosaves` devolvia o nome sem o prefixo `autosave/`) · 💾 Autosave sem duplicata (3 slots = 3 versões distintas) · 🗑 Botão de apagar backup no menu "Restaurar" · 🔁 Fallback na retomada (até 3 autosaves) |
 | **0.7.0** | 21/10/2026 | 🏷️ Marca **UFVAI** na tela de nova sessão (logo redesenhado + sugestões do prompt com uso UFVAI/agêntico, via patch cirúrgico de mesmo comprimento no motor) · 🇨🇳 Chinês também troca o terminal · 🎨 Manual e Diretrizes no tema claro · 📱 "Idioma" fora do sanduíche e nota da Memória visível no responsivo |

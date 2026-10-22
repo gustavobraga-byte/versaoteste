@@ -3,7 +3,7 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pesquisai-additions"
+name = "pesquisai"
 version = "0.7.3"
 description = "UFVAI v0.7.0 (engine PesquisAI) — obsidian autopilot + i18n (5 idiomas incl. 简体中文) + termos v6 nome+IP + memória instantânea (singleton BM25 + warm-up + prefetch) + responsiva mobile + IP ipify + heartbeat no clique + idioma inicial detectado"
 authors = [
@@ -50,6 +50,9 @@ dependencies = [
     "cryptography>=41.0",
     "requests>=2.31",
     "beautifulsoup4>=4.12",
+    # v0.7.3: o frontmatter da "Minha memória" e' parseado com PyYAML
+    # (com fallback manual, mas o PyYAML e' o caminho correto).
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -64,6 +67,8 @@ test = [
     "pytest-cov>=5.0",
     "requests-mock>=1.11",
 ]
+# v0.7.3 — pyyaml ja e' dependencia base; o extra permanece para
+# compatibilidade com `pip install ".[obsidian]"`.
 obsidian = [
     "pyyaml>=6.0",
 ]

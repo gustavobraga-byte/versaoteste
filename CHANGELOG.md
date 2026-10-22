@@ -1,6 +1,6 @@
 # Changelog — PesquisAI
 
-## [0.7.3] — 2026-10-22 — ⏱️ Autosave a cada 1 minuto · 🗂️ Fallback das 3 últimas interações · 🔄 Retomada uma vez na entrada
+## [0.7.3] — 2026-10-22 — 📦 O pacote `pesquisai` instalado no ambiente · ⏱️ Autosave a cada 1 minuto · 🗂️ Fallback das 3 últimas interações · 🔄 Retomada uma vez na entrada
 
 ### ⏱️ Intervalo do autosave: 3 minutos → **1 minuto**
 - `AUTOSAVE_INTERVAL_MS` no frontend: `180000` → `60000`.
@@ -32,12 +32,38 @@
   restore) · `"new"` → o autor escolheu "Nova sessão" → não pergunta de novo nesta aba.
   A **oferta não grava mais nada**.
 
-### 🧪 Testes — 195 verificações verdes
+### 📦 O pacote `pesquisai` passa a ser INSTALADO no ambiente (API do autopilot)
+
+**Relato de um novo usuário (Colab):** *"o pacote python `pesquisai` (api autopilot) não está
+instalado no ambiente"*. Verificado no ambiente: `pip show pesquisai` → **"Package(s) not
+found"** e `from pesquisai.obsidian.autopilot import recall` a partir de um diretório
+**neutro** → **`ModuleNotFoundError: No module named 'pesquisai'`**.
+
+**Três causas:**
+1. **A célula de boot nunca instalava o pacote** — apenas `sys.path.insert(0, WORK_DIR)`. O
+   import só funcionava **dentro** da pasta do repo; o **terminal (e o agente) rodam em outro
+   processo, com outro CWD** → a **"Minha memória" não salvava nada**, sem erro visível.
+2. **A distribuição chamava-se `pesquisai-additions`** → `pip show pesquisai` não encontrava
+   (o nome `pesquisai` está **livre** no PyPI).
+3. **`install-offline.sh` engolia a falha** (`pip install ... 2>/dev/null || true`).
+
+**Correções:**
+- **`pyproject.toml`**: `name = "pesquisai"` (igual ao nome de importação) · `pyyaml>=6.0`
+  como dependência **base** (o frontmatter da memória é parseado com PyYAML).
+- **Célula de boot (`PesquisAI.ipynb`)**: após o clone, `pip install -e` (sem dependências →
+  com dependências → `--user --break-system-packages`) e **verificação real** — importa
+  `pesquisai.obsidian.autopilot` a partir de um **CWD neutro** (`/`), exatamente como o
+  agente usa a API. O painel de boot mostra o passo e o resultado.
+- **`install-offline.sh`**: instalação **sem** esconder o erro + verificação da API.
+- **`scripts/install.sh`**: `pip install -e ".[colab]"` → `".[obsidian]"` (o extra `colab`
+  não existia).
+
+### 🧪 Testes — 205 verificações verdes
 - `tests/js/test_v073_autosave_policy.js` (**novo**) 21/21 · `tests/test_autosave_history_v073.py`
   (**novo**) 13/13 · `tests/js/test_v072_resume_once.js` 39/39 (seções 1, 2 e 4 atualizadas
   para o contrato novo) · `tests/js/test_autosave_ui.js` 27/27 ·
   `tests/js/test_restore_calendar.js` 47/47 · `tests/test_restore_backups.py` 26/26
-  (2 testes ajustados: a listagem inclui o histórico) · `tests/test_session_restore.py` 22/22.
+  (2 testes ajustados: a listagem inclui o histórico) · `tests/test_session_restore.py` 22/22 · `tests/test_instalacao_pacote.py` (**novo**) 10/10 (pacote instalado, nome da distribuição, boot cell, instaladores).
 
 ## [0.7.2] — 2026-10-22 — 🔄 Retomada do autosave uma única vez por aba + 📅 Calendário do "Restaurar" corrigido
 

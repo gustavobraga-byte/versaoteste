@@ -150,14 +150,14 @@ O agente opera por *skills* — cada uma conecta a uma fonte ou capacidade.
 
 ## 🆕 Novidades
 
-**v0.7.3 — ⏱️ Autosave a cada 1 minuto · 🗂️ Fallback das 3 últimas interações (o backup da sessão anterior não é mais destruído) · 🔄 A retomada volta a ser perguntada na entrada, uma vez, sem loop** .
+**v0.7.3 — 📦 O pacote `pesquisai` passa a ser INSTALADO no ambiente (API do autopilot disponível em qualquer diretório) · ⏱️ Autosave a cada 1 minuto · 🗂️ Fallback das 3 últimas interações · 🔄 A retomada uma vez na entrada, sem loop** .
 
 <details>
 <summary>Histórico completo (0.7.x → 0.6.0)</summary>
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
-| **0.7.3** | 22/10/2026 | ⏱️ Autosave a cada **1 minuto** · 🗂️ **Fallback das 3 últimas interações** (`autosave_4..6` preservam o backup da conversa anterior) · 🔄 **Retomada uma vez na entrada, sem loop** (máquina de estados em `sessionStorage`) · 🔧 Autosave passa a salvar a sessão do **terminal** e a reconhecer a mesma conversa após o reatribuir o `id` |
+| **0.7.3** | 22/10/2026 | 📦 **Pacote `pesquisai` instalado no ambiente** (o boot do Colab faz `pip install -e` e prova a API do autopilot a partir de um CWD neutro) · ⏱️ Autosave a cada **1 minuto** · 🗂️ **Fallback das 3 últimas interações** (`autosave_4..6` preservam o backup da conversa anterior) · 🔄 **Retomada uma vez na entrada, sem loop** (máquina de estados em `sessionStorage`) · 🔧 Autosave na sessão do **terminal** e chave estável (o `id` é re-gerado a cada reinício) |
 | **0.7.2** | 22/10/2026 | 🔄 **Retomada do autosave uma única vez por aba** (flag `sessionStorage`; fim do laço restore → reload → pergunta) · 📅 **Calendário do "Restaurar" corrigido** (chips dos meses com backup, contagem nos dias, tooltip, item sem data visível) |
 | **0.7.1** | 22/10/2026 | 🔧 Retomada do autosave corrigida na entrada · 💾 Autosave sem duplicata (3 slots = 3 versões distintas) · 🗑 Botão de apagar backup · 🔁 Fallback na retomada (até 3 autosaves) |
 | **0.7.0** | 21/10/2026 | 🏷️ Marca **UFVAI** na tela de nova sessão · 🇨🇳 Chinês também troca o terminal · 🎨 Manual e Diretrizes no tema claro · 📱 "Idioma" fora do sanduíche · ⏱️ Autosave a cada 3 min + menu "Restaurar" com calendário |
