@@ -1,5 +1,44 @@
 # Changelog — PesquisAI
 
+## [0.7.3] — 2026-10-22 — ⏱️ Autosave a cada 1 minuto · 🗂️ Fallback das 3 últimas interações · 🔄 Retomada uma vez na entrada
+
+### ⏱️ Intervalo do autosave: 3 minutos → **1 minuto**
+- `AUTOSAVE_INTERVAL_MS` no frontend: `180000` → `60000`.
+
+### 🗂️ Fallback: o backup da sessão anterior não é mais destruído
+- **Diagnóstico (verificado nos arquivos do Drive):** os 3 slots do autosave misturavam
+  **duas conversas** e o `autosave_3.json` ficava **mais novo** que o `autosave_1.json`.
+  Causa: o motor **re-gera o `id` da sessão a cada reinício do terminal** — a mesma
+  conversa aparece com `info.time.created` igual e `info.id` diferente.
+- **Correção 1 — chave estável:** `content_digest()` passa a usar `info.time.created`
+  (fallback `info.id`) → a mesma conversa **não** vira "versão distinta" quando o id muda
+  (o sintoma de "3 cópias do mesmo arquivo").
+- **Correção 2 — histórico das 3 últimas interações:** `preserve_autosave_history()` copia
+  o **último autosave da interação que terminou** para os slots `autosave_4..6`
+  (no máximo 3, rotação, mtime original preservado). O autosave de agora **não** destrói
+  o backup da sessão anterior; `list_autosaves()` devolve os 6 (vivos + preservados) com
+  a marca `history: true/false`, e o fallback da retomada alcança as conversas anteriores.
+- **Correção 3 — a sessão certa:** `POST /api/autosave` escolhe, nesta ordem, o
+  `session_id` enviado → a sessão do **terminal** (lida do `ps`: `opencode -s "<id>"`) →
+  a sessão **mais recentemente atualizada** do motor. Antes usava `sessions[0]`, que nem
+  sempre era a conversa do usuário.
+
+### 🔄 A retomada volta a ser perguntada **na entrada** (uma vez, sem loop)
+- **Bug da v0.7.2:** a flag "pergunta já oferecida" vivia no `sessionStorage` da aba e era
+  gravada **no momento da oferta** → qualquer recarga posterior (inclusive um F5) nunca mais
+  perguntava → *"não pediu para restaurar o último autosave quando entrei"*.
+- **Correção (máquina de estados em `sessionStorage`):** vazio → **pergunta** (entrada
+  normal) · `"restored"` → **não pergunta** e é **consumido** no load (pula só o reload do
+  restore) · `"new"` → o autor escolheu "Nova sessão" → não pergunta de novo nesta aba.
+  A **oferta não grava mais nada**.
+
+### 🧪 Testes — 195 verificações verdes
+- `tests/js/test_v073_autosave_policy.js` (**novo**) 21/21 · `tests/test_autosave_history_v073.py`
+  (**novo**) 13/13 · `tests/js/test_v072_resume_once.js` 39/39 (seções 1, 2 e 4 atualizadas
+  para o contrato novo) · `tests/js/test_autosave_ui.js` 27/27 ·
+  `tests/js/test_restore_calendar.js` 47/47 · `tests/test_restore_backups.py` 26/26
+  (2 testes ajustados: a listagem inclui o histórico) · `tests/test_session_restore.py` 22/22.
+
 ## [0.7.2] — 2026-10-22 — 🔄 Retomada do autosave uma única vez por aba + 📅 Calendário do "Restaurar" corrigido
 
 ### 🔄 Laço da retomada do autosave (o "restore" recarregava tudo)

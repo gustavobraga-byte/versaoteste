@@ -11,7 +11,7 @@
 [![Abrir no Colab](https://img.shields.io/badge/▶️_Começar_agora-Google_Colab-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 [![Apresentação](https://img.shields.io/badge/📊_Slides-ver_apresentação-C9A227?style=for-the-badge)](https://gustavobraga-byte.github.io/ufvaisite/#apresentacao)
 
-[![Versão](https://img.shields.io/badge/versão-0.7.2-orange.svg)]() [![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/) [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br) [![LGPD](https://img.shields.io/badge/LGPD-conforme-success.svg)](PRIVACY.md)
+[![Versão](https://img.shields.io/badge/versão-0.7.3-orange.svg)]() [![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/) [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br) [![LGPD](https://img.shields.io/badge/LGPD-conforme-success.svg)](PRIVACY.md)
 
 > Consulta dados oficiais do Brasil e literatura validada, cita cada fonte e declara honestamente quando não há evidência suficiente.
 
@@ -150,13 +150,14 @@ O agente opera por *skills* — cada uma conecta a uma fonte ou capacidade.
 
 ## 🆕 Novidades
 
-**v0.7.2 — 🔄 Retomada do autosave uma única vez por aba + 📅 Calendário do "Restaurar" corrigido** .
+**v0.7.3 — ⏱️ Autosave a cada 1 minuto · 🗂️ Fallback das 3 últimas interações (o backup da sessão anterior não é mais destruído) · 🔄 A retomada volta a ser perguntada na entrada, uma vez, sem loop** .
 
 <details>
 <summary>Histórico completo (0.7.x → 0.6.0)</summary>
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
+| **0.7.3** | 22/10/2026 | ⏱️ Autosave a cada **1 minuto** · 🗂️ **Fallback das 3 últimas interações** (`autosave_4..6` preservam o backup da conversa anterior) · 🔄 **Retomada uma vez na entrada, sem loop** (máquina de estados em `sessionStorage`) · 🔧 Autosave passa a salvar a sessão do **terminal** e a reconhecer a mesma conversa após o reatribuir o `id` |
 | **0.7.2** | 22/10/2026 | 🔄 **Retomada do autosave uma única vez por aba** (flag `sessionStorage`; fim do laço restore → reload → pergunta) · 📅 **Calendário do "Restaurar" corrigido** (chips dos meses com backup, contagem nos dias, tooltip, item sem data visível) |
 | **0.7.1** | 22/10/2026 | 🔧 Retomada do autosave corrigida na entrada · 💾 Autosave sem duplicata (3 slots = 3 versões distintas) · 🗑 Botão de apagar backup · 🔁 Fallback na retomada (até 3 autosaves) |
 | **0.7.0** | 21/10/2026 | 🏷️ Marca **UFVAI** na tela de nova sessão · 🇨🇳 Chinês também troca o terminal · 🎨 Manual e Diretrizes no tema claro · 📱 "Idioma" fora do sanduíche · ⏱️ Autosave a cada 3 min + menu "Restaurar" com calendário |
@@ -218,7 +219,7 @@ Interface web `:8001` (Colab) com tela de Termos v2.2 (nome+e-mail+IP, opt-out) 
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.7.2. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.7.3. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -234,7 +235,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
   title        = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial
                   para Pesquisa Cient{\'\i}fica},
   year         = {2026},
-  version      = {0.7.2},
+  version      = {0.7.3},
   institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
   url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
 }
@@ -307,6 +308,6 @@ Desenvolvido por **Gustavo Bastos Braga** — Universidade Federal de Viçosa (D
 
 <div align="center">
 
-Feito com 💙 para impulsionar a ciência brasileira · UFVAI v0.7.2 · SisPPG/UFV nº 10356285004
+Feito com 💙 para impulsionar a ciência brasileira · UFVAI v0.7.3 · SisPPG/UFV nº 10356285004
 
 </div>
