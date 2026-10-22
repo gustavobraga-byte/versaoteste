@@ -30,8 +30,11 @@ O arquivo original do Drive nunca e alterado.
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -56,6 +59,11 @@ __all__ = [
     "rotate_autosave",
     "save_autosave",
     "list_autosaves",
+    "BACKUP_FILE_RE",
+    "AUTOSAVE_FILE_RE",
+    "parse_backup_filename",
+    "human_size",
+    "list_backups",
 ]
 
 
@@ -657,8 +665,9 @@ def autosave_paths(directory: str) -> List[str]:
 def rotate_autosave(directory: str) -> None:
     """Rotaciona os autosaves: 3 -> (descarta), 2 -> 3, 1 -> 2.
 
-    A rotacao acontece **depois** da gravacao do novo (que ja foi
-    validada), entao um arquivo corrompido no slot 1 nunca apaga o slot 2.
+    Deixa o **slot 1 livre** para o arquivo novo, que e' gravado logo em
+    seguida (de forma atomica). Se a gravacao falhar, o autosave anterior
+    continua no slot 2 e o fallback (`list_autosaves`) assume.
     """
     paths = autosave_paths(directory)
     try:
@@ -673,6 +682,33 @@ def rotate_autosave(directory: str) -> None:
                 pass
 
 
+def content_digest(path: str) -> str:
+    """SHA-256 do **(id da sessao + mensagens)** de um export/autosave.
+
+    O digest ignora o resto do cabecalho `info` — nele mora
+    `time.updated`/`viewed`, que o motor mexe a cada visualizacao/export.
+    Duas rodadas do autosave **sem mensagem nova** produzem, portanto, o
+    **mesmo** digest: e' o que permite nao gravar tres copias do mesmo
+    arquivo (o que o autor reclamou). Sessoes diferentes tem digest
+    diferente (o `id` entra no calculo) — logo, trocar de sessao grava.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    info = data.get("info") if isinstance(data.get("info"), dict) else {}
+    messages = data.get("messages")
+    if not isinstance(messages, list):
+        return ""
+    blob = json.dumps({"id": info.get("id", ""), "messages": messages},
+                      sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
 def save_autosave(binary: str, session_id: str, directory: str,
                   env: Optional[Dict[str, str]] = None,
                   attempts: int = 3) -> Dict[str, Any]:
@@ -680,18 +716,30 @@ def save_autosave(binary: str, session_id: str, directory: str,
 
     Usa o mesmo pipeline robusto do "Salvar backup": export direto para
     arquivo (sem pipe), validacao, escrita atomica e rotacao com fallback.
+
+    **Um autosave por ciclo (v0.7.1):** se o conteudo exportado (id da
+    sessao + mensagens) for identico ao do slot 1 (o autosave mais
+    recente), o arquivo **nao e' gravado de novo** e a rotacao nao
+    acontece. Sem isso, cada ciclo gravava uma copia do *mesmo* conteudo
+    e os 3 slots viravam tres copias do mesmo arquivo (o que o autor
+    reclamou). O slot 1 passa a ser sempre o conteudo mais recente
+    **distinto**; slots 2 e 3 ficam como fallback.
+
+    **Ordem da rotacao (corrigida na v0.7.0):** a rotacao acontece ANTES
+    da gravacao — o slot 1 (mais recente) e' esvaziado pelo deslocamento
+    (1 -> 2, 2 -> 3, o 3 antigo e' descartado) e so entao o arquivo novo
+    entra no slot 1. Antes, a rotacao vinha DEPOIS da gravacao e levava o
+    arquivo recem-gravado do slot 1 para o slot 2, deixando o **slot 1
+    sempre vazio** (e o "mais recente" fora do lugar documentado).
     """
     os.makedirs(directory, exist_ok=True)
     tmp_export = os.path.join("/tmp", f"{AUTOSAVE_PREFIX}export.json")
     data, fmt = export_session_to_file(binary, session_id, tmp_export, env=env)
     paths = autosave_paths(directory)
-    info = write_backup_atomic(tmp_export, paths[0], attempts=attempts)
-    rotate_autosave(directory)
     saved_at = time.time()
-    return {
-        "ok": True,
+    meta = {
         "path": paths[0],
-        "size_bytes": info.get("size_bytes", 0),
+        "size_bytes": os.path.getsize(tmp_export) if os.path.exists(tmp_export) else 0,
         "messages": len(data.get("messages") or []),
         "title": (data.get("info") or {}).get("title") or "",
         "session_id": session_id,
@@ -700,6 +748,26 @@ def save_autosave(binary: str, session_id: str, directory: str,
         "saved_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(saved_at)),
         "saved_at_local": time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(saved_at)),
     }
+    # v0.7.1: nao grava copia do mesmo conteudo (3 slots = 3 versoes
+    # distintas, nao 3 copias do mesmo arquivo)
+    new_digest = content_digest(tmp_export)
+    if new_digest and os.path.exists(paths[0]):
+        if new_digest == content_digest(paths[0]):
+            meta.update({"ok": True, "skipped": True,
+                         "reason": "conteudo_identico",
+                         "slots": AUTOSAVE_SLOTS})
+            return meta
+    # 1. rotaciona (o slot 1 fica livre; se a gravacao falhar, o anterior
+    #    continua no slot 2 e o fallback assume)
+    rotate_autosave(directory)
+    # 2. grava o novo no slot 1 (escrita atomica: temp + validacao + replace)
+    info = write_backup_atomic(tmp_export, paths[0], attempts=attempts)
+    meta.update({"ok": True, "skipped": False,
+                 "size_bytes": info.get("size_bytes", meta["size_bytes"]),
+                 "messages": info.get("messages", meta["messages"]),
+                 "attempts": info.get("attempts", 1),
+                 "slots": AUTOSAVE_SLOTS})
+    return meta
 
 
 def list_autosaves(directory: str) -> List[Dict[str, Any]]:
@@ -730,7 +798,14 @@ def list_autosaves(directory: str) -> List[Dict[str, Any]]:
             mtime = time.time()
         found.append({
             "path": path,
-            "file": os.path.basename(path),
+            # v0.7.1: o nome DEVIA vir prefixado com "autosave/" — e' o
+            # mesmo formato usado por `list_backups()`. Sem o prefixo, o
+            # POST /api/restore tratava o autosave como se fosse backup de
+            # sessao e respondia "Este arquivo nao e um backup de sessao":
+            # a retomada na ENTRADA falhava (o botao "Restaurar", que usa
+            # list_backups, funcionava).
+            "file": "autosave/" + os.path.basename(path),
+            "name": os.path.basename(path),
             "session_id": info.get("id", ""),
             "title": info.get("title", ""),
             "messages": len(messages),
@@ -740,3 +815,209 @@ def list_autosaves(directory: str) -> List[Dict[str, Any]]:
         })
     found.sort(key=lambda item: item["saved_at"], reverse=True)
     return found
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# v0.7.0 — Listagem de backups por data (calendario + filtro por data)
+# ─────────────────────────────────────────────────────────────────────────
+#
+# O modal "Restaurar" listava TODOS os arquivos .json da pasta `backups/`,
+# o que misturava backups de sessao com arquivos que NAO sao backup
+# (`keys_store.json`, `keys.json`, `aakeys.json`, `ufvai_consentimento*.json`)
+# e quebrava o backup mais recente do motor (v2) — todos os outros sao v1
+# (motor 1.15-1.18).
+#
+# Aqui a listagem e filtrada pelo padrao de nome do backup e enriched com
+# data/hora, tamanho e integridade, para que a interface possa montar um
+# CALENDARIO e um FILTRO por data.
+
+#: Nome dos backups gerados pelo "Salvar backup":
+#: ``backup_ses_<id>_<HH-MM-SS>_<DD-MM-YYYY>.json``
+BACKUP_FILE_RE = re.compile(
+    r"^backup_ses_(?P<sid>[0-9A-Za-z]{3,40})_"
+    r"(?P<hh>\d{2})-(?P<mi>\d{2})-(?P<ss>\d{2})_"
+    r"(?P<dd>\d{2})-(?P<mm>\d{2})-(?P<yyyy>\d{4})\.json$"
+)
+
+#: Prefixo minimo para um arquivo da pasta `backups/` ser considerado
+#: backup de sessao (o nome completo e conferido por BACKUP_FILE_RE).
+BACKUP_PREFIX = "backup_"
+
+#: Autosaves: ``autosave_<slot>.json`` (pasta ``backups/autosave/``).
+AUTOSAVE_FILE_RE = re.compile(r"^autosave_(?P<slot>[1-9][0-9]*)\.json$")
+
+
+def parse_backup_filename(fname: str) -> Optional[Dict[str, Any]]:
+    """Data/hora e id de sessao a partir do nome de um backup.
+
+    Retorna ``None`` quando o nome nao segue o padrao do "Salvar backup".
+    """
+    match = BACKUP_FILE_RE.match(fname or "")
+    if not match:
+        return None
+    try:
+        stamp = datetime.datetime(
+            int(match["yyyy"]), int(match["mm"]), int(match["dd"]),
+            int(match["hh"]), int(match["mi"]), int(match["ss"]),
+        )
+    except ValueError:
+        return None  # data inexistente (ex.: 31/02)
+    return {
+        "session_id": match["sid"],
+        "datetime": stamp,
+        "date": stamp.strftime("%Y-%m-%d"),
+        "time": stamp.strftime("%H:%M:%S"),
+        "timestamp": stamp.timestamp(),
+    }
+
+
+def human_size(num_bytes: int) -> str:
+    """Tamanho em KB/MB/GB, com separador de milhar pt-BR."""
+    try:
+        value = float(num_bytes or 0)
+    except (TypeError, ValueError):
+        return "0 B"
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            if unit == "B":
+                return f"{int(value)} B"
+            return f"{value:,.1f}".replace(".", ",") + f" {unit}"
+        value /= 1024
+    return f"{value:,.1f} GB"
+
+
+def _json_intact(path: str) -> bool:
+    """Heuristica barata de integridade do JSON.
+
+    O FUSE do Google Drive trunca arquivos grandes em multiplos de 64 KB
+    (ou 256 KB) e o resultado fica sem a chave de fechamento. Verificar
+    apenas os 2 ultimos bytes detecta o truncamento **sem ler o arquivo
+    inteiro** (44 backups x ate 1,9 MB = leitura cara e lenta no Drive).
+    """
+    try:
+        size = os.path.getsize(path)
+        if size <= 0:
+            return False
+        with open(path, "rb") as fh:
+            fh.seek(max(0, size - 2))
+            tail = fh.read(2)
+        return tail.rstrip().endswith(b"}")
+    except OSError:
+        return False
+
+
+def _peek_title(path: str, limit: int = 4096) -> str:
+    """Titulo da sessao, lido do inicio do arquivo (leitura parcial)."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+            head = fh.read(limit)
+    except OSError:
+        return ""
+    match = re.search(r'"title"\s*:\s*"((?:[^"\\]|\\.){0,200})"', head)
+    return match.group(1) if match else ""
+
+
+def list_backups(directory: str,
+                 autosave_dir: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Backups de sessao do Drive, prontos para o calendario e o filtro.
+
+    So entram arquivos que **sao** backup de sessao:
+
+    * na pasta `backups/`: os que comecam por ``backup_`` e terminam em
+      ``.json`` (o padrao do "Salvar backup") — os demais (``keys_store.json``,
+      ``keys.json``, ``ufvai_consentimento*.json`` …) ficam de fora;
+    * na pasta `backups/autosave/`: os ``autosave_<slot>.json``.
+
+    Cada item traz os dados que a interface precisa:
+
+    ``file``      nome (com prefixo ``autosave/`` para os autosaves);
+    ``kind``      ``backup`` | ``autosave``;
+    ``date``      ``YYYY-MM-DD`` (chave do calendario);
+    ``time``      ``HH:MM:SS``;
+    ``datetime``  ``YYYY-MM-DDTHH:MM:SS``;
+    ``timestamp`` epoch (ordem cronologica);
+    ``size`` / ``size_h`` bytes e tamanho legivel;
+    ``title``     titulo da sessao (leitura parcial do inicio do arquivo);
+    ``valid``     ``False`` quando o arquivo esta truncado/corrompido.
+    """
+    items: List[Dict[str, Any]] = []
+
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        names = []
+
+    for name in names:
+        if name.startswith(".") or not name.endswith(".json"):
+            continue
+        if not name.startswith(BACKUP_PREFIX):
+            continue  # nao e backup de sessao (chaves, consentimentos…)
+        path = os.path.join(directory, name)
+        try:
+            if not os.path.isfile(path):
+                continue
+            size = os.path.getsize(path)
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+
+        meta = parse_backup_filename(name)
+        if meta is None:
+            # nome fora do padrao (backup antigo): usa a data do arquivo
+            stamp = datetime.datetime.fromtimestamp(mtime)
+            meta = {
+                "session_id": "",
+                "datetime": stamp,
+                "date": stamp.strftime("%Y-%m-%d"),
+                "time": stamp.strftime("%H:%M:%S"),
+                "timestamp": mtime,
+            }
+
+        items.append({
+            "file": name,
+            "kind": "backup",
+            "session_id": meta["session_id"],
+            "date": meta["date"],
+            "time": meta["time"],
+            "datetime": meta["datetime"].strftime("%Y-%m-%dT%H:%M:%S"),
+            "timestamp": meta["timestamp"],
+            "size": size,
+            "size_h": human_size(size),
+            "title": _peek_title(path),
+            "valid": _json_intact(path),
+        })
+
+    if autosave_dir:
+        try:
+            autosave_names = sorted(os.listdir(autosave_dir))
+        except OSError:
+            autosave_names = []
+        for name in autosave_names:
+            match = AUTOSAVE_FILE_RE.match(name)
+            if not match:
+                continue
+            path = os.path.join(autosave_dir, name)
+            try:
+                if not os.path.isfile(path):
+                    continue
+                size = os.path.getsize(path)
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            stamp = datetime.datetime.fromtimestamp(mtime)
+            items.append({
+                "file": "autosave/" + name,
+                "kind": "autosave",
+                "session_id": "",
+                "date": stamp.strftime("%Y-%m-%d"),
+                "time": stamp.strftime("%H:%M:%S"),
+                "datetime": stamp.strftime("%Y-%m-%dT%H:%M:%S"),
+                "timestamp": mtime,
+                "size": size,
+                "size_h": human_size(size),
+                "title": _peek_title(path),
+                "valid": _json_intact(path),
+            })
+
+    items.sort(key=lambda item: item["timestamp"], reverse=True)
+    return items

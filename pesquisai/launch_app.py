@@ -5,6 +5,7 @@ import threading
 import json
 import hashlib
 import shutil
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -1495,6 +1496,89 @@ def _backup_dir() -> str:
     return path
 
 
+#: Cache curto da listagem de backups: o FUSE do Google Drive e lento
+#: quando o arquivo ainda nao esta no cache local (a leitura de metadados
+#: de 40+ arquivos pode levar ~15 s a frio).
+_BACKUPS_CACHE: dict = {"ts": 0.0, "items": None}
+_BACKUPS_CACHE_TTL = 45.0  # s
+
+
+def _list_backups_cached(directory: str | None = None,
+                         autosave_dir: str | None = None,
+                         force: bool = False) -> list:
+    """Backups de sessao do Drive (so backups), com cache curto.
+
+    Filtra o que nao e backup (chaves, consentimentos) e traz data/hora,
+    tamanho e integridade de cada arquivo — os dados que o calendario e o
+    filtro por data da interface "Restaurar" precisam.
+    """
+    now = time.time()
+    cached = _BACKUPS_CACHE.get("items")
+    if (not force and cached is not None
+            and (now - float(_BACKUPS_CACHE.get("ts") or 0)) < _BACKUPS_CACHE_TTL):
+        return list(cached)
+    base = directory or _backup_dir()
+    auto = autosave_dir or os.path.join(base, "autosave")
+    try:
+        items = _session_restore.list_backups(base, auto)
+    except Exception as exc:  # pragma: no cover — rede/FUSE
+        logger.warning("Falha ao listar backups: %s", exc)
+        items = []
+    _BACKUPS_CACHE["ts"] = now
+    _BACKUPS_CACHE["items"] = list(items)
+    return list(items)
+
+
+def _invalidate_backups_cache() -> None:
+    """Chamado depois de gravar um backup/autosave novo."""
+    _BACKUPS_CACHE["ts"] = 0.0
+    _BACKUPS_CACHE["items"] = None
+
+
+def _resolve_restore_path(fname_raw: str, backup_dir: str,
+                           autosave_dir: str) -> "tuple[str | None, str]":
+    """Resolve o arquivo a restaurar, recusando o que nao for backup.
+
+    Devolve ``(caminho, "")`` em caso de sucesso ou ``(None, mensagem)``.
+    Sao aceitos somente:
+
+    * backups de sessao — ``backup_ses_<id>_<HH-MM-SS>_<DD-MM-YYYY>.json``
+      (prefixo ``backup_``) na pasta de backups;
+    * autosaves — ``autosave_<n>.json`` na pasta de autosaves.
+
+    Qualquer outro ``.json`` da pasta (``keys_store.json``, ``keys.json``,
+    ``ufvai_consentimento*.json`` …) e **recusado**: nao e backup e nao
+    pode ser restaurado. O caminho tambem nao pode escapar das pastas
+    (sem ``..``, sem separadores de diretorio).
+    """
+    raw = (fname_raw or "").strip()
+    if not raw:
+        return None, "Nome de arquivo inválido."
+    is_autosave = raw.startswith("autosave/")
+    fname = raw[len("autosave/"):] if is_autosave else raw
+    if (fname.startswith(".") or ".." in fname or "/" in fname or "\\" in fname
+            or not fname.endswith(".json")):
+        return None, "Nome de arquivo inválido."
+    # v0.7.1: o nome do autosave pode chegar SEM o prefixo "autosave/".
+    # Era exatamente o que a listagem devolvia e o que fazia a retomada na
+    # ENTRADA falhar com "Este arquivo nao e um backup de sessao" (o
+    # botao "Restaurar", que usa list_backups, traz o prefixo e funcionava).
+    if not is_autosave and re.fullmatch(r"autosave_[1-9][0-9]*\.json", fname):
+        is_autosave = True
+    if is_autosave:
+        if not re.fullmatch(r"autosave_[1-9][0-9]*\.json", fname):
+            return None, "Arquivo de autosave inválido."
+        path = os.path.join(autosave_dir, fname)
+    else:
+        if not re.fullmatch(r"backup_[A-Za-z0-9._-]+\.json", fname):
+            return None, ("Este arquivo não é um backup de sessão (só arquivos "
+                          "'backup_*.json' e autosaves podem ser restaurados).")
+        path = os.path.join(backup_dir, fname)
+    if not os.path.exists(path):
+        return None, f"Arquivo não encontrado: {fname}"
+    return path, ""
+
+
 def _opencode_bin_or_find() -> str:
     """Binário do OpenCode V2 (cache do boot ou busca)."""
     try:
@@ -1714,7 +1798,29 @@ def start_wrapper_server():
             self.send_header("Content-Length", "0")
             self.end_headers()
         
+        def _safe_error(self, exc: BaseException) -> None:
+            """v0.7.0: transforma excecao inesperada em erro JSON claro.
+
+            Sem esta rede, qualquer excecao no handler fechava a conexao
+            sem resposta ("Empty reply from server") e a interface mostrava
+            apenas "falha na conexao" — sem causa.
+            """
+            logger.exception("Excecao inesperada no handler %s", self.path)
+            try:
+                self._json(500, {
+                    "error": f"Erro interno: {type(exc).__name__}: {exc}"[:300],
+                    "traceback": traceback.format_exc()[-800:],
+                })
+            except Exception:
+                pass
+
         def do_GET(self):
+            try:
+                self._do_GET_impl()
+            except Exception as exc:
+                self._safe_error(exc)
+
+        def _do_GET_impl(self):
             p = urlparse(self.path).path
             if p.startswith("/api/") and not self._authorized():
                 return self._reject_token()
@@ -1859,16 +1965,37 @@ def start_wrapper_server():
                     ready = False
                 self._json(200, {"ready": bool(ready), "port": TERMINAL_PORT})
                 return
-            
-            if p == "/api/backups":
+
+            if p == "/api/autosave":
+                # v0.7.0 — listagem dos autosaves (usada pela pergunta de
+                # retomada na abertura da interface). A GRAVACAO e' o POST.
                 try:
-                    files = sorted(
-                        [f for f in os.listdir(DRIVE_BACKUP_DIR) if f.endswith(".json") and not f.startswith(".")],
-                        reverse=True
-                    )
-                except Exception:
-                    files = []
-                self._json(200, {"backups": files})
+                    items = _session_restore.list_autosaves(AUTOSAVE_DIR)
+                except Exception as exc:
+                    logger.warning("Falha ao listar autosaves: %s", exc)
+                    items = []
+                self._json(200, {
+                    "autosaves": items,
+                    "latest": items[0] if items else None,
+                    "dir": AUTOSAVE_DIR,
+                })
+                return
+
+            if p == "/api/backups":
+                # v0.7.0 — lista SOMENTE backups de sessao, com data/hora,
+                # tamanho e integridade, para o CALENDARIO e o FILTRO por data
+                # do modal "Restaurar". Antes, a listacao devolvia todos os
+                # .json da pasta (incluindo keys_store.json, keys.json e os
+                # consentimentos), que nao sao backups e nao podem ser
+                # restaurados.
+                items = _list_backups_cached(DRIVE_BACKUP_DIR, AUTOSAVE_DIR)
+                dates = sorted({item["date"] for item in items}, reverse=True)
+                self._json(200, {
+                    "backups": items,
+                    "files": [item["file"] for item in items],
+                    "dates": dates,
+                    "count": len(items),
+                })
                 return
             
             if p == "/api/health":
@@ -2518,6 +2645,12 @@ def start_wrapper_server():
             self.send_error(404)
 
         def do_POST(self):
+            try:
+                self._do_POST_impl()
+            except Exception as exc:
+                self._safe_error(exc)
+
+        def _do_POST_impl(self):
             p = urlparse(self.path).path
             # v0.6.0: rate limit generoso nos mutantes (120/min/IP)
             ip = self.client_address[0] if self.client_address else "?"
@@ -2977,6 +3110,7 @@ def start_wrapper_server():
                             pass
 
                 # ── Etapa 3: resposta ────────────────────────────────────────
+                _invalidate_backups_cache()  # novo backup no Drive
                 try:
                     _tel_event("backup_created", {})
                 except Exception:
@@ -2999,16 +3133,17 @@ def start_wrapper_server():
             
             if p == "/api/restore":
                 fname_raw = str(body.get("file", "") or "").strip()
-                fname = os.path.basename(fname_raw)
-                if (not fname or fname != fname_raw or fname.startswith(".")
-                        or ".." in fname
-                        or not re.fullmatch(r"[A-Za-z0-9._-]+\.json", fname)):
-                    self._json(400, {"error": "Nome de arquivo inválido."})
+                # v0.7.0: aceita "autosave/autosave_1.json" (autosaves) ou
+                # "backup_ses_*.json" (backups de sessao). Qualquer outro
+                # .json da pasta (keys_store.json, keys.json, consentimentos)
+                # e REJEITADO: nao e backup e nao pode ser restaurado.
+                fpath, err = _resolve_restore_path(
+                    fname_raw, DRIVE_BACKUP_DIR, AUTOSAVE_DIR)
+                if fpath is None:
+                    status = 404 if err.startswith("Arquivo não encontrado") else 400
+                    self._json(status, {"error": err})
                     return
-                fpath = os.path.join(DRIVE_BACKUP_DIR, fname)
-                if not os.path.exists(fpath):
-                    self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
-                    return
+                fname = os.path.basename(fpath)
 
                 # ── v0.6.25: restauracao com conversao e ids renovados ──
                 # O import do motor v2 (a) rejeita o esquema legado v1 com
@@ -3121,25 +3256,56 @@ def start_wrapper_server():
                 })
                 return
             
+            if p == "/api/backup/delete":
+                # v0.7.1 — APAGAR um backup/autosave do Drive (menu
+                # "Restaurar"). Exige confirmacao explicita do usuario
+                # ("confirm": true); o caminho passa pela mesma validacao
+                # do /api/restore (so backup_*.json e autosave_<n>.json,
+                # sem escape de diretorio).
+                fname_raw = str(body.get("file", "") or "").strip()
+                if not bool(body.get("confirm")):
+                    self._json(400, {
+                        "error": "Confirmação obrigatória para apagar o backup."
+                    })
+                    return
+                fpath, err = _resolve_restore_path(
+                    fname_raw, DRIVE_BACKUP_DIR, AUTOSAVE_DIR)
+                if fpath is None:
+                    status = 404 if err.startswith("Arquivo não encontrado") else 400
+                    self._json(status, {"error": err})
+                    return
+                fname = os.path.basename(fpath)
+                try:
+                    os.remove(fpath)
+                except FileNotFoundError:
+                    self._json(404, {"error": f"Arquivo não encontrado: {fname}"})
+                    return
+                except OSError as exc:
+                    self._json(500, {
+                        "error": f"Não foi possível apagar o arquivo: {exc}"[:200]
+                    })
+                    return
+                _invalidate_backups_cache()   # a lista do menu muda
+                try:
+                    _tel_event("backup_deleted", {})
+                except Exception:
+                    pass
+                self._json(200, {"ok": True, "file": fname,
+                                 "deleted_at": time.time()})
+                return
+
             if p == "/api/autosave":
                 # v0.7.0: autosave da sessao a cada 3 minutos (chave
                 # liga/desliga na interface). Mantem os 3 ULTIMOS no Drive:
                 # o mais recente e `autosave_1.json`; se ele estiver
                 # corrompido (truncamento FUSE), o fallback assume.
-                if method == "GET":
-                    try:
-                        items = _session_restore.list_autosaves(AUTOSAVE_DIR)
-                    except Exception as exc:
-                        logger.warning("Falha ao listar autosaves: %s", exc)
-                        items = []
-                    self._json(200, {
-                        "autosaves": items,
-                        "latest": items[0] if items else None,
-                        "dir": AUTOSAVE_DIR,
-                    })
-                    return
-
-                # POST: grava o autosave
+                #
+                # CORRECAO v0.7.0 (21/10): este bloco referenciava uma
+                # variavel `method` que NUNCA foi definida no do_POST ->
+                # NameError em TODA gravacao (a interface mostrava apenas
+                # "falha na conexao" e nenhum arquivo era gravado). O
+                # listing (GET) foi movido para o do_GET e aqui fica so
+                # a gravacao (POST).
                 os.makedirs(AUTOSAVE_DIR, exist_ok=True)
                 session_id = str(body.get("session_id", "") or "").strip()
                 if not session_id:
@@ -3164,10 +3330,22 @@ def start_wrapper_server():
                     logger.warning("Autosave falhou: %s", exc)
                     self._json(500, {"error": str(exc)[:300]})
                     return
+                except Exception as exc:
+                    # v0.7.0: sem esta rede de seguranca, uma excecao
+                    # inesperada fechava a conexao sem resposta ("Empty
+                    # reply from server") e a interface mostrava apenas
+                    # "falha na conexao" — sem dizer o que aconteceu.
+                    logger.exception("Autosave falhou com excecao inesperada")
+                    self._json(500, {
+                        "error": f"Falha inesperada no autosave: {type(exc).__name__}: {exc}"[:300],
+                        "traceback": traceback.format_exc()[-800:],
+                    })
+                    return
                 try:
                     _tel_event("autosave_created", {})
                 except Exception:
                     pass
+                _invalidate_backups_cache()  # autosave novo no Drive
                 self._json(200, {"ok": True, **info})
                 return
 
