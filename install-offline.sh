@@ -31,7 +31,7 @@ success() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-VERSION="0.7.0"
+VERSION="0.7.2"
 UI_PORT="8001"      # interface web (wrapper HTTP)
 TERM_PORT="8000"    # terminal ttyd
 

@@ -1,6 +1,6 @@
 # 📘 Manual do UFVAI
 
-> **Agente de Pesquisa Científica de Alta Performance · v0.6.20 · Setembro 2026**
+> **Agente de Pesquisa Científica de Alta Performance · v0.7.2 · Outubro 2026**
 > Registro SisPPG/UFV nº 10356285004 · Universidade Federal de Viçosa
 
 ---
@@ -745,12 +745,37 @@ No topo da interface do UFVAI, há 3 botões importantes:
 ### 5.3 Restaurando Backup
 
 1. Clique em **🔄 Restaurar**
-2. Uma lista de backups aparecerá (mais recentes primeiro)
-3. Clique no backup que deseja restaurar
-4. Confirme a restauração
-5. Atualize a página para acessar a sessão restaurada
+2. O modal abre com um **calendário mensal** (dias com backup são marcados e
+   mostram a quantidade) e a lista de backups agrupada por data
+3. Filtre por data: clique num dia do calendário, use o seletor de data ou
+   **Todas as datas**
+4. Clique no backup que deseja restaurar (há um botão 🗑 para apagar um backup)
+5. Confirme a restauração — a página recarrega e o terminal assume a sessão
 
 > **Dica:** Use o menu `Ctrl + P` → `switch session` para alternar entre sessões.
+
+### 5.4 Autosave automático (a cada 3 minutos)
+
+| Item | Comportamento |
+|------|---------------|
+| **Chave no rodapé** | Liga/desliga o autosave. **Ligado por padrão**; só desliga se você desativar. A preferência fica no navegador (`localStorage`). |
+| **Gravação** | A cada **3 minutos** a sessão é exportada para `Meu Drive/PesquisAI/backups/autosave/`. |
+| **3 slots** | `autosave_1/2/3.json` guardam as **3 últimas versões distintas** (conteúdo idêntico não é regravado — a interface avisa "sem novidades"). Se o mais recente estiver corrompido, o anterior assume. |
+| **Não bloqueia** | Salvar ao sair da aba é feito em segundo plano (`sendBeacon`). |
+
+### 5.5 Retomada da sessão (automática)
+
+Ao abrir a interface, se houver um autosave válido, o UFVAI pergunta — com a
+**data e hora** do salvamento, no seu idioma:
+
+- **Continuar de onde parei** → restaura o autosave e recarrega a página;
+- **Nova sessão** → segue sem restaurar.
+
+> **A pergunta aparece uma única vez por aba do navegador.** Depois de
+> restaurada, a página recarrega e a pergunta **não** volta (o que antes
+> gerava um laço de recarregamento). Para oferecer a pergunta novamente, use o
+> botão **↻** no rodapé, ao lado da chave do autosave — ou restaure a qualquer
+> momento pelo menu **🔄 Restaurar**.
 
 ---
 
@@ -869,7 +894,7 @@ Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já e
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.6.20. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.7.2. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -880,7 +905,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
 **Formato simplificado (nota de rodapé):**
 
 ```
-UFVAI, versão 0.6.20, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
+UFVAI, versão 0.7.2, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 ```
 
@@ -909,7 +934,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 | **Tipo** | Software / Computer Program |
 | **Autor** | Braga, Gustavo Bastos |
 | **Título** | UFVAI: agente de inteligência artificial para pesquisa científica |
-| **Versão** | 0.6.20 |
+| **Versão** | 0.7.2 |
 | **Ano** | 2026 |
 | **Instituição** | Universidade Federal de Viçosa (UFV) |
 | **URL** | https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/ |
@@ -925,7 +950,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 author = {Gustavo Bastos Braga},
 title = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial para Pesquisa Cient{\'\i}fica},
 year = {2026},
-version = {0.6.20},
+version = {0.7.2},
 institution = {Universidade Federal de Vi{\c{c}}osa (UFV)},
 url = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/},
 note = {Acessado em: DD m{\^e}s AAAA}
@@ -982,7 +1007,7 @@ Ethics (COPE).
 
 Referência da ferramenta:
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para
-pesquisa científica. Versão 0.6.20. Viçosa: UFV, 2026. Disponível em:
+pesquisa científica. Versão 0.7.2. Viçosa: UFV, 2026. Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Registro SisPPG/UFV nº 10356285004 — http://sisppg.ufv.br
 ```
@@ -1268,6 +1293,8 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
+| **0.7.2** | 22/10/2026 | 🔄 **Retomada sem laço**: a pergunta "continuar do autosave" é oferecida **uma única vez por aba** (flag em `sessionStorage`) — antes o `location.reload()` após o restore reoferecia a pergunta e criava um laço · 📅 **Calendário do "Restaurar" corrigido**: contagem de backups em cada dia, tooltip correto, chips dos meses que têm backup, item sem data nunca some do filtro, estado vazio acionável |
+| **0.7.1** | 22/10/2026 | 🔧 **Retomada corrigida na entrada** (`list_autosaves` devolvia o nome sem o prefixo `autosave/`) · 💾 Autosave sem duplicata (3 slots = 3 versões distintas) · 🗑 Botão de apagar backup no menu "Restaurar" · 🔁 Fallback na retomada (até 3 autosaves) |
 | **0.7.0** | 21/10/2026 | 🏷️ Marca **UFVAI** na tela de nova sessão (logo redesenhado + sugestões do prompt com uso UFVAI/agêntico, via patch cirúrgico de mesmo comprimento no motor) · 🇨🇳 Chinês também troca o terminal · 🎨 Manual e Diretrizes no tema claro · 📱 "Idioma" fora do sanduíche e nota da Memória visível no responsivo |
 | **0.6.20** | 01/10/2026 | 🫀 Boot simplificado do Colab (ipynb: clone + `run()` no kernel + keep-alive em subprocesso, log `ufvai_keepalive.log`) + botão **SAIR** com confirmação (encerra o keep-alive e chama `runtime.unassign()` — desconecta e exclui o ambiente) |
 | **0.6.19** | 29/09/2026 | 📱 Menu mobile sem SVG (`.tb-icon{display:none}` ≤767px, drawer sem SVG) + hamburger alinhado à direita (`#topbar .sep{display:none}` ≤767px, evita `flex:1` × `margin-left:auto`) + teste de regressão de cascata + docs em paridade (§2.1.0 skills personalizadas) |
@@ -1318,4 +1345,4 @@ O UFVAI usa estes marcadores para indicar o nível de confiança:
 ---
 
 *Documentação atualizada: Setembro 2026*  
-*UFVAI v0.6.20 · Registro SisPPG/UFV nº 10356285004*
+*UFVAI v0.7.2 · Registro SisPPG/UFV nº 10356285004*

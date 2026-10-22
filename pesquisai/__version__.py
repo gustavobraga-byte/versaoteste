@@ -409,17 +409,29 @@ Histórico de versões:
               saudação no idioma + "(a partir de agora responda em X)"
               ao invés de "--prompt 'oi'" genérico
             • 📦 __version__.py movido para pesquisai/__version__.py
+            • 🔄 v0.7.2 — RETOMADA DO AUTOSAVE SEM LOOP
+              + CALENDÁRIO DO "RESTAURAR" CORRIGIDO
+            • 🔄 LOOP DA RETOMADA: "Continuar de onde parei" fazia
+              location.reload() -> a pagina recarregava -> a pergunta
+              de retomada voltava -> o usuario clicava de novo -> LOOP.
+              Agora a pergunta e OFERTADA UMA VEZ por aba do navegador
+              (flag em sessionStorage, que sobrevive ao reload da mesma
+              aba). O botao ↻ no rodape reoferece sob demanda.
+            • 🗒️ CALENDÁRIO: dias com backup mostram a contagem,
+              tooltip corrigido ("3 backups", nao "3)"), chips dos meses
+              que TEM backup, item sem data nunca some do filtro e
+              estado vazio oferece "Todas as datas".
             • 🧹 AGENTS.md: removido "- [link/lien/enlace]" das 4 variantes
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.7.0"
+__version__: str = "0.7.2"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-10-21"
-__codename__: str = "Marca UFVAI na TUI (logo + sugestoes) + 4 correcoes de interface"
+__release_date__: str = "2026-10-22"
+__codename__: str = "Retomada do autosave uma unica vez + calendario do Restaurar corrigido"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

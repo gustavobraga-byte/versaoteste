@@ -863,6 +863,29 @@ def create_wrapper_html(
       border-color: rgba(var(--accent-rgb), .5);
     }
     .restore-day.sel::after { background: var(--accent); }
+    /* v0.7.2 — numero de backups no dia + chips dos meses com backup */
+    .restore-day .rd-n {
+      position: absolute; top: 1px; right: 2px;
+      font-size: 8px; line-height: 1; font-weight: 700;
+      color: var(--accent); opacity: .9;
+    }
+    .restore-months {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      margin: -2px 0 10px;
+    }
+    .restore-months .rmonth-chip {
+      font-size: 10px; padding: 3px 7px; border-radius: 999px;
+      background: rgba(255,255,255,.04); border: 1px solid var(--line);
+      color: var(--ink-muted); cursor: pointer; font-family: var(--font-sans);
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .restore-months .rmonth-chip b { color: var(--ink); font-weight: 700; }
+    .restore-months .rmonth-chip:hover { background: var(--accent-dim); color: var(--accent); }
+    .restore-months .rmonth-chip.on {
+      border-color: rgba(var(--accent-rgb), .5); color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .restore-daygroup.nodate { opacity: .75; }
     .backup-item .b-main {
       display: flex; flex-direction: column; gap: 2px;
       min-width: 0; flex: 1;
@@ -1305,6 +1328,10 @@ def create_wrapper_html(
         <span class="autosave-dot"></span>
         <span class="autosave-label" data-i18n="autosave.title">Autosave</span>
       </label>
+      <!-- v0.7.2: reabrir a pergunta de retomada sob demanda (a pergunta
+           automatica e oferecida UMA VEZ por aba; este botao reoferece). -->
+      <button class="btn-provider" onclick="reofferAutosaveResume()"
+              title="Retomar a última sessão salva" data-i18n-title="autosave.resume.again">↻</button>
       <span class="footer-sep"></span>
       <button class="btn-provider" onclick="connectProvider()" title="Conectar novo provedor de IA">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
@@ -1378,7 +1405,14 @@ def create_wrapper_html(
                title="Filtrar por data" data-i18n-title="restore.filter" aria-label="Filtrar por data">
         <button class="rghost" onclick="restoreClearDate()" data-i18n="restore.all_dates">Todas as datas</button>
         <button class="rghost" onclick="restoreToday()" data-i18n="restore.today">Hoje</button>
+        <button class="rghost" onclick="restoreGoNewest()" data-i18n="restore.newest"
+                title="Ir para o backup mais recente" data-i18n-title="restore.newest">Mais recente</button>
       </div>
+
+      <!-- v0.7.2: meses que TEM backup (chips). Sem isso o calendario
+           abria no mes atual (quase vazio) e as datas ficavam
+           "escondidas" atras das setas — a impressao de "faltaram datas". -->
+      <div class="restore-months" id="restore-months"></div>
 
       <!-- v0.7.0: calendario (dias com backup sao marcados) -->
       <div class="restore-cal">
@@ -2007,17 +2041,50 @@ def create_wrapper_html(
       return item;
     }
 
+    /** Deriva "date"/"time" de um item que nao os traz. */
+    function restoreFillDates(it) {
+      if (!it || typeof it !== "object") return it;
+      if (!it.date) {
+        const iso = String(it.datetime || it.saved_at_iso || "");
+        const m = /^(\\d{4})-(\\d{2})-(\\d{2})/.exec(iso);
+        if (m) it.date = m[1] + "-" + m[2] + "-" + m[3];
+        else {
+          const ts = Number(it.timestamp || it.saved_at || 0);
+          if (ts > 0) {
+            const d = new Date(ts * 1000);
+            if (!isNaN(d.getTime())) it.date = restoreDateKey(d);
+          }
+        }
+      }
+      if (!it.time) {
+        const m2 = /T(\\d{2}:\\d{2}:\\d{2})/.exec(String(it.datetime || ""));
+        if (m2) it.time = m2[1];
+        else if (it.date && Number(it.timestamp || it.saved_at || 0) > 0) {
+          const d = new Date(Number(it.timestamp || it.saved_at) * 1000);
+          if (!isNaN(d.getTime())) it.time = restorePad(d.getHours()) + ":" + restorePad(d.getMinutes()) + ":" + restorePad(d.getSeconds());
+        }
+      }
+      return it;
+    }
+
     function restoreNormalizeItems(raw) {
       return (raw || []).map(function (it) {
-        if (typeof it === "string") return restoreItemFromName(it);
-        return it;
+        if (typeof it === "string") return restoreFillDates(restoreItemFromName(it));
+        // v0.7.2: sem "date", o item nao entrava na contagem do calendario
+        // e sumia do filtro por data (parecia que faltavam datas).
+        return restoreFillDates(it);
       });
     }
 
     /** Filtro por data (vazio = todas as datas). */
     function restoreFilterByDate(items, date) {
       if (!date) return (items || []).slice();
-      return (items || []).filter(function (it) { return it && it.date === date; });
+      return (items || []).filter(function (it) {
+        if (!it) return false;
+        // v0.7.2: item sem data nao pode sumir do filtro.
+        if (!it.date) return true;
+        return it.date === date;
+      });
     }
 
     function restoreFormatDate(dateKey) {
@@ -2093,6 +2160,40 @@ def create_wrapper_html(
         }
       }
 
+      // v0.7.2 — chips dos meses que TEM backup (clica para navegar).
+      // Sem isso, o calendario abre no mes atual (quase vazio) e o
+      // usuario conclui que "faltaram datas".
+      const monthsEl = document.getElementById("restore-months");
+      if (monthsEl) {
+        const byMonth = {};
+        (_restoreItems || []).forEach(function (it) {
+          if (!it || !it.date) return;
+          const mk = String(it.date).slice(0, 7);
+          byMonth[mk] = (byMonth[mk] || 0) + 1;
+        });
+        const mkeys = Object.keys(byMonth).sort().reverse();
+        if (!mkeys.length) {
+          monthsEl.innerHTML = "";
+        } else {
+          monthsEl.innerHTML = mkeys.map(function (mk) {
+            const parts = mk.split("-");
+            const y = Number(parts[0]), mi = Number(parts[1]) - 1;
+            let label = mk;
+            try {
+              label = new Date(y, mi, 1)
+                .toLocaleDateString(restoreLocale(), { year: "2-digit", month: "short" });
+            } catch (e) { label = mk; }
+            const cur = (_restoreMonth.y === y && _restoreMonth.m === mi);
+            const tip = (dict["restore.month_tip"] || "{n} backups em {m}")
+              .replace("{n}", byMonth[mk]).replace("{m}", label);
+            return '<button type="button" class="rmonth-chip' + (cur ? " on" : "") + '"' +
+              ' onclick="restoreGoMonth(' + y + "," + mi + ')"' +
+              ' title="' + escapeHtml(tip) + '">' + escapeHtml(label) +
+              " <b>" + byMonth[mk] + "</b></button>";
+          }).join("");
+        }
+      }
+
       // grade do calendario
       const weeks = restoreBuildGrid(_restoreMonth.y, _restoreMonth.m);
       const todayKey = restoreDateKey(new Date());
@@ -2106,9 +2207,10 @@ def create_wrapper_html(
           if (n) cls.push("has");
           if (key === todayKey) cls.push("today");
           if (key === _restoreDate) cls.push("sel");
-          const tip = n ? ' title="' + n + ")" : "";
+          // v0.7.2: tooltip correto (antes era "3)") + numero de backups.
+          const tip = n ? ' title="' + escapeHtml((dict["restore.day_tip"] || "{n} backups").replace("{n}", n)) + '"' : "";
           return `<div class="${cls.join(" ")}" onclick="restorePickDate('${key}')"` + tip +
-                 ">" + day + "</div>";
+                 ">" + day + (n ? '<span class="rd-n">' + n + "</span>" : "") + "</div>";
         }).join("");
       }).join("");
 
@@ -2130,18 +2232,29 @@ def create_wrapper_html(
         return;
       }
       if (!filtered.length) {
+        // v0.7.2: estado vazio ACCIONAVEL — oferece "Todas as datas"
+        // (antes ficava um beco sem saida: "Nenhum backup nesta data").
         list.innerHTML = '<div class="modal-empty">' +
-          escapeHtml(dict["restore.empty_date"] || "Nenhum backup nesta data.") + "</div>";
+          escapeHtml(dict["restore.empty_date"] || "Nenhum backup nesta data.") +
+          ' <button class="rghost" onclick="restoreClearDate()">' +
+          escapeHtml(dict["restore.all_dates"] || "Todas as datas") + "</button></div>";
         return;
       }
       const byDate = {};
       filtered.forEach(function (it) {
-        const key = it.date || "?";
+        const key = it.date || "__nodate__";
         (byDate[key] = byDate[key] || []).push(it);
       });
       let html = "";
-      Object.keys(byDate).sort().reverse().forEach(function (date) {
-        html += '<div class="restore-daygroup">' + escapeHtml(restoreFormatDate(date)) + "</div>";
+      // v0.7.2: datas em ordem decrescente; "sem data" sempre por ultimo.
+      Object.keys(byDate).sort(function (a, b) {
+        if (a === "__nodate__") return 1;
+        if (b === "__nodate__") return -1;
+        return a < b ? 1 : (a > b ? -1 : 0);
+      }).forEach(function (date) {
+        const noDate = (date === "__nodate__");
+        html += '<div class="restore-daygroup' + (noDate ? " nodate" : "") + '">' +
+          escapeHtml(noDate ? (dict["restore.nodate"] || "sem data") : restoreFormatDate(date)) + "</div>";
         byDate[date].forEach(function (it) { html += restoreItemHtml(it, dict); });
       });
       list.innerHTML = html;
@@ -2186,6 +2299,24 @@ def create_wrapper_html(
 
     function restorePrevMonth() { restoreShiftMonth(-1); }
     function restoreNextMonth() { restoreShiftMonth(1); }
+
+    /** v0.7.2 — vai para um mes especifico (chips de meses com backup). */
+    function restoreGoMonth(y, m) {
+      _restoreMonth = { y: Number(y), m: Number(m) };
+      renderRestore();
+    }
+
+    /** v0.7.2 — vai para o mes do backup mais recente (sem filtrar data). */
+    function restoreGoNewest() {
+      if (!_restoreItems.length) return;
+      const newest = _restoreItems[0];
+      const parts = String(newest.date || "").split("-");
+      if (parts.length === 3) {
+        _restoreMonth = { y: parseInt(parts[0], 10), m: parseInt(parts[1], 10) - 1 };
+      }
+      _restoreDate = "";
+      renderRestore();
+    }
 
     async function openRestore() {
       document.getElementById("modal-overlay").classList.add("open");
@@ -2859,6 +2990,10 @@ def create_wrapper_html(
         });
         const d = await r.json();
         if (r.ok) {
+          // v0.7.2: um restore feito pelo menu tambem conta como
+          // "retomada ja oferecida" — senao a pergunta de retomada
+          // reapareceria depois do reload (virando loop).
+          markAutosaveResumeOffered();
           // Invalida cache para que a próxima abertura mostre a sessão atual
           _sessionsCache = { data: null, ts: 0 };
           toast("✅ Sessão " + sessionId + " restaurada! Recarregando página…", "ok");
@@ -4249,11 +4384,38 @@ def create_wrapper_html(
       }
     }
 
+    // ── v0.7.2 — a pergunta de retomada é OFERTADA UMA VEZ ──────
+    // BUG (v0.7.1): "Continuar de onde parei" fazia location.reload()
+    // -> a página recarregava -> checkAutosaveResume() oferecia a
+    // pergunta DE NOVO -> o usuário clicava de novo -> LOOP INFINITO.
+    // Correção: flag em sessionStorage (sobrevive ao reload da MESMA
+    // aba; morre ao fechar a aba). Depois de oferecida — por resposta
+    // ou pelo timeout de 20 s — a pergunta não volta.
+    // O menu "Restaurar" (calendário) continua disponível sempre.
+    const AUTOSAVE_RESUME_FLAG = "ufvai_autosave_resume_offered";
+
+    function autosaveResumeOffered() {
+      try { return sessionStorage.getItem(AUTOSAVE_RESUME_FLAG) === "1"; }
+      catch (e) { return false; }
+    }
+
+    function markAutosaveResumeOffered() {
+      try { sessionStorage.setItem(AUTOSAVE_RESUME_FLAG, "1"); } catch (e) {}
+    }
+
+    /** v0.7.2 — reabrir a pergunta de retomada sob demanda (botão ↻). */
+    async function reofferAutosaveResume() {
+      try { sessionStorage.removeItem(AUTOSAVE_RESUME_FLAG); } catch (e) {}
+      await checkAutosaveResume();
+    }
+
     /** Mostra a pergunta de retomada (data/hora do último autosave). */
     function showAutosaveResume(item) {
       const overlay = document.getElementById("autosave-overlay");
       const when = document.getElementById("autosave-when");
       if (!overlay) return;
+      // v0.7.2: uma vez oferecida, a pergunta nao volta (evita o loop).
+      markAutosaveResumeOffered();
       if (when) {
         const stamp = item.saved_at_local || item.saved_at_iso || "";
         when.textContent = (autosaveDict()["autosave.resume.when"] || "Autosave de") + " " + stamp;
@@ -4293,6 +4455,8 @@ def create_wrapper_html(
           });
           const d = await r.json();
           if (d && d.ok) {
+            // v0.7.2: garante que o reload NAO reofereca a pergunta.
+            markAutosaveResumeOffered();
             toast("✅ " + (autosaveDict()["autosave.resume.done"] || "Sessão restaurada"), "ok");
             setTimeout(() => location.reload(), 3500);
             return;
@@ -4312,6 +4476,9 @@ def create_wrapper_html(
 
     /** Na abertura: se houver autosave válido, pergunta. Não bloqueia. */
     async function checkAutosaveResume() {
+      // v0.7.2: se a pergunta JÁ foi oferecida nesta aba, não oferece
+      // de novo — nem chega a consultar o backend.
+      if (autosaveResumeOffered()) return;
       try {
         const r = await fetch(BASE + "/api/autosave");
         const d = await r.json();
@@ -4942,6 +5109,11 @@ def create_wrapper_html(
             "restore.empty_date": "Nenhum backup nesta data.",
             "restore.error": "Erro ao carregar os backups.",
             "restore.autosave": "Autossave",
+            "restore.day_tip": "{n} backups",
+            "restore.month_tip": "{n} backups em {m}",
+            "restore.nodate": "sem data",
+            "restore.newest": "Mais recente",
+            "autosave.resume.again": "Retomar",
             "restore.invalid": "corrompido",
             "restore.confirm": "Restaurar o backup de {when}?",
             "restore.restoring": "Restaurando {when}…",
@@ -5079,6 +5251,11 @@ def create_wrapper_html(
             "restore.empty_date": "No backup on this date.",
             "restore.error": "Error loading the backups.",
             "restore.autosave": "Autosave",
+            "restore.day_tip": "{n} backups",
+            "restore.month_tip": "{n} backups in {m}",
+            "restore.nodate": "no date",
+            "restore.newest": "Newest",
+            "autosave.resume.again": "Resume",
             "restore.invalid": "corrupted",
             "restore.confirm": "Restore the backup from {when}?",
             "restore.restoring": "Restoring {when}…",
@@ -5216,6 +5393,11 @@ def create_wrapper_html(
             "restore.empty_date": "No hay copias en esta fecha.",
             "restore.error": "Error al cargar las copias.",
             "restore.autosave": "Autoguardado",
+            "restore.day_tip": "{n} respaldos",
+            "restore.month_tip": "{n} respaldos en {m}",
+            "restore.nodate": "sin fecha",
+            "restore.newest": "Más reciente",
+            "autosave.resume.again": "Reanudar",
             "restore.invalid": "corrupto",
             "restore.confirm": "¿Restaurar la copia del {when}?",
             "restore.restoring": "Restaurando {when}…",
@@ -5353,6 +5535,11 @@ def create_wrapper_html(
             "restore.empty_date": "Aucune sauvegarde à cette date.",
             "restore.error": "Erreur lors du chargement des sauvegardes.",
             "restore.autosave": "Sauvegarde auto",
+            "restore.day_tip": "{n} sauvegardes",
+            "restore.month_tip": "{n} sauvegardes en {m}",
+            "restore.nodate": "sans date",
+            "restore.newest": "Plus récent",
+            "autosave.resume.again": "Reprendre",
             "restore.invalid": "corrompu",
             "restore.confirm": "Restaurer la sauvegarde du {when} ?",
             "restore.restoring": "Restauration de {when}…",
@@ -5490,6 +5677,11 @@ def create_wrapper_html(
             "restore.empty_date": "该日期没有备份。",
             "restore.error": "加载备份时出错。",
             "restore.autosave": "自动保存",
+            "restore.day_tip": "{n} 个备份",
+            "restore.month_tip": "{m} 有 {n} 个备份",
+            "restore.nodate": "无日期",
+            "restore.newest": "最新",
+            "autosave.resume.again": "继续",
             "restore.invalid": "已损坏",
             "restore.confirm": "恢复 {when} 的备份？",
             "restore.restoring": "正在恢复 {when}…",

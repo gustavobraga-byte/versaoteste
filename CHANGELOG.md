@@ -1,5 +1,62 @@
 # Changelog — PesquisAI
 
+## [0.7.2] — 2026-10-22 — 🔄 Retomada do autosave uma única vez por aba + 📅 Calendário do "Restaurar" corrigido
+
+### 🔄 Laço da retomada do autosave (o "restore" recarregava tudo)
+- **Sintoma:** com autosave disponível, ao clicar em **"Continuar de onde parei"**: o terminal recarregava (`location.reload()`) → a tela de confirmação da retomada **voltava** → o clique no "Continuar" repetia o ciclo.
+- **Causa-raiz:** `checkAutosaveResume()` é chamado ~2,5 s depois de cada carregamento de página e reoferecia a pergunta sempre que houvesse autosave válido, sem nenhuma guarda de idempotência.
+- **Fix (frontend `pesquisai/launch_app_responsive_v041.py`):** flag `ufvai_autosave_resume_offered` em `sessionStorage` — sobrevive ao reload da **mesma** aba (o caso do laço) e morre ao fechar a aba. Marcada em `showAutosaveResume()`, `autosaveResumeContinue()` e `_doRestoreSession()`; `checkAutosaveResume()` retorna **antes de qualquer `fetch`** se a flag existir. **Escape hatch:** botão **↻** no rodapé (`reofferAutosaveResume()`); o menu **🔄 Restaurar** segue sempre disponível.
+
+### 📅 Calendário do "Restaurar" (datas faltando / erradas)
+- **Diagnóstico com os dados reais do Drive:** 44 backups em 20 datas (26/05 → 22/10/2026), concentrados em jun/2026 (24) e jul/2026 (10) — meses que o calendário não sinalizava, o que produzia a impressão de datas faltando.
+- **Fix:** chips clicáveis dos meses que **têm** backup (+ contagem) · contagem de backups em cada dia · tooltip `3 backups` (era `3)`) · data deduzida de `datetime`/`timestamp` · item sem data vai para o grupo **"sem data"** (nunca some do filtro) · estado vazio acionável ("Todas as datas") · botão **"Mais recente"** (`restoreGoNewest()`).
+- **Verificado e NÃO é bug:** o alinhamento dos dias da semana está correto (grade e cabeçalho começam na segunda).
+
+### 🧪 Testes — 161 verificações verdes
+- `tests/js/test_v072_resume_once.js` (**novo**) 39/39 · `tests/js/test_autosave_ui.js` 27/27 · `tests/js/test_restore_calendar.js` 47/47 · `tests/test_restore_backups.py` 26/26 · `tests/test_session_restore.py` 22/22.
+- **Correção de teste pré-existente:** `test_restore_backups.py::test_ordenacao_decrescente_por_data` dependia da **data do dia** (mtime "atual" dos autosaves) e passou a falhar ao virar o dia (22/10) → *fixture* com mtime fixo em 20/10/2026 12:00.
+
+### 📚 Documentação sincronizada em 0.7.2
+- `AGENTS.md` + `agents/AGENTS.{en,es,fr,pt,zh}.md` (frontmatter `version: 0.7.2`).
+- `MANUAL.md` (cabeçalho **v0.7.2 · Outubro 2026**, ficha de catalogação, citação ABNT, BibTeX, §5.4/§5.5, §12) e `README.md` (badge, novidades, histórico 0.7.x, citação, BibTeX).
+- `pyproject.toml` (`version = "0.7.2"`), `Dockerfile` (label OCI), `install-offline.sh` (`VERSION="0.7.2"`), `PesquisAI.ipynb` (painel de boot e citação ABNT).
+- `CHANGELOG.md` (este arquivo) + `LEIA-ME-v0.7.2.md`.
+
+## [0.7.1] — 2026-10-22 — 🔧 Retomada do autosave corrigida na entrada + 💾 autosave sem duplicata + 🗑 botão de apagar backup
+
+### 🔧 A retomada na entrada não restaurava (o botão do menu funcionava)
+- **Causa-raiz:** `list_autosaves()` devolvia o nome **sem** o prefixo `autosave/` (enquanto `list_backups()` traz o prefixo) → o `/api/restore` recusava com **400** "Este arquivo não é um backup de sessão".
+- **Fix:** `list_autosaves` passa a devolver `autosave/<nome>` (+ campo `name`) e `_resolve_restore_path` aceita o nome **com ou sem** prefixo — recusa do que não é backup e bloqueio de *path traversal* mantidos.
+
+### 💾 Autosave sem duplicata
+- `content_digest()` (sha256 de id + mensagens, ignorando `info.time.updated/viewed`) impede gravar cópia idêntica → os 3 slots são **3 versões distintas** (fallback preservado). A interface avisa "sem novidades" (`autosave.unchanged`).
+
+### 🗑 Botão de apagar backup
+- `POST /api/backup/delete` com `confirm: true` **obrigatório** (mesma validação de caminho do `/api/restore`) + botão 🗑 por item no menu "Restaurar", com confirmação e recarga da lista · i18n em **5 idiomas**.
+
+### 🔁 Fallback na retomada
+- Se o autosave mais recente falhar, tenta o anterior (até 3).
+
+### 🧪 Testes
+- `test_restore_backups.py` 26/26 · `test_session_restore.py` 22/22 · `tests/js/test_autosave_ui.js` 27/27 · `tests/js/test_restore_calendar.js` 47/47.
+
+## [0.7.0] — 2026-10-21 — 🗓️ "Restaurar" só backups com calendário + ⏱️ autosave a cada 3 min + 🏷️ marca UFVAI na tela de nova sessão
+
+### 🗓️ Menu "Restaurar" reconstruído
+- `GET /api/backups` devolve **somente backups** (42 itens = 39 backups + 3 autosaves; `keys_store.json`, `keys.json`, `aakeys.json` e `ufvai_consentimento*.json` ficam de fora) com data/hora/tamanho/título/integridade e 19 datas.
+- `POST /api/restore` valida estritamente (`backup_*.json` | `autosave_<n>.json`) → **400** para `keys_store.json` e para `../keys_store.json`.
+- Interface com **calendário mensal**, **filtro por data** (`input date` + clique no dia), navegação de mês e lista agrupada por dia, com selos *Autossave* / *corrompido* · i18n em 5 idiomas.
+
+### ⏱️ Autosave corrigido e ligado por padrão
+- **Causa-raiz:** `NameError: name 'method' is not defined` no branch `/api/autosave` do `do_POST` (a variável nunca existiu nesse método) → toda gravação morria com "Empty reply from server"; o `GET /api/autosave` estava dentro do `do_POST` → **404**.
+- **Fix:** listagem movida para o `do_GET` · **rotação invertida** (rotaciona **antes** de gravar → o slot 1 volta a ser o mais recente) · `autosaveEnabled()` **ligado por padrão** (só desliga se o autor desativar) · rede de segurança nos handlers (exceção → HTTP 500 JSON com a causa).
+
+### 🏷️ Identidade e interface
+- Marca **UFVAI** na tela de nova sessão (logo redesenhado + sugestões do prompt com uso UFVAI/agêntico, via patch cirúrgico de mesmo comprimento no motor) · 🇨🇳 Chinês também troca o terminal · 🎨 Manual e Diretrizes no tema claro · 📱 "Idioma" fora do sanduíche e nota da Memória visível no responsivo.
+
+### 🧪 Testes
+- `test_restore_backups.py` 19/19 · `test_session_restore.py` 22/22 · `tests/js/test_restore_calendar.js` 40/40 (sobre o HTML **renderizado**) · `tests/js/test_autosave_ui.js` 23/23 (reescrito — o antigo stubava o `fetch` e nunca exercitava o endpoint real) · `node --check` nos 7 `<script>` do HTML servido 7/7.
+
 ## [0.6.21] — 2026-10-13 — 🔧 Migração do motor para a **OpenCode V2** · 🍪 Aviso de cookies de terceiros · 🫀 Keep-alive por célula bloqueante
 
 ### 🔄 Ajuste de 14/10/2026 (sem bump — a versão continua 0.6.21, por decisão do autor)
