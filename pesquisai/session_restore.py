@@ -871,6 +871,80 @@ def write_session_autosave(source_path: str, session_id: str,
         return {"ok": False, "session_id": session_id}
 
 
+def _files_signature(paths: List[str]) -> Tuple[Tuple[str, int, int], ...]:
+    """Assinatura (caminho, mtime_ns, tamanho) — invalida caches de listagem."""
+    sig: List[Tuple[str, int, int]] = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            sig.append((path, int(st.st_mtime_ns), int(st.st_size)))
+        except OSError:
+            sig.append((path, 0, 0))
+    return tuple(sig)
+
+
+#: Cache (em processo) das listagens de autosave. Sem ele, cada abertura da
+#: interface (e cada "Restaurar") relia e reparseava ate 21 MB de JSON no
+#: Drive — ~1,5 s por chamada, bloqueando a pergunta de retomada.
+_LIST_CACHE: Dict[str, Tuple[Tuple[Tuple[str, int, int], ...], float, List[Dict[str, Any]]]] = {}
+_LIST_CACHE_TTL_S = 25.0
+
+#: Cache (em processo) do CABECALHO de cada autosave, chaveado por
+#: ``(caminho, mtime_ns, tamanho)``.
+#:
+#: Por que existe: o autosave rotaciona a cada minuto, e a listagem inteira
+#: era invalidada quando UM slot mudava — na pratica a pergunta de retomada
+#: reparseava os 21 MB do Drive a cada abertura (0,4-1,0 s). Com o cache por
+#: arquivo, so o slot que mudou e' relido; os grandes ficam prontos.
+_FILE_CACHE: Dict[Tuple[str, int, int], Dict[str, Any]] = {}
+_FILE_CACHE_MAX = 200
+
+
+def _read_autosave_cached(path: str) -> Optional[Dict[str, Any]]:
+    """Cabecalho de um autosave: ``info``, ``messages`` (nº), ``mtime``, ``size``.
+
+    Devolve ``None`` quando o arquivo esta corrompido/truncado (FUSE) ou nao
+    tem o formato de sessao — o chamador simplesmente segue para o proximo.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = (path, int(st.st_mtime_ns), int(st.st_size))
+    hit = _FILE_CACHE.get(key)
+    if hit is not None:
+        return dict(hit)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    info = data.get("info")
+    messages = data.get("messages")
+    if not isinstance(info, dict) or not isinstance(messages, list) or not messages:
+        return None
+    desc = {
+        "info": info,
+        "messages": len(messages),
+        "mtime": st.st_mtime,
+        "size": int(st.st_size),
+    }
+    if len(_FILE_CACHE) >= _FILE_CACHE_MAX:
+        # descarta a quarta parte mais antiga (dict preserva a ordem de insercao)
+        for old_key in list(_FILE_CACHE)[: max(1, len(_FILE_CACHE) // 4)]:
+            _FILE_CACHE.pop(old_key, None)
+    _FILE_CACHE[key] = dict(desc)
+    return desc
+
+
+def clear_list_caches() -> None:
+    """Zera os caches de listagem (testes / apos gravar um autosave)."""
+    _LIST_CACHE.clear()
+    _FILE_CACHE.clear()
+
+
 def list_session_autosaves(directory: str) -> List[Dict[str, Any]]:
     """Autosaves por sessao (um arquivo por conversa), prontos para a lista.
 
@@ -880,29 +954,25 @@ def list_session_autosaves(directory: str) -> List[Dict[str, Any]]:
     base = session_autosave_dir(directory)
     if not os.path.isdir(base):
         return []
-    found: List[Dict[str, Any]] = []
     try:
         names = sorted(os.listdir(base))
     except OSError:
         return []
-    for name in names:
-        if not name.endswith(".json") or name.startswith("."):
+    paths = [os.path.join(base, n) for n in names
+             if n.endswith(".json") and not n.startswith(".")]
+    sig = _files_signature(paths)
+    cached = _LIST_CACHE.get(base)
+    now = time.time()
+    if cached and cached[0] == sig and (now - cached[1]) < _LIST_CACHE_TTL_S:
+        return [dict(item) for item in cached[2]]
+    found: List[Dict[str, Any]] = []
+    for name, path in zip([n for n in names if n.endswith(".json") and not n.startswith(".")], paths):
+        desc = _read_autosave_cached(path)
+        if desc is None:
             continue
-        path = os.path.join(base, name)
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (OSError, ValueError):
-            continue
-        info = data.get("info") if isinstance(data, dict) else None
-        messages = data.get("messages") if isinstance(data, dict) else None
-        if not isinstance(info, dict) or not isinstance(messages, list) or not messages:
-            continue
-        try:
-            mtime = os.path.getmtime(path)
-            size = os.path.getsize(path)
-        except OSError:
-            continue
+        info = desc["info"]
+        mtime = desc["mtime"]
+        size = desc["size"]
         stamp = datetime.datetime.fromtimestamp(mtime)
         found.append({
             "path": path,
@@ -911,7 +981,7 @@ def list_session_autosaves(directory: str) -> List[Dict[str, Any]]:
             "kind": "autosave-session",
             "title": info.get("title") or "",
             "session_id": info.get("id") or name[:-5],
-            "messages": len(messages),
+            "messages": desc["messages"],
             "date": stamp.strftime("%Y-%m-%d"),
             "time": stamp.strftime("%H:%M:%S"),
             "datetime": stamp.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -921,6 +991,7 @@ def list_session_autosaves(directory: str) -> List[Dict[str, Any]]:
             "valid": True,
         })
     found.sort(key=lambda item: item["timestamp"], reverse=True)
+    _LIST_CACHE[base] = (sig, now, [dict(item) for item in found])
     return found
 
 
@@ -1061,6 +1132,73 @@ FREE_TIER_SAFE_TOKENS = 130_000
 #: ferramentas e a proxima resposta.
 CONTEXT_BUDGET_RATIO = 0.85
 
+#: Ajuste 23/10/2026 (sem bump) — LIMITE PARA COMPACTAR.
+#:
+#: A compactacao MANUAL resolve bem uma sessao **pouco** acima do
+#: orcamento (segundos). Para um autosave gigante (os reais chegam a
+#: 9,5 MB / ~2,6 milhoes de tokens), compactar custa dezenas de segundos
+#: e o resultado e' um resumo — enquanto aparar as mensagens mais antigas
+#: leva milissegundos e preserva a conversa recente. Acima desta razao
+#: sobre o orcamento, o restore APARA antes de importar (import unico).
+COMPACT_MAX_RATIO = 1.25
+
+#: Tempo maximo esperando a compactacao manual. Antes: 120 s (o usuario
+#: ficava ~2 min olhando "Restaurando…" quando a compactacao travava).
+#: Depois disso, aparar e reimportar e' sempre mais rapido.
+COMPACT_WAIT_S = 30.0
+
+#: Intervalo entre consultas de status da compactacao (era 3 s).
+COMPACT_POLL_S = 1.0
+
+#: Cache (em processo) do contexto dos modelos — evita um
+#: `opencode api get /api/model` por restore (~0,5 s cada).
+_MODEL_CACHE: Dict[Tuple[str, str, str], Tuple[float, int]] = {}
+_MODEL_CACHE_TTL_S = 900.0
+
+#: Cache (em processo) das amostras de id nativos — evita um
+#: `opencode session list` por restore (~0,4 s cada).
+_ID_SHAPE_CACHE: Dict[str, Tuple[float, List[str]]] = {}
+_ID_SHAPE_TTL_S = 900.0
+
+
+def native_id_samples_cached(binary: str,
+                            env: Optional[Dict[str, str]] = None,
+                            ) -> List[str]:
+    """Ids nativos vivos (amostras), com cache em processo (v0.7.5+).
+
+    O restore usava `list_sessions()` so para colher amostras de id — um
+    processo `opencode session list` a cada restauracao (~0,4 s). O
+    componente de tempo dos ids nao precisa ser fresco: so precisa ser
+    plausivel para o gateway.
+    """
+    key = str(binary or "opencode")
+    hit = _ID_SHAPE_CACHE.get(key)
+    now = time.time()
+    if hit and (now - hit[0]) < _ID_SHAPE_TTL_S:
+        return list(hit[1])
+    samples: List[str] = []
+    try:
+        samples = [
+            str(s.get("id") or "")
+            for s in list_sessions(binary, env=env)
+            if str(s.get("id") or "")
+        ]
+    except Exception:
+        samples = []
+    _ID_SHAPE_CACHE[key] = (time.time(), list(samples))
+    return list(samples)
+
+
+def clear_restore_caches() -> None:
+    """Zera os caches de metadados do motor (testes / troca de binario)."""
+    _MODEL_CACHE.clear()
+    _ID_SHAPE_CACHE.clear()
+    try:
+        _LIST_CACHE.clear()
+        _FILE_CACHE.clear()
+    except NameError:  # definidos mais abaixo no modulo
+        pass
+
 
 def estimate_tokens(payload: Dict[str, Any]) -> int:
     """Estimativa de tokens do payload (heuristica ~3,5 caracteres/token).
@@ -1079,12 +1217,18 @@ def estimate_tokens(payload: Dict[str, Any]) -> int:
 
 
 def model_context_limit(binary: str, model: Dict[str, Any],
-                        env: Optional[Dict[str, str]] = None) -> int:
+                        env: Optional[Dict[str, str]] = None,
+                        use_cache: bool = True) -> int:
     """Contexto (em tokens) do modelo da sessao; 0 quando desconhecido."""
     pid = str((model or {}).get("providerID") or "")
     mid = str((model or {}).get("id") or "")
     if not pid or not mid:
         return 0
+    key = (str(binary or "opencode"), pid, mid)
+    if use_cache:
+        hit = _MODEL_CACHE.get(key)
+        if hit and (time.time() - hit[0]) < _MODEL_CACHE_TTL_S:
+            return hit[1]
     try:
         r = _run([binary, "api", "get", "/api/model"], env=env, timeout=60)
         data = json.loads(r.stdout or "[]")
@@ -1096,9 +1240,11 @@ def model_context_limit(binary: str, model: Dict[str, Any],
             continue
         if item.get("providerID") == pid and item.get("id") == mid:
             try:
-                return int((item.get("limit") or {}).get("context") or 0)
+                limit = int((item.get("limit") or {}).get("context") or 0)
             except (TypeError, ValueError):
                 return 0
+            _MODEL_CACHE[key] = (time.time(), limit)
+            return limit
     return 0
 
 
@@ -1164,12 +1310,18 @@ def _compaction_status(binary: str, session_id: str,
 
 def compact_session(binary: str, session_id: str,
                     env: Optional[Dict[str, str]] = None,
-                    wait_s: int = 120) -> bool:
+                    wait_s: float = COMPACT_WAIT_S,
+                    interval: float = COMPACT_POLL_S) -> bool:
     """Roda a compactacao MANUAL da sessao e espera terminar.
 
     A compactacao manual nao sofre o bloqueio do free tier (o caminho
     automatico e' que e' recusado). Devolve True quando o motor reporta
     `completed`.
+
+    Ajuste 23/10/2026: espera de 30 s (era 120 s) e consulta de 1 s (era
+    3 s). A compactacao de uma sessao que cabe logo no orcamento termina
+    em poucos segundos; se em 30 s nao terminou, aparar e' mais rapido do
+    que continuar esperando.
     """
     try:
         r = _run([binary, "api", "post", f"/api/session/{session_id}/compact",
@@ -1178,14 +1330,14 @@ def compact_session(binary: str, session_id: str,
         return False
     if r.returncode != 0:
         return False
-    deadline = time.time() + max(10, wait_s)
+    deadline = time.time() + max(5.0, float(wait_s))
     while time.time() < deadline:
         status = _compaction_status(binary, session_id, env)
         if status == "completed":
             return True
         if status == "failed":
             return False
-        time.sleep(3)
+        time.sleep(max(0.2, float(interval)))
     return False
 
 
@@ -1197,6 +1349,60 @@ def delete_session(binary: str, session_id: str,
         return r.returncode == 0
     except SessionError:
         return False
+
+
+def plan_restore(payload: Dict[str, Any], binary: str,
+                 env: Optional[Dict[str, str]] = None,
+                 ratio: float = COMPACT_MAX_RATIO) -> Dict[str, Any]:
+    """Decide o caminho do restore **antes** de importar.
+
+    Tres caminhos, do mais barato para o mais caro:
+
+    - ``none``    — cabe no orcamento: importar direto;
+    - ``compact`` — ate 25% acima: importar e compactar (manual);
+    - ``trim``    — muito acima: **aparar antes** e importar UMA vez.
+
+    Antes, TODO restore importava o payload inteiro e so depois decidia;
+    com um autosave de 9,5 MB (~2,6 milhoes de tokens) isso significava
+    importar tudo, esperar a compactacao e, se falhasse, importar de novo
+    o aparado. Agora o caso comum (conversa longa) apara primeiro.
+    """
+    model = dict(payload.get("info") or {}).get("model") or {}
+    budget = context_budget(binary, model, env)
+    before = estimate_tokens(payload)
+    plan: Dict[str, Any] = {
+        "action": "none",
+        "tokens_before": before,
+        "budget": budget,
+    }
+    if budget <= 0 or before <= budget:
+        return plan
+    limit = int(budget * max(1.0, float(ratio)))
+    plan["compact_limit"] = limit
+    plan["action"] = "compact" if before <= limit else "trim"
+    return plan
+
+
+def prepare_payload_for_restore(payload: Dict[str, Any], binary: str,
+                                env: Optional[Dict[str, str]] = None,
+                                ratio: float = COMPACT_MAX_RATIO,
+                                ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Aplica o plano ANTES do import. Devolve ``(payload, plano)``.
+
+    No caminho ``trim`` o payload ja sai aparado — o import grava apenas o
+    que sera usado. O plano volta com ``action="trimmed"`` e
+    ``messages_dropped`` para a interface informar o usuario.
+    """
+    plan = plan_restore(payload, binary, env=env, ratio=ratio)
+    if plan["action"] != "trim":
+        return payload, plan
+    trimmed, dropped = trim_payload(payload, int(plan["budget"]))
+    plan.update({
+        "action": "trimmed",
+        "messages_dropped": dropped,
+        "tokens_after": estimate_tokens(trimmed),
+    })
+    return trimmed, plan
 
 
 def fit_to_context(binary: str, session_id: str, payload: Dict[str, Any],
@@ -1493,24 +1699,22 @@ def list_autosaves(directory: str) -> List[Dict[str, Any]]:
     # alcanca as conversas anteriores.
     live_paths = autosave_paths(directory)
     history_paths = autosave_history_paths(directory)
-    for path in live_paths + history_paths:
+    all_paths = live_paths + history_paths
+    # Ajuste 23/10/2026: cache por (mtime, tamanho). Reler 21 MB de JSON do
+    # Drive a cada abertura custava ~1,5 s e atrasava a pergunta de retomada.
+    sig = _files_signature(all_paths)
+    cached = _LIST_CACHE.get(directory)
+    now = time.time()
+    if cached and cached[0] == sig and (now - cached[1]) < _LIST_CACHE_TTL_S:
+        return [dict(item) for item in cached[2]]
+    for path in all_paths:
         if not os.path.exists(path):
             continue
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (OSError, ValueError):
+        desc = _read_autosave_cached(path)
+        if desc is None:
             continue  # corrompido/truncado: ignora e segue para o proximo
-        if not isinstance(data, dict):
-            continue
-        info = data.get("info")
-        messages = data.get("messages")
-        if not isinstance(info, dict) or not isinstance(messages, list) or not messages:
-            continue
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            mtime = time.time()
+        info = desc["info"]
+        mtime = desc["mtime"]
         found.append({
             "path": path,
             # v0.7.1: o nome DEVIA vir prefixado com "autosave/" — e' o
@@ -1525,12 +1729,13 @@ def list_autosaves(directory: str) -> List[Dict[str, Any]]:
             "history": path in history_paths,
             "session_id": info.get("id", ""),
             "title": info.get("title", ""),
-            "messages": len(messages),
+            "messages": desc["messages"],
             "saved_at": mtime,
             "saved_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
             "saved_at_local": time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(mtime)),
         })
     found.sort(key=lambda item: item["saved_at"], reverse=True)
+    _LIST_CACHE[directory] = (sig, now, [dict(item) for item in found])
     return found
 
 

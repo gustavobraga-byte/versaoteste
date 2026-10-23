@@ -1588,6 +1588,21 @@ _BACKUPS_CACHE: dict = {"ts": 0.0, "items": None}
 _BACKUPS_CACHE_TTL = 45.0  # s
 
 
+def _warm_autosave_lists(directory: str) -> None:
+    """Aquece as listagens de autosave em segundo plano (v0.7.5+).
+
+    A pergunta de retomada aparece ~1 s depois de a pagina carregar. Sem
+    este aquecimento, a PRIMEIRA chamada de `/api/autosave` relia e
+    reparseava ~20 MB de JSON no Drive (1,0 s; 6 ms com cache) e a
+    pergunta chegava atrasada.
+    """
+    try:
+        _session_restore.list_autosaves(directory)
+        _session_restore.list_session_autosaves(directory)
+    except Exception:  # noqa: BLE001 — aquecimento nunca derruba o boot
+        pass
+
+
 def _list_backups_cached(directory: str | None = None,
                          autosave_dir: str | None = None,
                          force: bool = False) -> list:
@@ -1884,6 +1899,13 @@ def start_wrapper_server():
     # v0.7.0: pasta dos autosaves (3 ultimos, rotacionados)
     AUTOSAVE_DIR = os.path.join(DRIVE_BACKUP_DIR, "autosave")
     os.makedirs(AUTOSAVE_DIR, exist_ok=True)
+    # v0.7.5+: aquece a listagem em segundo plano (a pergunta de retomada
+    # nao pode esperar a leitura de ~20 MB do Drive).
+    try:
+        threading.Thread(target=_warm_autosave_lists, args=(AUTOSAVE_DIR,),
+                         daemon=True, name="ufvai-autosave-warm").start()
+    except Exception:  # noqa: BLE001
+        pass
     print(f"📁 Backup dir: {DRIVE_BACKUP_DIR}")
     print(f"💾 Autosave dir: {AUTOSAVE_DIR}")
     
@@ -3361,15 +3383,18 @@ def start_wrapper_server():
                 # com modelos gratuitos (uma sessao NOVA funciona, porque o
                 # proprio motor cria o id). Antes, a retomada gerava
                 # `ses_` + 16 hex e quebrava TODA sessao restaurada.
-                _id_samples: list[str] = []
+                #
+                # Ajuste 23/10/2026 (sem bump) — VELOCIDADE: as amostras de
+                # id vem de cache em processo (antes: um `opencode session
+                # list` a cada restore).
+                _t0 = time.time()
+                _timings: dict = {}
                 try:
-                    _id_samples = [
-                        str(_s.get("id") or "")
-                        for _s in _session_restore.list_sessions(
-                            _opencode_bin or "opencode", env=_env)
-                    ]
+                    _id_samples = _session_restore.native_id_samples_cached(
+                        _opencode_bin or "opencode", env=_env)
                 except Exception as _exc:  # best-effort: sem amostras, padrao oficial
                     logger.warning("Restore: sem amostras de id nativas (%s)", _exc)
+                    _id_samples = []
                 try:
                     payload, src_format = _session_restore.prepare_import_payload(
                         tmp_restore,
@@ -3380,8 +3405,35 @@ def start_wrapper_server():
                 except _session_restore.SessionError as exc:
                     self._json(400, {"error": str(exc)})
                     return
+                _timings["prepare_ms"] = int((time.time() - _t0) * 1000)
+
+                # 2.0 Ajuste 23/10/2026 (sem bump) — PLANEJAR ANTES DE IMPORTAR.
+                # Antes: importava o payload INTEIRO (os autosaves reais tem
+                # 9,5 MB / ~2,6 milhoes de tokens), esperava a compactacao
+                # manual (ate 120 s) e, se ela falhasse, importava de novo o
+                # aparado. Agora:
+                #   - cabe no orcamento ......... importa direto;
+                #   - ate 25% acima ............. importa e compacta (rapido);
+                #   - muito acima ............... APARA e importa UMA vez.
+                _t_plan = time.time()
+                try:
+                    payload, plan = _session_restore.prepare_payload_for_restore(
+                        payload, _opencode_bin or "opencode", env=_env)
+                except Exception as _plan_err:  # fail-open: importa inteiro
+                    logger.warning("Restore: plano de contexto falhou: %s", _plan_err)
+                    plan = {"action": "none"}
+                _timings["plan_ms"] = int((time.time() - _t_plan) * 1000)
+                fit_info: dict = dict(plan)
+                if plan.get("action") == "trimmed":
+                    logger.info(
+                        "Restore: payload aparado ANTES do import "
+                        "(%s→%s tokens, %s mensagens descartadas, orcamento %s)",
+                        plan.get("tokens_before"), plan.get("tokens_after"),
+                        plan.get("messages_dropped"), plan.get("budget"),
+                    )
 
                 # 3. Importar (ids renovados evitam a colisao que dava HTTP 500)
+                _t_imp = time.time()
                 try:
                     session_id = _session_restore.import_session(
                         _opencode_bin or "opencode", payload, env=_env, timeout=180,
@@ -3394,6 +3446,7 @@ def start_wrapper_server():
                         )
                     })
                     return
+                _timings["import_ms"] = int((time.time() - _t_imp) * 1000)
 
                 parse_error = ""
                 import_stdout = f"Imported session: {session_id}"
@@ -3424,24 +3477,35 @@ def start_wrapper_server():
                 # restaurada, enquanto uma sessao nova funcionava.
                 # Compactacao MANUAL (nao bloqueada) ou, em ultimo caso,
                 # reimportar aparado.
-                fit_info: dict = {}
-                try:
-                    fit_info = _session_restore.fit_to_context(
-                        _opencode_bin or "opencode", session_id, payload, env=_env,
-                    )
-                    new_session_id = str(fit_info.get("session_id") or "")
-                    if new_session_id and new_session_id != session_id:
-                        session_id = new_session_id
-                    if fit_info.get("action") not in ("none", None):
-                        logger.info(
-                            "Restore: sessao ajustada ao contexto (%s, %s→%s tokens, "
-                            "orcamento %s)", fit_info.get("action"),
-                            fit_info.get("tokens_before"), fit_info.get("tokens_after"),
-                            fit_info.get("budget"),
-                        )
-                except Exception as fit_err:  # fail-open: o import ja esta valido
-                    logger.warning("Restore: ajuste ao contexto falhou: %s", fit_err)
-                    fit_info = {"action": "error", "error": str(fit_err)[:200]}
+                if plan.get("action") == "compact":
+                    _t_fit = time.time()
+                    try:
+                        if _session_restore.compact_session(
+                                _opencode_bin or "opencode", session_id, env=_env):
+                            fit_info["action"] = "compacted"
+                            fit_info["tokens_after"] = 0  # o motor nao informa
+                        else:
+                            # Compactacao nao terminou em 30 s: aparar e
+                            # reimportar e' mais rapido do que esperar.
+                            trimmed, dropped = _session_restore.trim_payload(
+                                payload, int(fit_info.get("budget") or 0))
+                            new_id = _session_restore.import_session(
+                                _opencode_bin or "opencode", trimmed, env=_env,
+                                timeout=180)
+                            _session_restore.delete_session(
+                                _opencode_bin or "opencode", session_id, env=_env)
+                            fit_info.update({
+                                "session_id": new_id,
+                                "action": "trimmed",
+                                "messages_dropped": dropped,
+                                "tokens_after": _session_restore.estimate_tokens(trimmed),
+                            })
+                            session_id = new_id
+                    except Exception as fit_err:  # fail-open: o import ja esta valido
+                        logger.warning("Restore: ajuste ao contexto falhou: %s", fit_err)
+                        fit_info["action"] = "error"
+                        fit_info["error"] = str(fit_err)[:200]
+                    _timings["fit_ms"] = int((time.time() - _t_fit) * 1000)
 
                 # 3. v0.5.1.6 — REINICIAR ttyd com `opencode -s <session_id>`
                 # Bug antigo: importava a sessão mas o ttyd continuava com --prompt,
@@ -3451,6 +3515,7 @@ def start_wrapper_server():
                 ttyd_restarted = False
                 ttyd_restart_error = ""
                 if session_id:
+                    _t_ttyd = time.time()
                     try:
                         _stop_terminal()
 
@@ -3484,10 +3549,19 @@ def start_wrapper_server():
                     except Exception as restart_err:
                         ttyd_restart_error = str(restart_err)[:200]
                         logger.error("Falha ao reiniciar ttyd com sessão %s: %s", session_id, restart_err)
+                    _timings["ttyd_ms"] = int((time.time() - _t_ttyd) * 1000)
 
                 # 4. Respond
                 try:
                     _tel_event("session_restored", {})
+                except Exception:
+                    pass
+                _timings["total_ms"] = int((time.time() - _t0) * 1000)
+                try:
+                    logger.info(
+                        "Restore concluido em %sms (%s) — %s",
+                        _timings["total_ms"], fname, _timings,
+                    )
                 except Exception:
                     pass
                 self._json(200, {
@@ -3500,6 +3574,8 @@ def start_wrapper_server():
                     "source_format": src_format,
                     "ttyd_restarted": ttyd_restarted,
                     "ttyd_restart_error": ttyd_restart_error,
+                    "timings": _timings,
+                    "elapsed_ms": _timings["total_ms"],
                     "message": (
                         "Sessão importada e ttyd reiniciado com opencode -s "
                         + session_id if ttyd_restarted else

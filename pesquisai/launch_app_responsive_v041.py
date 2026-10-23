@@ -2521,14 +2521,18 @@ def create_wrapper_html(
           const d = await r.json();
           if (d.ok) {
             if (d.ttyd_restarted) {
-              toast("✅ Sessão " + (d.session_id || "") + " importada + ttyd reiniciado!", "ok");
-              // v0.5.1.6: aguardar 3.5s para o ttyd reiniciar antes de recarregar
-              // (o ttyd precisa reabrir o WebSocket + handshake do opencode)
-              setTimeout(() => location.reload(), 3500);
+              const dropped = (d.fit && d.fit.messages_dropped) || 0;
+              const base = (dict["restore.done"] || "Sessão restaurada");
+              toast("✅ " + base + (dropped
+                ? " · " + ((dict["restore.partial"] || "{n} mensagens antigas omitidas para caber no contexto").replace("{n}", dropped))
+                : ""), "ok");
+              // v0.7.5+: o backend já espera a porta do ttyd abrir — o
+              // reload pode ser imediato (antes: 3,5 s fixos de espera).
+              setTimeout(() => location.reload(), 1200);
             } else {
               toast("⚠️ Importado, mas ttyd não reiniciou. Recarregue manualmente (Ctrl+Shift+R).", "warn");
               // Fallback: tentar reload após 1.5s
-              setTimeout(() => location.reload(), 1500);
+              setTimeout(() => location.reload(), 1200);
             }
           } else {
             toast("❌ " + (d.error || "Erro"), "err");
@@ -4575,8 +4579,15 @@ def create_wrapper_html(
             // v0.7.5: o usuário RESPONDEU (continuar). Não reoferece nesta
             // execução — nem depois do reload que reconecta o terminal.
             markAutosaveResumeOffered();
-            toast("✅ " + (autosaveDict()["autosave.resume.done"] || "Sessão restaurada"), "ok");
-            setTimeout(() => location.reload(), 3500);
+            const dropped = (d.fit && d.fit.messages_dropped) || 0;
+            const done = autosaveDict()["autosave.resume.done"] || "Sessão restaurada";
+            const partial = dropped
+              ? " · " + ((restoreDict()["restore.partial"] ||
+                  "{n} mensagens antigas omitidas para caber no contexto").replace("{n}", dropped))
+              : "";
+            toast("✅ " + done + partial, "ok");
+            // v0.7.5+: o backend já espera a porta do ttyd — reload imediato.
+            setTimeout(() => location.reload(), 1200);
             return;
           }
           lastError = (d && d.error) || "Falha ao restaurar";
@@ -5318,6 +5329,8 @@ def create_wrapper_html(
             "autosave.resume.again": "Retomar",
             "restore.invalid": "corrompido",
             "restore.confirm": "Restaurar o backup de {when}?",
+            "restore.done": "Sessão restaurada",
+            "restore.partial": "{n} mensagens antigas omitidas para caber no contexto",
             "restore.restoring": "Restaurando {when}…",
             "restore.delete": "apagar",
             "restore.delete_confirm": "Apagar o backup de {when}? Esta ação não pode ser desfeita.",
@@ -5463,6 +5476,8 @@ def create_wrapper_html(
             "autosave.resume.again": "Resume",
             "restore.invalid": "corrupted",
             "restore.confirm": "Restore the backup from {when}?",
+            "restore.done": "Session restored",
+            "restore.partial": "{n} older messages omitted to fit the context",
             "restore.restoring": "Restoring {when}…",
             "restore.delete": "delete",
             "restore.delete_confirm": "Delete the backup from {when}? This action cannot be undone.",
@@ -5608,6 +5623,8 @@ def create_wrapper_html(
             "autosave.resume.again": "Reanudar",
             "restore.invalid": "corrupto",
             "restore.confirm": "¿Restaurar la copia del {when}?",
+            "restore.done": "Sesión restaurada",
+            "restore.partial": "{n} mensajes antiguos omitidos para caber en el contexto",
             "restore.restoring": "Restaurando {when}…",
             "restore.delete": "borrar",
             "restore.delete_confirm": "¿Borrar la copia del {when}? Esta acción no se puede deshacer.",
@@ -5753,6 +5770,8 @@ def create_wrapper_html(
             "autosave.resume.again": "Reprendre",
             "restore.invalid": "corrompu",
             "restore.confirm": "Restaurer la sauvegarde du {when} ?",
+            "restore.done": "Session restaurée",
+            "restore.partial": "{n} messages anciens omis pour tenir dans le contexte",
             "restore.restoring": "Restauration de {when}…",
             "restore.delete": "supprimer",
             "restore.delete_confirm": "Supprimer la sauvegarde du {when} ? Cette action est irréversible.",
@@ -5898,6 +5917,8 @@ def create_wrapper_html(
             "autosave.resume.again": "继续",
             "restore.invalid": "已损坏",
             "restore.confirm": "恢复 {when} 的备份？",
+            "restore.done": "会话已恢复",
+            "restore.partial": "为适应上下文，已省略 {n} 条较早的消息",
             "restore.restoring": "正在恢复 {when}…",
             "restore.delete": "删除",
             "restore.delete_confirm": "删除 {when} 的备份？此操作无法撤销。",
