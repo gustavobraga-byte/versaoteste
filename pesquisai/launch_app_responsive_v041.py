@@ -60,6 +60,7 @@ Compatibilidade: PesquisAI v0.2.1+ (usa /api/theme, /api/lang, /api/backup,
 from __future__ import annotations
 
 import os
+import secrets as _secrets
 import sys
 from pathlib import Path
 from typing import Optional
@@ -535,6 +536,7 @@ def create_wrapper_html(
     terminal_url: str,
     drive_url: str,
     session_token: str | None = None,
+    boot_id: str | None = None,
 ) -> str:
     """Cria a versão v0.4.1 do wrapper HTML do PesquisAI.
 
@@ -548,10 +550,15 @@ def create_wrapper_html(
     Args:
         terminal_url: URL do terminal ttyd.
         drive_url: URL do Google Drive.
+        session_token: token de sessão exigido pelas APIs (v0.6.0).
+        boot_id: identificador DESTA execução do UFVAI. O frontend usa-o
+            para escopar as telas de abertura ("uma vez por execução").
+            None gera um novo (chamadas repetidas = nova execução).
 
     Returns:
         String HTML completa.
     """
+    boot_id = str(boot_id or _secrets.token_hex(8))
     # IMPORTANTE: usamos string normal (sem f-string) e placeholders
     # únicos (__TERMINAL_URL__, etc.) para evitar conflito com as
     # expressões {data-i18n} e {{chaves}} do CSS que estão dentro do
@@ -583,7 +590,9 @@ def create_wrapper_html(
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Montserrat:wght@600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <!-- v0.7.5: o CSS do xterm era baixado do CDN e NÃO era usado (o terminal
+       roda dentro do iframe do ttyd). Removido: era uma requisição
+       render-blocking no caminho crítico da abertura. -->
   <!-- github-markdown-css: estilização markdown para o modal de Diretrizes -->
   <link rel="preload" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.0/github-markdown-dark.min.css" as="style">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.0/github-markdown-dark.min.css">
@@ -1775,47 +1784,45 @@ def create_wrapper_html(
     const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 ano
 
     // ════════════════════════════════════════════════════════════
-    // v0.7.5 — ABERTURA: UMA VEZ POR SESSÃO/ABA
+    // v0.7.5 — ABERTURA: UMA VEZ POR EXECUÇÃO DO UFVAI
     // ════════════════════════════════════════════════════════════
-    // Problema relatado (23/10/2026): a tela de e-mail/"Bem-vindo" e a
-    // pergunta "Continuar de onde parei" reapareciam VÁRIAS vezes na
-    // mesma entrada. O UFVAI roda no proxy/iframe do Colab, onde o
-    // sessionStorage pode ser particionado e o cookie de terceiros
-    // bloqueado — a marca de "já mostrei" se perdia a cada recarga
-    // (e a abertura faz 2–3 recargas: idioma → terminal → restore).
+    // Problema relatado (23/10/2026): as telas de abertura apareciam
+    // VÁRIAS vezes na mesma entrada (o iframe do Colab particiona o
+    // sessionStorage e bloqueia cookies) e, depois do ajuste anterior,
+    // deixavam de aparecer em entradas NOVAS: a marca ficava 12 h no
+    // localStorage — inclusive a pergunta "Continuar de onde parei".
     //
-    // Correção: a marca vai para TRÊS camadas (sessionStorage +
-    // localStorage com validade + cookie de sessão) e é gravada ANTES
-    // de a tela aparecer. Recargas internas não a consomem; só o
-    // botão ↻ (reoferecer o restore) limpa a marca "resume".
-    const UFVAI_OPENING_TTL_MS = 12 * 60 * 60 * 1000; // 12 h (fallback)
+    // Correção: a marca é escopada pelo ID DESTA EXECUÇÃO, injetado pelo
+    // servidor no HTML. Recargas da mesma execução (idioma → terminal →
+    // restore) NÃO repetem as telas; uma nova execução do UFVAI (novo
+    // runtime/novo launch) tem outro ID e volta a mostrá-las. A marca vai
+    // para TRÊS camadas (sessionStorage + localStorage + cookie) e é
+    // gravada ANTES de exibir. Só o botão ↻ limpa a marca "resume".
+    const UFVAI_BOOT_ID = "{__BOOT_ID__}" || "boot";
+    function ufvaiOpeningKey(key) { return "ufvai_seen_" + key; }
     function ufvaiOpeningGet(key) {
-      const name = "ufvai_seen_" + key;
-      try { if (sessionStorage.getItem(name) === "1") return true; } catch (e) {}
-      try {
-        const raw = localStorage.getItem(name);
-        if (raw) {
-          const ts = parseInt(raw, 10);
-          if (!ts || (Date.now() - ts) < UFVAI_OPENING_TTL_MS) return true;
-          try { localStorage.removeItem(name); } catch (e2) {}
-        }
-      } catch (e) {}
+      const name = ufvaiOpeningKey(key);
+      try { if (sessionStorage.getItem(name) === UFVAI_BOOT_ID) return true; } catch (e) {}
+      try { if (localStorage.getItem(name) === UFVAI_BOOT_ID) return true; } catch (e) {}
       try {
         const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
-        if (m && decodeURIComponent(m[1]) === "1") return true;
+        if (m && decodeURIComponent(m[1]) === UFVAI_BOOT_ID) return true;
       } catch (e) {}
       return false;
     }
     function ufvaiOpeningMark(key) {
-      const name = "ufvai_seen_" + key;
-      try { sessionStorage.setItem(name, "1"); } catch (e) {}
-      try { localStorage.setItem(name, String(Date.now())); } catch (e) {}
+      const name = ufvaiOpeningKey(key);
+      try { sessionStorage.setItem(name, UFVAI_BOOT_ID); } catch (e) {}
+      try { localStorage.setItem(name, UFVAI_BOOT_ID); } catch (e) {}
       // cookie de sessão (sem expires): sobrevive a recargas, some ao
       // fechar o navegador — é o fallback quando os storages falham.
-      try { document.cookie = name + "=1; path=/; SameSite=Lax"; } catch (e) {}
+      try {
+        document.cookie = name + "=" + encodeURIComponent(UFVAI_BOOT_ID) +
+          "; path=/; SameSite=Lax";
+      } catch (e) {}
     }
     function ufvaiOpeningClear(key) {
-      const name = "ufvai_seen_" + key;
+      const name = ufvaiOpeningKey(key);
       try { sessionStorage.removeItem(name); } catch (e) {}
       try { localStorage.removeItem(name); } catch (e) {}
       try {
@@ -1867,7 +1874,10 @@ def create_wrapper_html(
       if (nav.startsWith("en")) return "en_US";
       if (nav.startsWith("es")) return "es_ES";
       if (nav.startsWith("fr")) return "fr_FR";
-      if (nav.startsWith("zh")) return "en_US";
+      // v0.7.5: zh_CN é suportado desde a v0.6.25. Antes, um navegador em
+      // chinês era forçado para en_US — o frontend e o backend divergiam
+      // a cada entrada e o "sync" de idioma reiniciava o terminal.
+      if (nav.startsWith("zh")) return "zh_CN";
       // 5. Padrão
       return "pt_BR";
     }
@@ -1928,6 +1938,10 @@ def create_wrapper_html(
       // o restart (~3-4s) e o iframe reconectava num terminal morto/antigo.
       // v0.6.5: splash imediato ("Reiniciando terminal…") durante o restart;
       // se falhar, splash some + toast de erro (sem reload às cegas).
+      if (!LANGS[lang]) lang = "pt_BR";
+      // v0.7.5: escolher o idioma que já está ativo não reinicia nada
+      // (antes: matava o ttyd e criava outra sessão sem necessidade).
+      if (lang === _currentLang) { closeLangMenu(); return; }
       setCookie(LANG_COOKIE, lang);
       const dict = I18N[lang] || I18N["pt_BR"];
       toast("🌐 " + (dict["languages.switched_to"] || lang), "info");
@@ -1942,7 +1956,8 @@ def create_wrapper_html(
         const resp = await fetch(BASE + "/api/lang", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lang: lang }),
+          // v0.7.5: restart explícito — o backend reabre a sessão atual.
+          body: JSON.stringify({ lang: lang, restart: true }),
           signal: ctrl.signal
         });
         clearTimeout(timer);
@@ -4309,7 +4324,7 @@ def create_wrapper_html(
           const r = await fetch(BASE + "/api/ttyd_ready", { cache: "no-store" });
           if (r.ok) { const d = await r.json(); if (d.ready) return true; }
         } catch (e) {}
-        await new Promise(z => setTimeout(z, 600));
+        await new Promise(z => setTimeout(z, 250));
       }
       return false;
     }
@@ -4487,39 +4502,26 @@ def create_wrapper_html(
       }
     }
 
-    // ── v0.7.3 — a pergunta de retomada: UMA VEZ na entrada, sem loop ──
-    // BUG (v0.7.1): "Continuar de onde parei" fazia location.reload()
-    // -> a página recarregava -> checkAutosaveResume() oferecia a
-    // pergunta DE NOVO -> o usuário clicava de novo -> LOOP INFINITO.
-    // BUG (v0.7.2): a flag "oferecida" ficava no sessionStorage da aba
-    // para sempre -> QUALQUER recarga posterior (mesmo um F5 do autor)
-    // nunca mais perguntava -> o autor entrou e a pergunta NAO
-    // apareceu ("deve pedir uma vez sem loop").
-    // v0.7.3 — estado em sessionStorage:
-    //   "restored" -> pula a carga seguinte (o reload do restore) e
-    //                 CONSOME o estado (a proxima entrada pergunta);
-    //   "new"      -> o usuário escolheu "Nova sessão": não pergunta
-    //                 de novo nesta aba;
-    //   (vazio)    -> entrada normal: PERGUNTA (uma vez).
+    // ── v0.7.5 — a pergunta de retomada: UMA VEZ por execução, sem loop ──
+    // Histórico: v0.7.1 "Continuar" recarregava e reoferecia (loop);
+    // v0.7.2 a flag ficava para sempre na aba (nunca mais perguntava);
+    // v0.7.3 tentou consumir o estado a cada carga (perguntava de novo);
+    // v0.7.5 usava 12 h de TTL no localStorage — uma nova entrada no MESMO
+    // dia não perguntava (bug "às vezes não aparece a pergunta").
+    //
+    // Correção: a marca é escopada por UFVAI_BOOT_ID (execução) e gravada
+    // nas 3 camadas ANTES de exibir. Recargas da MESMA execução não repetem;
+    // um novo launch (outro ID) volta a perguntar. O ↻ limpa a marca.
     // O menu "Restaurar" (calendário) continua disponível sempre.
-    const AUTOSAVE_RESUME_STATE = "ufvai_autosave_resume_state";
 
-    function autosaveResumeState() {
-      try { return sessionStorage.getItem(AUTOSAVE_RESUME_STATE) || ""; }
-      catch (e) { return ""; }
-    }
-
-    function setAutosaveResumeState(value) {
-      try {
-        if (value) sessionStorage.setItem(AUTOSAVE_RESUME_STATE, value);
-        else sessionStorage.removeItem(AUTOSAVE_RESUME_STATE);
-      } catch (e) {}
+    /** Marca a pergunta como já oferecida nesta execução. */
+    function markAutosaveResumeOffered() {
+      try { if (typeof ufvaiOpeningMark === "function") ufvaiOpeningMark("resume"); } catch (e) {}
     }
 
     /** v0.7.5 — reabrir a pergunta de retomada sob demanda (botão ↻). */
     async function reofferAutosaveResume() {
       try { if (typeof ufvaiOpeningClear === "function") ufvaiOpeningClear("resume"); } catch (e) {}
-      setAutosaveResumeState("");
       await checkAutosaveResume();
     }
 
@@ -4528,10 +4530,9 @@ def create_wrapper_html(
       const overlay = document.getElementById("autosave-overlay");
       const when = document.getElementById("autosave-when");
       if (!overlay) return;
-      // v0.7.5: a marca "resume" é gravada ANTES de exibir e NÃO é
-      // consumida pelas recargas internas (idioma/terminal/restore).
-      // Assim a pergunta aparece UMA vez por sessão; o botão ↻ limpa.
-      try { if (typeof ufvaiOpeningMark === "function") ufvaiOpeningMark("resume"); } catch (e) {}
+      // v0.7.5: marca ANTES de exibir — a recarga que reconecta o terminal
+      // não reoferece a pergunta (e um novo launch não é afetado).
+      markAutosaveResumeOffered();
       if (when) {
         const stamp = item.saved_at_local || item.saved_at_iso || "";
         when.textContent = (autosaveDict()["autosave.resume.when"] || "Autosave de") + " " + stamp;
@@ -4571,10 +4572,9 @@ def create_wrapper_html(
           });
           const d = await r.json();
           if (d && d.ok) {
-            // v0.7.5: a marca "resume" já foi gravada quando a pergunta
-            // foi exibida; o reload seguinte NÃO reoferece nada. A
-            // próxima sessão/aba (storage novo) volta a perguntar.
-            setAutosaveResumeState("restored");
+            // v0.7.5: o usuário RESPONDEU (continuar). Não reoferece nesta
+            // execução — nem depois do reload que reconecta o terminal.
+            markAutosaveResumeOffered();
             toast("✅ " + (autosaveDict()["autosave.resume.done"] || "Sessão restaurada"), "ok");
             setTimeout(() => location.reload(), 3500);
             return;
@@ -4590,18 +4590,18 @@ def create_wrapper_html(
     /** Iniciar uma nova sessão: descarta a pergunta e segue. */
     function autosaveResumeNew() {
       closeAutosaveResume();
-      // v0.7.5: a marca "resume" já existe (foi gravada ao exibir);
-      // mantemos o estado legado apenas por compatibilidade.
-      setAutosaveResumeState("new");
+      // v0.7.5: "Nova sessão" é uma RESPOSTA — não pergunta de novo nesta
+      // execução (antes o estado era "new" e sobrevivia a tudo).
+      markAutosaveResumeOffered();
     }
 
-    /** Na abertura: se houver autosave válido, pergunta UMA vez por sessão. */
+    /** Na abertura: se houver autosave válido, pergunta UMA vez por execução. */
     var _resumeWaitTries = 0;
     async function checkAutosaveResume() {
-      // v0.7.5: UMA vez por sessão/aba. A marca em 3 camadas sobrevive
-      // às 2–3 recargas da abertura (idioma → terminal → restore) e não
-      // é consumida; só o botão ↻ a limpa. Antes ("restored" consumido
-      // a cada load) a pergunta voltava em toda recarga.
+      // v0.7.5: a marca é por EXECUÇÃO (UFVAI_BOOT_ID). Recargas da mesma
+      // execução não repetem a pergunta; um novo launch (nova marca) volta
+      // a perguntar — antes o TTL de 12 h no localStorage suprimia a
+      // pergunta em entradas novas no mesmo dia.
       try {
         if (typeof ufvaiOpeningGet === "function" && ufvaiOpeningGet("resume")) return;
       } catch (e) {}
@@ -4642,7 +4642,7 @@ def create_wrapper_html(
       setAutosaveUI(autosaveEnabled());
       setAutosaveAllUI(autosaveAllSessions());
       if (autosaveEnabled()) startAutosaveTimer();
-      setTimeout(() => checkAutosaveResume(), 2500);
+      setTimeout(() => checkAutosaveResume(), 900);
       // Ao sair da aba, tenta gravar o estado (sendBeacon, não bloqueia)
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden" && autosaveEnabled() && !_autosaveBusy) {
@@ -4652,70 +4652,68 @@ def create_wrapper_html(
           } catch (e) {}
         }
       });
-      // v0.6.15: sincroniza prompt inicial com idioma detectado do navegador
-      // Se backend ainda está em pt_BR (bug pré-0.6.15) e frontend detectou en/es/fr/zh, reinicia ttyd automaticamente
+      // v0.6.15 — ADOÇÃO SILENCIOSA DO IDIOMA DO NAVEGADOR (v0.7.5)
+      // O backend sobe ANTES de o navegador existir e detecta o idioma pelo
+      // locale do servidor (no Colab: en_US). Se o navegador está em outro
+      // idioma, a versão anterior chamava setLang() → POST /api/lang →
+      // reiniciava o ttyd → location.reload(). Isso criava uma SEGUNDA
+      // sessão do motor (a conversa em andamento ficava na primeira),
+      // recarregava a página e podia engolir a pergunta de retomada.
       //
-      // Correção 23/10/2026: a sincronização NÃO pode rodar por cima das
-      // telas de abertura (Termos / "Bem-vindo de volta") nem repetir a
-      // cada recarga. Antes:
-      //   • cada recarga chamava setLang() → /api/lang (reinicia o ttyd) →
-      //     location.reload() → a tela de abertura aparecia de novo (o
-      //     usuário via "duas vezes" ou "várias vezes");
-      //   • a guarda vivia só em sessionStorage — em navegador/iframe que
-      //     bloqueia sessionStorage ela não existia.
-      // Agora: guarda dupla (sessionStorage + cookie) e espera as telas de
-      // abertura fecharem antes de reiniciar o terminal.
+      // Agora a divergência é resolvida SEM reiniciar nada:
+      // POST /api/lang {restart:false} apenas persiste o idioma (UI + TUI na
+      // próxima abertura). Sem splash, sem reload, sem tocar na sessão.
+      // A guarda (por execução) evita repetir o POST a cada recarga.
       try {
-        fetch(BASE + "/api/lang").then(r=>r.json()).then(d=>{
+        fetch(BASE + "/api/lang", { cache: "no-store" }).then(r => r.json()).then(d => {
           const backendLang = d && d.lang;
           if (!backendLang || backendLang === _currentLang) return;
           if (!LANGS[_currentLang]) return;
+          const syncVal = UFVAI_BOOT_ID + "|" + _currentLang;
           let synced = "";
           try { synced = sessionStorage.getItem("ufvai_lang_synced") || ""; } catch (e) {}
+          if (!synced) { try { synced = localStorage.getItem("ufvai_lang_synced") || ""; } catch (e) {} }
           if (!synced) synced = getCookie("ufvai_lang_synced") || "";
-          if (synced === _currentLang) return;
-          if (window._ufvaiLangSyncPending) return;
-          window._ufvaiLangSyncPending = true;
-          let tries = 0;
-          const _overlayOpen = () => {
-            const t = document.getElementById("terms-overlay");
-            const w = document.getElementById("welcome-overlay");
-            const a = document.getElementById("autosave-overlay");
-            return (!!t && t.style.display !== "none" && t.style.display !== "") ||
-                   (!!w && w.style.display === "flex") ||
-                   (!!a && a.classList.contains("open"));
-          };
-          const timer = setInterval(() => {
-            tries++;
-            const blocked = _overlayOpen();
-            if (blocked && tries < 40) return;   // espera (máx. ~36 s)
-            clearInterval(timer);
-            window._ufvaiLangSyncPending = false;
-            if (blocked) return;                 // telas abertas: não reinicia
-            try { sessionStorage.setItem("ufvai_lang_synced", _currentLang); } catch (e) {}
-            setCookie("ufvai_lang_synced", _currentLang);
-            setLang(_currentLang);
-          }, 900);
-        }).catch(()=>{});
-      } catch(e){}
+          if (synced === syncVal) return;
+          fetch(BASE + "/api/lang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lang: _currentLang, restart: false })
+          }).then(r => r.ok ? r.json() : null).then(res => {
+            if (!res || !res.ok) return;
+            try { sessionStorage.setItem("ufvai_lang_synced", syncVal); } catch (e) {}
+            try { localStorage.setItem("ufvai_lang_synced", syncVal); } catch (e) {}
+            try {
+              document.cookie = "ufvai_lang_synced=" + encodeURIComponent(syncVal) +
+                "; path=/; SameSite=Lax";
+            } catch (e) {}
+          }).catch(() => {});
+        }).catch(() => {});
+      } catch (e) {}
       // 2. Carrega tema
       loadInitialTheme();
-      // 3. Aplica keys no ambiente
-      fetch(BASE + "/api/apikey/apply", { method: "POST" }).catch(() => {});
+      // 3. v0.7.5: aplica as keys DEPOIS do terminal conectar (evita disputar
+      //    I/O do Drive com o boot do iframe); o motor já subiu com as chaves.
+      setTimeout(() => {
+        fetch(BASE + "/api/apikey/apply", { method: "POST" }).catch(() => {});
+      }, 1500);
       // 4. v0.6.4: welcome-hint antigo REMOVIDO — a tela de Termos de Uso
       //    (terms-overlay, com a logomarca oficial UFVAI) é a única abertura.
       // 5. v0.6.5: conecta o terminal (com splash) só quando /api/ttyd_ready
       bootTerminal();
       // 6. v0.6.17: pré-aquece a memória (fire-and-forget) — o servidor constrói
       //    o índice BM25 em background E popula o cache local; o 1º clique no
-      //    menu da memória abre instantâneo (sem esperar o Drive FUSE)
-      try {
-        fetch(BASE + "/api/obsidian?include=tree").then(r=>r.json()).then(d=>{
-          if (d && d.ok) {
-            _memoryCache = { tree: d.tree || [], status: d, ts: Date.now() };
-          }
-        }).catch(()=>{});
-      } catch(e){}
+      //    menu da memória abre instantâneo (sem esperar o Drive FUSE).
+      //    v0.7.5: adiado 3 s para não competir com a conexão do terminal.
+      setTimeout(() => {
+        try {
+          fetch(BASE + "/api/obsidian?include=tree").then(r=>r.json()).then(d=>{
+            if (d && d.ok) {
+              _memoryCache = { tree: d.tree || [], status: d, ts: Date.now() };
+            }
+          }).catch(()=>{});
+        } catch(e){}
+      }, 3000);
     });
     window.addEventListener("beforeunload", () => { _stopSessionsPoll(); });
   </script>
@@ -5269,6 +5267,7 @@ def create_wrapper_html(
     html = html.replace("__VERSION__", VERSION)
     html = html.replace("v__UFVAI_VERSION__", f"v{VERSION}")
     html = html.replace("__UFVAI_TOKEN__", session_token or "")
+    html = html.replace("{__BOOT_ID__}", boot_id)
     html = html.replace("{RESPONSIVE_CSS}", RESPONSIVE_CSS)
     # v0.6.4: GA4 client-side (gtag.js) — ID do admin (env > default embutido);
     # vazio desliga o canal client-side (fica só o Measurement Protocol).

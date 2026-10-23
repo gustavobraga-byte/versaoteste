@@ -63,8 +63,19 @@ from .opencode_utils import (
     is_opencode_v2,
 )
 from .security import load_encrypted_keys, save_encrypted_keys, sanitize_command
-from .run_fast import ensure_ufvai_agent, preflight_ufvai_session, seed_ufvai_greeting
+from .run_fast import (
+    ensure_ufvai_agent,
+    preflight_ufvai_session,
+    preflight_ufvai_session_info,
+    remember_preflight_session,
+    reset_preflight_cache,
+    seed_ufvai_greeting,
+)
 from . import session_restore as _session_restore
+
+
+_LAST_AGENT_ENSURE: float = 0.0
+_AGENT_ENSURE_TTL_S: float = 30.0
 
 
 def _ensure_ufvai_agent_before_spawn(where: str = "terminal") -> None:
@@ -79,7 +90,16 @@ def _ensure_ufvai_agent_before_spawn(where: str = "terminal") -> None:
 
     Best-effort: JAMAIS impede o terminal de abrir — um terminal atrasado é
     pior que um aviso no log; a garantia roda de novo no próximo reinício.
+
+    v0.7.5 (correção 23/10/2026 — SEM bump): memoização curta (30 s). A
+    abertura normal chama esta função 2–3 vezes em poucos segundos
+    (start_ttyd → troca de idioma → restore); regravar AGENTS.md (~30 KB) e
+    opencode.json a cada chamada atrasava o terminal sem mudar nada.
     """
+    global _LAST_AGENT_ENSURE
+    now = time.monotonic()
+    if (now - _LAST_AGENT_ENSURE) < _AGENT_ENSURE_TTL_S:
+        return
     try:
         ok = ensure_ufvai_agent()
     except Exception as exc:  # noqa: BLE001 — spawn do terminal não pode falhar por isso
@@ -90,6 +110,33 @@ def _ensure_ufvai_agent_before_spawn(where: str = "terminal") -> None:
             "ensure_ufvai_agent NÃO gravou opencode.json (%s) — o motor pode "
             "iniciar com o agente `build` até o próximo reinício.", where,
         )
+        return
+    _LAST_AGENT_ENSURE = now
+
+
+def _set_lang_only(lang: str) -> None:
+    """Persiste o idioma SEM reiniciar o terminal (v0.7.5).
+
+    Usado quando o navegador discorda do idioma detectado no boot. Antes,
+    o frontend chamava o POST /api/lang normal, que matava o ttyd, criava
+    OUTRA sessão e recarregava a página só para trocar a saudação.
+    """
+    global _current_lang
+    _current_lang = lang
+    _persist_lang(lang)
+    _sync_terminal_locale(lang)
+
+
+def _remember_ttyd_session(session_id: str | None) -> None:
+    """Registra a sessão que o terminal passou a exibir (restore/comando).
+
+    Um reinício posterior (idioma/chave/keepalive) reabre ESTA conversa.
+    """
+    global _current_ttyd_session
+    sid = str(session_id or "").strip()
+    _current_ttyd_session = sid or None
+    if sid:
+        remember_preflight_session(sid)
 
 
 def _safe_isoformat(v):
@@ -149,6 +196,11 @@ _RATE: dict[str, list[float]] = {}
 # v0.6.5: handle do ttyd atual — permite matar a ÁRVORE do terminal
 # (ttyd + bash + opencode) por grupo de processo, sem pkill -f global.
 _TTYD_PROC: "subprocess.Popen | None" = None
+# v0.7.5 (correção 23/10/2026 — SEM bump): sessão que o terminal está
+# exibindo AGORA. Um reinício do ttyd (idioma/chave/keepalive) reabre esta
+# mesma sessão em vez de pré-criar outra — era o que fazia o UFVAI abrir
+# DUAS sessões na mesma entrada.
+_current_ttyd_session: str | None = None
 
 
 
@@ -329,6 +381,12 @@ def kill_previous():
         timeout=5,
     )
     _tmux_kill_session()  # boot começa de sessão limpa (a sessão tmux não morre com o ttyd)
+    # v0.7.5: um BOOT novo começa com sessão NOVA. Sem isso, reexecutar a
+    # célula de lançamento no mesmo kernel reabriria a conversa anterior
+    # (o cache de preflight é por processo).
+    global _current_ttyd_session
+    _current_ttyd_session = None
+    reset_preflight_cache()
     subprocess.run(
         ["pkill", "-f", f"python3.*{WRAPPER_PORT}"],
         capture_output=True,
@@ -1163,12 +1221,19 @@ def _tmux_kill_session() -> None:
         pass
 
 
-def _build_ttyd_cmd(lang: str | None = None):
+def _build_ttyd_cmd(lang: str | None = None, session_id: str | None = None,
+                    seed_greeting: bool = True):
     """v0.6.5: constrói (args, env) do ttyd com saudação no idioma pedido.
 
     Extraído de start_ttyd para permitir retry determinístico em
     restart_ttyd_with_lang/_ensure_terminal_ready.
+
+    v0.7.5 (correção 23/10/2026 — SEM bump): ``session_id`` permite REABRIR a
+    conversa atual num reinício (idioma/chave/keepalive) em vez de pré-criar
+    uma segunda sessão. ``seed_greeting=False`` evita repetir a saudação numa
+    sessão que já existe.
     """
+    global _current_ttyd_session
     opencode_bin, env = resolve_opencode()
 
     # Resolve idioma (param > env > _current_lang > detecção do sistema)
@@ -1203,24 +1268,37 @@ def _build_ttyd_cmd(lang: str | None = None):
         _DRIVE_PATH = os.path.join(os.environ.get("HOME", "/"), "PesquisAI")
     project_dir = _DRIVE_PATH if _DRIVE_PATH and os.path.isdir(_DRIVE_PATH) else os.getcwd()
 
-    session_id: str | None = None
-    try:
-        session_id = preflight_ufvai_session(cwd=project_dir)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("preflight_ufvai_session falhou inesperadamente: %s", exc)
-    if session_id:
-        # Envia a saudação em background para não bloquear o spawn do TUI.
-        # Sem isso, o opencode run espera ~6s e adia a aparição do terminal.
+    session_id = str(session_id or "").strip() or None
+    created = False
+    if not session_id:
         try:
-            subprocess.Popen(
-                [opencode_bin, "run", "--session", str(session_id), greeting],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                cwd=project_dir, env=env, start_new_session=True,
-            )
-        except Exception:  # noqa: BLE001
-            logger.debug("seed assíncrono da saudação não iniciado (ttyd continua)")
+            session_id, created = preflight_ufvai_session_info(cwd=project_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("preflight_ufvai_session falhou inesperadamente: %s", exc)
+            session_id, created = None, False
+    if session_id:
+        # A saudação só é semeada em sessão NOVA: repeti-la a cada
+        # reinício (troca de idioma/chave) enchia a conversa de "Olá".
+        if created and seed_greeting:
+            # Envia a saudação em background para não bloquear o spawn do TUI.
+            # Sem isso, o opencode run espera ~6s e adia a aparição do terminal.
+            # v0.7.5: 1,2 s de atraso — o processo Node da saudação competia
+            # com o do TUI no mesmo núcleo logo após o spawn. A TUI já abre
+            # com a saudação a caminho.
+            def _seed_greeting_bg() -> None:
+                try:
+                    subprocess.Popen(
+                        [opencode_bin, "run", "--session", str(session_id), greeting],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        cwd=project_dir, env=env, start_new_session=True,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.debug("seed assíncrono da saudação não iniciado (ttyd continua)")
+            threading.Timer(1.2, _seed_greeting_bg).start()
+        _current_ttyd_session = str(session_id)
         bash_cmd = f"cd \"{project_dir}\" && {opencode_bin} --session \"{session_id}\" {_yolo} ; exec bash"
     else:
+        _current_ttyd_session = None
         bash_cmd = f"cd \"{project_dir}\" && {opencode_bin} --prompt \"{safe_prompt}\" {_yolo} ; exec bash"
 
     # v0.4.2.5: construir args com --index (touch handlers)
@@ -1247,10 +1325,14 @@ def start_ttyd(lang: str | None = None):
     """
     print(f"\n{next_joke('economia')}")
     _ensure_ufvai_agent_before_spawn("start_ttyd")
-    ttyd_args, env, full_lang = _build_ttyd_cmd(lang)
+    ttyd_args, env, full_lang = _build_ttyd_cmd(
+        lang, session_id=_current_ttyd_session)
     _spawn_ttyd(ttyd_args, env)
     print(f"🚀 Terminal iniciado (idioma: {full_lang}, touch: {'ON' if '--index' in ttyd_args else 'OFF'}).")
-    time.sleep(0.8)
+    # v0.7.5: espera ATIVA (curta) em vez de sleep fixo de 0,8 s. A UI já
+    # abre em seguida e faz polling em /api/ttyd_ready; quando o ttyd sobe
+    # rápido, o boot ganha quase 1 s.
+    _wait_port_open(TERMINAL_PORT, timeout_s=0.8)
 
 
 def _sync_terminal_locale(full_lang: str) -> bool:
@@ -1309,7 +1391,10 @@ def restart_ttyd_with_lang(lang: str) -> bool:
         _ensure_ufvai_agent_before_spawn("restart_ttyd_with_lang")
 
         def _spawn():
-            ttyd_args, env, _full = _build_ttyd_cmd(lang)
+            # v0.7.5: reabre a sessão que o terminal já estava exibindo.
+            # Antes, o preflight criava OUTRA sessão a cada troca de idioma.
+            ttyd_args, env, _full = _build_ttyd_cmd(
+                lang, session_id=_current_ttyd_session)
             _spawn_ttyd(ttyd_args, env)
 
         ready = _ensure_terminal_ready(_spawn, timeout_s=18.0)
@@ -2024,8 +2109,11 @@ def start_wrapper_server():
                 # v0.6.5: status do terminal para o splash de carregamento da UI.
                 # O frontend faz polling aqui antes de apontar o iframe — assim
                 # o usuário nunca vê ERR_CONNECTION_REFUSED dentro do terminal.
+                # v0.7.5: timeout curto (0,25 s). O polling é frequente e a
+                # porta local responde na hora; 1,2 s por requisição segurava
+                # o splash quando o ttyd ainda estava subindo.
                 try:
-                    ready = _wait_port_open(TERMINAL_PORT, timeout_s=1.2)
+                    ready = _wait_port_open(TERMINAL_PORT, timeout_s=0.25)
                 except Exception:
                     ready = False
                 self._json(200, {"ready": bool(ready), "port": TERMINAL_PORT})
@@ -3079,6 +3167,17 @@ def start_wrapper_server():
                                   "(veja logs/ttyd.log). Tente novamente."),
                     })
                     return
+                # v0.7.5: registra a sessão aberta por `opencode -s <id>` para
+                # que trocar idioma/chave depois não abra outra conversa.
+                try:
+                    _sess = re.search(r"(?:^|\s)(?:-s|--session)\s+[\"']?(ses_[A-Za-z0-9]+)", cmd)
+                    if _sess:
+                        _remember_ttyd_session(_sess.group(1))
+                    else:
+                        _remember_ttyd_session(None)
+                        reset_preflight_cache()
+                except Exception:
+                    pass
                 self._json(200, {"ok": True})
                 return
             
@@ -3372,6 +3471,10 @@ def start_wrapper_server():
 
                         ttyd_restarted = _ensure_terminal_ready(_spawn, timeout_s=18.0)
                         if ttyd_restarted:
+                            # v0.7.5: o terminal agora exibe a sessão importada.
+                            # Fixa-a para que um reinício posterior (idioma/chave)
+                            # reabra ESTA conversa, não a anterior.
+                            _remember_ttyd_session(session_id)
                             print(f"🔄 ttyd reiniciado com sessão {session_id}")
                         else:
                             ttyd_restart_error = (
@@ -3560,6 +3663,39 @@ def start_wrapper_server():
                     return
                 short = lang_in.split("_")[0].lower() if "_" in lang_in else lang_in.lower()
                 full_lang = _LANG_MAP.get(short, lang_in if lang_in in _LANG_MAP.values() else "pt_BR")
+                changed = (full_lang != _current_lang)
+
+                # v0.7.5 (correção 23/10/2026 — SEM bump): ``restart=False``
+                # é a ADOÇÃO SILENCIOSA do idioma do navegador. O backend sobe
+                # antes do navegador e detecta o idioma pelo locale do
+                # servidor (no Colab, en_US); antes, a divergência fazia o
+                # frontend chamar este endpoint e o ttyd era MORTO e recriado
+                # (2ª sessão) + location.reload() — perdendo a conversa e,
+                # às vezes, a pergunta de retomada. Aqui só persistimos.
+                _restart = body.get("restart", True)
+                if isinstance(_restart, str):
+                    _restart = _restart.strip().lower() not in ("0", "false", "off", "no", "")
+                if not _restart:
+                    _set_lang_only(full_lang)
+                    self._json(200, {
+                        "ok": True,
+                        "lang": full_lang,
+                        "changed": changed,
+                        "restarted": False,
+                    })
+                    return
+
+                # Nada mudou e o terminal está vivo: resposta imediata, sem
+                # reiniciar (antes, um POST redundante criava outra sessão).
+                if not changed and _wait_port_open(TERMINAL_PORT, timeout_s=0.3):
+                    self._json(200, {
+                        "ok": True,
+                        "lang": full_lang,
+                        "changed": False,
+                        "restarted": False,
+                    })
+                    return
+
                 ok = restart_ttyd_with_lang(full_lang)
                 if ok:
                     try:
@@ -3569,6 +3705,8 @@ def start_wrapper_server():
                     self._json(200, {
                         "ok": True,
                         "lang": full_lang,
+                        "changed": changed,
+                        "restarted": True,
                         "greeting": get_greeting(full_lang),
                         "message": f"ttyd reiniciado com saudação em {full_lang}",
                     })
