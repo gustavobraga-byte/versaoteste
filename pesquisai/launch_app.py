@@ -1554,6 +1554,16 @@ def _resolve_restore_path(fname_raw: str, backup_dir: str,
     raw = (fname_raw or "").strip()
     if not raw:
         return None, "Nome de arquivo inválido."
+    # v0.7.4: autosave POR SESSAO — `autosave/sessions/<id>.json`
+    # (uma pasta abaixo, com nome validado; sem traversal).
+    if raw.startswith("autosave/sessions/"):
+        sub = raw[len("autosave/sessions/"):]
+        if not re.fullmatch(r"[A-Za-z0-9_-]+\.json", sub or ""):
+            return None, "Arquivo de autosave inválido."
+        path = os.path.join(autosave_dir, "sessions", sub)
+        if not os.path.exists(path):
+            return None, f"Arquivo não encontrado: {sub}"
+        return path, ""
     is_autosave = raw.startswith("autosave/")
     fname = raw[len("autosave/"):] if is_autosave else raw
     if (fname.startswith(".") or ".." in fname or "/" in fname or "\\" in fname
@@ -1577,6 +1587,18 @@ def _resolve_restore_path(fname_raw: str, backup_dir: str,
     if not os.path.exists(path):
         return None, f"Arquivo não encontrado: {fname}"
     return path, ""
+
+
+def _project_dir() -> str:
+    """Pasta do projeto (onde as conversas do autor vivem).
+
+    As conversas de outros diretorios (por exemplo `/root`, onde o motor
+    cria as sessoes de preflight) nao entram no autosave por sessao.
+    """
+    try:
+        return os.getcwd()
+    except OSError:
+        return ""
 
 
 def _ttyd_session_id() -> str:
@@ -1955,6 +1977,11 @@ def start_wrapper_server():
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.send_header("X-Frame-Options", "SAMEORIGIN")
+                # v0.7.5: o HTML carrega o JS das telas de abertura — NUNCA
+                # deixar o navegador reusar uma versão antiga em cache
+                # (era o que mantinha o comportamento velho após a correção).
+                self.send_header("Cache-Control", "no-store, max-age=0")
+                self.send_header("Pragma", "no-cache")
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 self.wfile.write(content)
@@ -2012,9 +2039,18 @@ def start_wrapper_server():
                 except Exception as exc:
                     logger.warning("Falha ao listar autosaves: %s", exc)
                     items = []
+                # v0.7.4: um autosave POR CONVERSA (quando ha varias sessoes
+                # abertas, o autosave antigo so guardava uma).
+                try:
+                    per_session = _session_restore.list_session_autosaves(AUTOSAVE_DIR)
+                except Exception as exc:
+                    logger.warning("Falha ao listar autosaves por sessao: %s", exc)
+                    per_session = []
                 self._json(200, {
                     "autosaves": items,
                     "latest": items[0] if items else None,
+                    "sessions": per_session,
+                    "sessions_count": len(per_session),
                     "dir": AUTOSAVE_DIR,
                 })
                 return
@@ -2027,6 +2063,16 @@ def start_wrapper_server():
                 # consentimentos), que nao sao backups e nao podem ser
                 # restaurados.
                 items = _list_backups_cached(DRIVE_BACKUP_DIR, AUTOSAVE_DIR)
+                # v0.7.4: as conversas salvas individualmente entram na lista
+                # do modal "Restaurar" (cada uma pode ser restaurada).
+                try:
+                    _per_session = _session_restore.list_session_autosaves(AUTOSAVE_DIR)
+                except Exception:
+                    _per_session = []
+                _known = {item.get("file") for item in items}
+                for _item in _per_session:
+                    if _item.get("file") not in _known:
+                        items.append(_item)
                 dates = sorted({item["date"] for item in items}, reverse=True)
                 self._json(200, {
                     "backups": items,
@@ -3206,11 +3252,31 @@ def start_wrapper_server():
                     return
 
                 # 2. Preparar o payload (validacao + conversao v1->v2 + ids novos)
+                #
+                # Correcao 23/10/2026 (sem bump): o id importado precisa
+                # nascer no formato NATIVO do motor (`ses_` + 12 hex + 14
+                # base62). O gateway do free tier do OpenCode valida o
+                # cabecalho `x-opencode-session` (issue #49433): um id fora do
+                # padrao recebe HTTP 403 "OpenCode's free tier can only be
+                # used from within OpenCode" — e a sessao restaurada nao anda
+                # com modelos gratuitos (uma sessao NOVA funciona, porque o
+                # proprio motor cria o id). Antes, a retomada gerava
+                # `ses_` + 16 hex e quebrava TODA sessao restaurada.
+                _id_samples: list[str] = []
+                try:
+                    _id_samples = [
+                        str(_s.get("id") or "")
+                        for _s in _session_restore.list_sessions(
+                            _opencode_bin or "opencode", env=_env)
+                    ]
+                except Exception as _exc:  # best-effort: sem amostras, padrao oficial
+                    logger.warning("Restore: sem amostras de id nativas (%s)", _exc)
                 try:
                     payload, src_format = _session_restore.prepare_import_payload(
                         tmp_restore,
                         project_id=str(body.get("project_id", "") or ""),
                         fallback_directory=str(body.get("directory", "") or ""),
+                        id_samples=_id_samples,
                     )
                 except _session_restore.SessionError as exc:
                     self._json(400, {"error": str(exc)})
@@ -3232,7 +3298,52 @@ def start_wrapper_server():
 
                 parse_error = ""
                 import_stdout = f"Imported session: {session_id}"
-                
+                # Correcao 23/10/2026: se o id importado nao seguir o formato
+                # nativo, o free tier respondera 403 na 1a mensagem. Nao
+                # bloqueia (o backup ja foi importado), mas deixa o rastro.
+                try:
+                    _native_shape = _session_restore.id_shape(_id_samples, "ses_")
+                    if (_native_shape and session_id
+                            and (len(session_id) - len("ses_")) != _native_shape[0]):
+                        logger.warning(
+                            "Sessao restaurada com id fora do formato nativo "
+                            "(%s, %d chars; nativo=%d) — modelos gratuitos "
+                            "podem falhar com FreeTierError.",
+                            session_id, len(session_id) - len("ses_"),
+                            _native_shape[0],
+                        )
+                except Exception:
+                    pass
+
+                # 2.1 Correcao 23/10/2026 (sem bump): AJUSTAR AO CONTEXTO.
+                # Os autosaves reais tem ~300 mil tokens; os modelos free do
+                # OpenCode Zen tem 200 mil de contexto. Ao abrir a sessao
+                # importada o motor ve o contexto estourado e dispara a
+                # compactacao AUTOMATICA — caminho que o gateway do free
+                # tier recusa ("OpenCode's free tier can only be used from
+                # within OpenCode"). Era o `✗ Compaction` de TODA sessao
+                # restaurada, enquanto uma sessao nova funcionava.
+                # Compactacao MANUAL (nao bloqueada) ou, em ultimo caso,
+                # reimportar aparado.
+                fit_info: dict = {}
+                try:
+                    fit_info = _session_restore.fit_to_context(
+                        _opencode_bin or "opencode", session_id, payload, env=_env,
+                    )
+                    new_session_id = str(fit_info.get("session_id") or "")
+                    if new_session_id and new_session_id != session_id:
+                        session_id = new_session_id
+                    if fit_info.get("action") not in ("none", None):
+                        logger.info(
+                            "Restore: sessao ajustada ao contexto (%s, %s→%s tokens, "
+                            "orcamento %s)", fit_info.get("action"),
+                            fit_info.get("tokens_before"), fit_info.get("tokens_after"),
+                            fit_info.get("budget"),
+                        )
+                except Exception as fit_err:  # fail-open: o import ja esta valido
+                    logger.warning("Restore: ajuste ao contexto falhou: %s", fit_err)
+                    fit_info = {"action": "error", "error": str(fit_err)[:200]}
+
                 # 3. v0.5.1.6 — REINICIAR ttyd com `opencode -s <session_id>`
                 # Bug antigo: importava a sessão mas o ttyd continuava com --prompt,
                 # então location.reload() mostrava a conversa ATUAL, não a importada.
@@ -3280,6 +3391,7 @@ def start_wrapper_server():
                     "ok": True,
                     "file": fname,
                     "session_id": session_id,
+                    "fit": fit_info,
                     "parse_error": parse_error,
                     "import_stdout": import_stdout,
                     "source_format": src_format,
@@ -3384,12 +3496,38 @@ def start_wrapper_server():
                         "traceback": traceback.format_exc()[-800:],
                     })
                     return
+                # v0.7.4: SALVA TODAS AS CONVERSAS — com varias sessoes
+                # abertas, o autosave antigo guardava SO a do terminal (a
+                # conversa "que está ativa"). Agora cada conversa viva que
+                # tenha conteudo novo recebe o seu proprio arquivo em
+                # `backups/autosave/sessions/<id>.json`, e todas entram na
+                # lista do modal "Restaurar".
+                per_session: dict = {"ok": True, "saved": [], "skipped": [],
+                                     "failed": [], "total": 0, "scope": "active"}
+                # v0.7.4: por PADRAO salva SO a sessao ativa (e so quando ela
+                # muda). O botao "Todas as conversas" no rodape liga o modo
+                # completo (um arquivo por sessao).
+                _want_all = bool(body.get("all_sessions") or body.get("all"))
+                if _want_all:
+                    try:
+                        _sessions_all = _session_restore.list_sessions(
+                            _opencode_bin or "opencode", env=_env,
+                        )
+                        per_session = _session_restore.save_all_sessions(
+                            _opencode_bin or "opencode", _sessions_all,
+                            AUTOSAVE_DIR, env=_env,
+                            project_dir=_project_dir(),
+                        )
+                        per_session["scope"] = "all"
+                    except Exception as exc:
+                        logger.warning("Autosave por sessao falhou: %s", exc)
+                        per_session = {"ok": False, "error": str(exc)[:200]}
                 try:
                     _tel_event("autosave_created", {})
                 except Exception:
                     pass
                 _invalidate_backups_cache()  # autosave novo no Drive
-                self._json(200, {"ok": True, **info})
+                self._json(200, {"ok": True, **info, "sessions_saved": per_session})
                 return
 
             if p == "/api/theme":

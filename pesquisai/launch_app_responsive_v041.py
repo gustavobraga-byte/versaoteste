@@ -1328,6 +1328,16 @@ def create_wrapper_html(
         <span class="autosave-dot"></span>
         <span class="autosave-label" data-i18n="autosave.title">Autosave</span>
       </label>
+      <!-- v0.7.4: ESCOLHA do alcance do autosave — por PADRAO salva SO a
+           sessao ativa (e so quando ela muda). Ligue aqui para gravar
+           TODAS as conversas abertas (um arquivo por sessao). -->
+      <label class="autosave-switch" id="autosave-all-switch"
+             title="Salvar todas as conversas abertas (um arquivo por sessão). Desligado por padrão — sem isso o autosave grava só a sessão ativa.">
+        <input type="checkbox" id="autosave-all-toggle" onchange="toggleAutosaveAll(this.checked)">
+        <span class="autosave-track"><span class="autosave-knob"></span></span>
+        <span class="autosave-dot"></span>
+        <span class="autosave-label" data-i18n="autosave.all">Todas as conversas</span>
+      </label>
       <!-- v0.7.2: reabrir a pergunta de retomada sob demanda (a pergunta
            automatica e oferecida UMA VEZ por aba; este botao reoferece). -->
       <button class="btn-provider" onclick="reofferAutosaveResume()"
@@ -1763,6 +1773,66 @@ def create_wrapper_html(
     const LANG_COOKIE = "pesquisai_lang";
     const THEME_COOKIE = "pesquisai_theme";
     const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 ano
+
+    // ════════════════════════════════════════════════════════════
+    // v0.7.5 — ABERTURA: UMA VEZ POR SESSÃO/ABA
+    // ════════════════════════════════════════════════════════════
+    // Problema relatado (23/10/2026): a tela de e-mail/"Bem-vindo" e a
+    // pergunta "Continuar de onde parei" reapareciam VÁRIAS vezes na
+    // mesma entrada. O UFVAI roda no proxy/iframe do Colab, onde o
+    // sessionStorage pode ser particionado e o cookie de terceiros
+    // bloqueado — a marca de "já mostrei" se perdia a cada recarga
+    // (e a abertura faz 2–3 recargas: idioma → terminal → restore).
+    //
+    // Correção: a marca vai para TRÊS camadas (sessionStorage +
+    // localStorage com validade + cookie de sessão) e é gravada ANTES
+    // de a tela aparecer. Recargas internas não a consomem; só o
+    // botão ↻ (reoferecer o restore) limpa a marca "resume".
+    const UFVAI_OPENING_TTL_MS = 12 * 60 * 60 * 1000; // 12 h (fallback)
+    function ufvaiOpeningGet(key) {
+      const name = "ufvai_seen_" + key;
+      try { if (sessionStorage.getItem(name) === "1") return true; } catch (e) {}
+      try {
+        const raw = localStorage.getItem(name);
+        if (raw) {
+          const ts = parseInt(raw, 10);
+          if (!ts || (Date.now() - ts) < UFVAI_OPENING_TTL_MS) return true;
+          try { localStorage.removeItem(name); } catch (e2) {}
+        }
+      } catch (e) {}
+      try {
+        const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+        if (m && decodeURIComponent(m[1]) === "1") return true;
+      } catch (e) {}
+      return false;
+    }
+    function ufvaiOpeningMark(key) {
+      const name = "ufvai_seen_" + key;
+      try { sessionStorage.setItem(name, "1"); } catch (e) {}
+      try { localStorage.setItem(name, String(Date.now())); } catch (e) {}
+      // cookie de sessão (sem expires): sobrevive a recargas, some ao
+      // fechar o navegador — é o fallback quando os storages falham.
+      try { document.cookie = name + "=1; path=/; SameSite=Lax"; } catch (e) {}
+    }
+    function ufvaiOpeningClear(key) {
+      const name = "ufvai_seen_" + key;
+      try { sessionStorage.removeItem(name); } catch (e) {}
+      try { localStorage.removeItem(name); } catch (e) {}
+      try {
+        document.cookie = name + "=; path=/; SameSite=Lax; " +
+          "expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      } catch (e) {}
+    }
+    function ufvaiOpeningAnyVisible() {
+      try {
+        const t = document.getElementById("terms-overlay");
+        const w = document.getElementById("welcome-overlay");
+        const a = document.getElementById("autosave-overlay");
+        return (!!t && t.style.display !== "none" && t.style.display !== "") ||
+               (!!w && w.style.display === "flex") ||
+               (!!a && a.classList.contains("open"));
+      } catch (e) { return false; }
+    }
 
     // ── Cookie helpers ────────────────────────────────────────
     function setCookie(name, value) {
@@ -4302,6 +4372,9 @@ def create_wrapper_html(
     // ══════════════════════════════════════════════════════════
     const AUTOSAVE_INTERVAL_MS = 60000;       // v0.7.3: 1 minuto
     const AUTOSAVE_KEY = "ufvai_autosave_enabled";
+    // v0.7.4: alcance do autosave. "0" (PADRAO) = so a sessao ATIVA;
+    // "1" = todas as conversas (um arquivo por sessao).
+    const AUTOSAVE_ALL_KEY = "ufvai_autosave_all_sessions";
     let _autosaveTimer = null;
     let _autosaveBusy = false;
     let _autosaveLatest = null;               // autosave valido mais recente
@@ -4319,6 +4392,29 @@ def create_wrapper_html(
         const saved = localStorage.getItem(AUTOSAVE_KEY);
         return !(saved === "0" || saved === "false");
       } catch (e) { return true; }
+    }
+
+    // v0.7.4 — so a sessao ATIVA e' salva por padrao; o autor pode ligar
+    // "Todas as conversas" no rodape (um arquivo por sessao no Drive).
+    function autosaveAllSessions() {
+      try { return localStorage.getItem(AUTOSAVE_ALL_KEY) === "1"; }
+      catch (e) { return false; }
+    }
+
+    function setAutosaveAllUI(on) {
+      const box = document.getElementById("autosave-all-toggle");
+      const sw = document.getElementById("autosave-all-switch");
+      if (box) box.checked = !!on;
+      if (sw) sw.classList.toggle("on", !!on);
+    }
+
+    function toggleAutosaveAll(on) {
+      try { localStorage.setItem(AUTOSAVE_ALL_KEY, on ? "1" : "0"); } catch (e) {}
+      setAutosaveAllUI(on);
+      toast(on ? ("💾 " + (autosaveDict()["autosave.all_on"] ||
+              "Todos as conversas passarão a ser salvas."))
+               : (autosaveDict()["autosave.all_off"] ||
+                  "O autosave voltará a salvar só a sessão ativa."), "info");
     }
 
     function setAutosaveUI(on) {
@@ -4358,7 +4454,7 @@ def create_wrapper_html(
         const r = await fetch(BASE + "/api/autosave", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({})
+          body: JSON.stringify({all_sessions: autosaveAllSessions()})
         });
         const d = await r.json();
         if (d && d.ok) {
@@ -4368,9 +4464,15 @@ def create_wrapper_html(
             // o backend NAO grava outro arquivo (3 slots = 3 versoes
             // distintas). A interface diz isso explicitamente para o
             // usuario nao achar que o autosave falhou.
-            if (d.skipped) {
+            // v0.7.4: quando ha VARIAS conversas, o autosave grava cada
+            // uma (um arquivo por sessao) — o toast informa quantas.
+            var _ss = (d && d.sessions_saved) || null;
+            var _n = (_ss && _ss.saved && _ss.saved.length) || 0;
+            if (d.skipped && !_n) {
               toast((autosaveDict()["autosave.unchanged"] ||
                 "Sem novidades — o autosave mais recente já é o atual."), "info");
+            } else if (_n > 1) {
+              toast(("💾 " + _n + " conversas salvas no Drive (uma por sessão)"), "ok");
             } else {
               toast((autosaveDict()["autosave.saved"] || "Sessão salva no Drive"), "ok");
             }
@@ -4414,8 +4516,9 @@ def create_wrapper_html(
       } catch (e) {}
     }
 
-    /** v0.7.3 — reabrir a pergunta de retomada sob demanda (botão ↻). */
+    /** v0.7.5 — reabrir a pergunta de retomada sob demanda (botão ↻). */
     async function reofferAutosaveResume() {
+      try { if (typeof ufvaiOpeningClear === "function") ufvaiOpeningClear("resume"); } catch (e) {}
       setAutosaveResumeState("");
       await checkAutosaveResume();
     }
@@ -4425,10 +4528,10 @@ def create_wrapper_html(
       const overlay = document.getElementById("autosave-overlay");
       const when = document.getElementById("autosave-when");
       if (!overlay) return;
-      // v0.7.3: a oferta NAO marca nada — quem decide se a proxima
-      // entrada pergunta e' a resposta do usuario (restored/new) ou o
-      // fim da aba. Marcar na oferta impedia a pergunta de voltar
-      // (bug v0.7.2: "não perguntou quando entrei").
+      // v0.7.5: a marca "resume" é gravada ANTES de exibir e NÃO é
+      // consumida pelas recargas internas (idioma/terminal/restore).
+      // Assim a pergunta aparece UMA vez por sessão; o botão ↻ limpa.
+      try { if (typeof ufvaiOpeningMark === "function") ufvaiOpeningMark("resume"); } catch (e) {}
       if (when) {
         const stamp = item.saved_at_local || item.saved_at_iso || "";
         when.textContent = (autosaveDict()["autosave.resume.when"] || "Autosave de") + " " + stamp;
@@ -4468,9 +4571,9 @@ def create_wrapper_html(
           });
           const d = await r.json();
           if (d && d.ok) {
-            // v0.7.3: marca "restored" — o reload seguinte NAO
-            // reoferece a pergunta; o estado e consumido no load, de
-            // modo que a PROXIMA entrada volta a perguntar.
+            // v0.7.5: a marca "resume" já foi gravada quando a pergunta
+            // foi exibida; o reload seguinte NÃO reoferece nada. A
+            // próxima sessão/aba (storage novo) volta a perguntar.
             setAutosaveResumeState("restored");
             toast("✅ " + (autosaveDict()["autosave.resume.done"] || "Sessão restaurada"), "ok");
             setTimeout(() => location.reload(), 3500);
@@ -4487,22 +4590,29 @@ def create_wrapper_html(
     /** Iniciar uma nova sessão: descarta a pergunta e segue. */
     function autosaveResumeNew() {
       closeAutosaveResume();
-      // v0.7.3: o usuário respondeu "Nova sessão" — não perguntar de
-      // novo nesta aba.
+      // v0.7.5: a marca "resume" já existe (foi gravada ao exibir);
+      // mantemos o estado legado apenas por compatibilidade.
       setAutosaveResumeState("new");
     }
 
-    /** Na abertura: se houver autosave válido, pergunta. Não bloqueia. */
+    /** Na abertura: se houver autosave válido, pergunta UMA vez por sessão. */
+    var _resumeWaitTries = 0;
     async function checkAutosaveResume() {
-      // v0.7.3: maquina de estados (ver bloco acima).
-      const state = autosaveResumeState();
-      if (state === "restored") {
-        // consome: pula ESTA carga (o reload do restore) e volta a
-        // perguntar na proxima entrada.
-        setAutosaveResumeState("");
+      // v0.7.5: UMA vez por sessão/aba. A marca em 3 camadas sobrevive
+      // às 2–3 recargas da abertura (idioma → terminal → restore) e não
+      // é consumida; só o botão ↻ a limpa. Antes ("restored" consumido
+      // a cada load) a pergunta voltava em toda recarga.
+      try {
+        if (typeof ufvaiOpeningGet === "function" && ufvaiOpeningGet("resume")) return;
+      } catch (e) {}
+      // não abrir por cima de outra tela de abertura: espera ela fechar
+      let blocking = false;
+      try { blocking = (typeof ufvaiOpeningAnyVisible === "function") && ufvaiOpeningAnyVisible(); } catch (e) {}
+      if (blocking) {
+        if (_resumeWaitTries++ < 60) setTimeout(checkAutosaveResume, 1500);
         return;
       }
-      if (state === "new") return;   // o usuário já escolheu "Nova sessão"
+      _resumeWaitTries = 0;
       try {
         const r = await fetch(BASE + "/api/autosave");
         const d = await r.json();
@@ -4510,6 +4620,12 @@ def create_wrapper_html(
           _autosaveLatest = d.latest;
           // v0.7.1: guarda a lista completa (fallback: mais recente → anterior)
           _autosaveList = (d.autosaves && d.autosaves.length) ? d.autosaves : [d.latest];
+          let blocked = false;
+          try { blocked = (typeof ufvaiOpeningAnyVisible === "function") && ufvaiOpeningAnyVisible(); } catch (e) {}
+          if (blocked) {
+            if (_resumeWaitTries++ < 60) setTimeout(checkAutosaveResume, 1500);
+            return;
+          }
           showAutosaveResume(d.latest);
           // Sem resposta em 20s -> nova sessão (a pergunta não bloqueia)
           setTimeout(() => closeAutosaveResume(), 20000);
@@ -4524,6 +4640,7 @@ def create_wrapper_html(
       buildLangMenu();
       // 1.1 v0.7.0/v0.7.3: chave do autosave + timer de 1 min + pergunta de retomada
       setAutosaveUI(autosaveEnabled());
+      setAutosaveAllUI(autosaveAllSessions());
       if (autosaveEnabled()) startAutosaveTimer();
       setTimeout(() => checkAutosaveResume(), 2500);
       // Ao sair da aba, tenta gravar o estado (sendBeacon, não bloqueia)
@@ -4537,15 +4654,48 @@ def create_wrapper_html(
       });
       // v0.6.15: sincroniza prompt inicial com idioma detectado do navegador
       // Se backend ainda está em pt_BR (bug pré-0.6.15) e frontend detectou en/es/fr/zh, reinicia ttyd automaticamente
+      //
+      // Correção 23/10/2026: a sincronização NÃO pode rodar por cima das
+      // telas de abertura (Termos / "Bem-vindo de volta") nem repetir a
+      // cada recarga. Antes:
+      //   • cada recarga chamava setLang() → /api/lang (reinicia o ttyd) →
+      //     location.reload() → a tela de abertura aparecia de novo (o
+      //     usuário via "duas vezes" ou "várias vezes");
+      //   • a guarda vivia só em sessionStorage — em navegador/iframe que
+      //     bloqueia sessionStorage ela não existia.
+      // Agora: guarda dupla (sessionStorage + cookie) e espera as telas de
+      // abertura fecharem antes de reiniciar o terminal.
       try {
         fetch(BASE + "/api/lang").then(r=>r.json()).then(d=>{
-          const backendLang = d.lang;
-          if(backendLang && backendLang !== _currentLang && LANGS[_currentLang]) {
-            if(!sessionStorage.getItem("ufvai_lang_synced")) {
-              sessionStorage.setItem("ufvai_lang_synced", "1");
-              setLang(_currentLang);
-            }
-          }
+          const backendLang = d && d.lang;
+          if (!backendLang || backendLang === _currentLang) return;
+          if (!LANGS[_currentLang]) return;
+          let synced = "";
+          try { synced = sessionStorage.getItem("ufvai_lang_synced") || ""; } catch (e) {}
+          if (!synced) synced = getCookie("ufvai_lang_synced") || "";
+          if (synced === _currentLang) return;
+          if (window._ufvaiLangSyncPending) return;
+          window._ufvaiLangSyncPending = true;
+          let tries = 0;
+          const _overlayOpen = () => {
+            const t = document.getElementById("terms-overlay");
+            const w = document.getElementById("welcome-overlay");
+            const a = document.getElementById("autosave-overlay");
+            return (!!t && t.style.display !== "none" && t.style.display !== "") ||
+                   (!!w && w.style.display === "flex") ||
+                   (!!a && a.classList.contains("open"));
+          };
+          const timer = setInterval(() => {
+            tries++;
+            const blocked = _overlayOpen();
+            if (blocked && tries < 40) return;   // espera (máx. ~36 s)
+            clearInterval(timer);
+            window._ufvaiLangSyncPending = false;
+            if (blocked) return;                 // telas abertas: não reinicia
+            try { sessionStorage.setItem("ufvai_lang_synced", _currentLang); } catch (e) {}
+            setCookie("ufvai_lang_synced", _currentLang);
+            setLang(_currentLang);
+          }, 900);
         }).catch(()=>{});
       } catch(e){}
       // 2. Carrega tema
@@ -4872,6 +5022,16 @@ def create_wrapper_html(
         fetch("/api/access",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).catch(function(){});
       }catch(e){}
     }
+    var _shown=false;      // 23/10/2026: abertura (Termos OU "Bem-vindo") UMA vez
+    function _openTerms(){
+      if(_shown) return;   // já houve uma abertura nesta carga
+      // v0.7.5: já apareceu nesta SESSÃO/aba (marca sobrevive às recargas)
+      try{ if(window.ufvaiOpeningGet && window.ufvaiOpeningGet("terms")) return; }catch(e){}
+      _shown=true;
+      try{ if(window.ufvaiOpeningMark) window.ufvaiOpeningMark("terms"); }catch(e){}
+      ov.style.display="flex";
+      _updateBtn();
+    }
     function _showErr(msg){
       if(!err){
         err=document.createElement("div");
@@ -4962,6 +5122,16 @@ def create_wrapper_html(
       var wEmail=document.getElementById("w-email");
       function _showWelcome(email, name){
         if(!wov) return false;
+        // Correção 23/10/2026: a tela "Bem-vindo de volta" aparece UMA vez
+        // por aba. Antes ela voltava a cada recarga — e a sincronização de
+        // idioma recarrega a página — então o usuário via a mesma tela
+        // duas (ou várias) vezes na mesma entrada.
+        // v0.7.5: a marca vai para sessionStorage + localStorage + cookie
+        // (o iframe do Colab pode bloquear um ou dois) e é gravada ANTES
+        // de exibir; recargas internas não a consomem.
+        try{
+          if(window.ufvaiOpeningGet && window.ufvaiOpeningGet("welcome")) return false;
+        }catch(e){}
         try{
           var txt="";
           if(name && email) txt=name + " — " + email;
@@ -4970,6 +5140,7 @@ def create_wrapper_html(
           else txt="—";
           if(wEmail) wEmail.textContent=txt;
         }catch(e){}
+        try{ if(window.ufvaiOpeningMark) window.ufvaiOpeningMark("welcome"); }catch(e){}
         wov.style.display="flex";
         return true;
       }
@@ -5003,6 +5174,7 @@ def create_wrapper_html(
           }catch(e){}
           if(an && typeof profAnalytics!=="undefined"){ an.checked=!!profAnalytics; }
           if(chk){ chk.checked=true; }
+          _shown=true;               /* 23/10/2026: abertura deliberada */
           ov.style.display="flex";
           _updateBtn();
           try{ if(nm && !nm.value) setTimeout(function(){ nm.focus(); },260);
@@ -5026,15 +5198,19 @@ def create_wrapper_html(
           // v0.6.16: heartbeat APENAS no clique "Continuar" (não automático ao exibir o welcome)
           return;
         }
+        // 23/10/2026: este navegador já aceitou a versão atual dos Termos —
+        // não reabre a tela se o perfil do servidor estiver ausente/atrasado
+        // (Drive off-line, POST interrompido). Antes, a tela voltava a cada
+        // recarga e o usuário via o aceite "duas vezes".
+        if(localStorage.getItem("ufvai_terms_version")===_TV){ return; }
         // Sessão anterior (versão antiga dos Termos): pré-preenche nome+e-mail e só confirma
         if(profName && nm && !nm.value){ nm.value=profName; }
         if(prof.email && em && !em.value){ em.value=prof.email; }
         if(an && typeof prof.analytics!=="undefined"){ an.checked=!!prof.analytics; }
         if(chk){ chk.checked=true; }
-        ov.style.display="flex";
-        _updateBtn();
-      }).catch(function(){ ov.style.display="flex"; _updateBtn(); });
-    }catch(e){ ov.style.display="flex"; _updateBtn(); }
+        _openTerms();
+      }).catch(function(){ _openTerms(); });
+    }catch(e){ _openTerms(); }
   }catch(e){}
 })();
 </script>
@@ -5111,6 +5287,9 @@ def create_wrapper_html(
             "autosave.title": "Autosave", "autosave.saved": "Sessão salva no Drive",
             "autosave.unchanged": "Sem novidades — o autosave mais recente já é o atual.",
             "autosave.off_msg": "Autosave desligado",
+            "autosave.all": "Todas as conversas",
+            "autosave.all_on": "Todos os arquivos de conversa passarão a ser salvos no Drive.",
+            "autosave.all_off": "O autosave voltará a salvar só a sessão ativa.",
             "autosave.resume.title": "Retomar sessão",
             "autosave.resume.text": "Há um salvamento automático. Deseja continuar a partir dele ou iniciar uma nova sessão?",
             "autosave.resume.when": "Autosave de",
@@ -5253,6 +5432,9 @@ def create_wrapper_html(
             "autosave.title": "Autosave", "autosave.saved": "Session saved to Drive",
             "autosave.unchanged": "No changes — the latest autosave is already up to date.",
             "autosave.off_msg": "Autosave off",
+            "autosave.all": "All conversations",
+            "autosave.all_on": "All conversation files will now be saved to Drive.",
+            "autosave.all_off": "Autosave will go back to saving only the active session.",
             "autosave.resume.title": "Resume session",
             "autosave.resume.text": "There is an automatic save. Do you want to continue from it or start a new session?",
             "autosave.resume.when": "Autosave from",
@@ -5395,6 +5577,9 @@ def create_wrapper_html(
             "autosave.title": "Autoguardado", "autosave.saved": "Sesión guardada en Drive",
             "autosave.unchanged": "Sin novedades — el autoguardado más reciente ya es el actual.",
             "autosave.off_msg": "Autoguardado desactivado",
+            "autosave.all": "Todas las conversaciones",
+            "autosave.all_on": "Ahora se guardarán todos los archivos de conversación en Drive.",
+            "autosave.all_off": "El autoguardado volverá a guardar solo la sesión activa.",
             "autosave.resume.title": "Reanudar sesión",
             "autosave.resume.text": "Hay un guardado automático. ¿Desea continuar desde él o iniciar una sesión nueva?",
             "autosave.resume.when": "Autoguardado del",
@@ -5537,6 +5722,9 @@ def create_wrapper_html(
             "autosave.title": "Sauvegarde auto", "autosave.saved": "Session enregistrée sur Drive",
             "autosave.unchanged": "Aucune nouveauté — la sauvegarde auto la plus récente est déjà à jour.",
             "autosave.off_msg": "Sauvegarde auto désactivée",
+            "autosave.all": "Toutes les conversations",
+            "autosave.all_on": "Tous les fichiers de conversation seront désormais enregistrés sur Drive.",
+            "autosave.all_off": "La sauvegarde automatique reviendra à ne enregistrer que la session active.",
             "autosave.resume.title": "Reprendre la session",
             "autosave.resume.text": "Une sauvegarde automatique existe. Voulez-vous continuer à partir d’elle ou démarrer une nouvelle session ?",
             "autosave.resume.when": "Sauvegarde auto du",
@@ -5679,6 +5867,9 @@ def create_wrapper_html(
             "autosave.title": "自动保存", "autosave.saved": "会话已保存到 Drive",
             "autosave.unchanged": "没有新内容 —— 最近一次自动保存已是最新。",
             "autosave.off_msg": "已关闭自动保存",
+            "autosave.all": "所有对话",
+            "autosave.all_on": "现在将把所有对话文件保存到 Drive。",
+            "autosave.all_off": "自动保存将恢复为只保存当前会话。",
             "autosave.resume.title": "恢复会话",
             "autosave.resume.text": "存在一个自动保存。要从它继续，还是开始新会话？",
             "autosave.resume.when": "自动保存于",
