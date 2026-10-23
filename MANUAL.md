@@ -1,6 +1,6 @@
 # 📘 Manual do UFVAI
 
-> **Agente de Pesquisa Científica de Alta Performance · v0.7.3 · Outubro 2026**
+> **Agente de Pesquisa Científica de Alta Performance · v0.7.5 · Outubro 2026**
 > Registro SisPPG/UFV nº 10356285004 · Universidade Federal de Viçosa
 
 ---
@@ -789,6 +789,8 @@ No topo da interface do UFVAI, há 3 botões importantes:
 | **Gravação** | A cada **1 minuto** a sessão é exportada para `Meu Drive/PesquisAI/backups/autosave/`. |
 | **3 slots vivos** | `autosave_1/2/3.json` guardam as **3 últimas versões distintas** da conversa atual (conteúdo idêntico não é regravado — a interface avisa "sem novidades"). Se o mais recente estiver corrompido, o anterior assume. |
 | **3 slots de histórico** | `autosave_4..6.json` guardam o **último backup de cada uma das 3 interações anteriores** (v0.7.3). Ao trocar de conversa, o autosave atual **não** destrói o backup da sessão anterior — ele é copiado para cá, com a data original preservada. |
+| **Um arquivo por conversa** (v0.7.4) | `autosave/sessions/<id>.json` — com **várias sessões** abertas, o autosave antigo guardava **só a do terminal**; agora **cada conversa** viva que tenha conteúdo novo recebe o seu próprio arquivo (e todas entram na lista do "Restaurar"). |
+| **Alcance (v0.7.4)** | Por **padrão** o autosave grava **só a sessão ativa** — e só quando ela muda. O botão **"Todas as conversas"** (rodapé, ao lado do liga/desliga) grava **um arquivo por sessão** (`autosave/sessions/<id>.json`); as conversas que não mudaram são puladas. |
 | **Qual é a sessão salva** | A conversa do **terminal** (a que você está usando), identificada pelo `opencode -s "<id>"`; na falta dela, a mais recently atualizada do motor. |
 | **Não bloqueia** | Salvar ao sair da aba é feito em segundo plano (`sendBeacon`). |
 
@@ -805,17 +807,51 @@ Ao abrir a interface, se houver um autosave válido, o UFVAI pergunta — com a
 - **Continuar de onde parei** → restaura o autosave e recarrega a página;
 - **Nova sessão** → segue sem restaurar.
 
-> **A pergunta é feita uma vez na entrada, sem laço (v0.7.3).** O estado fica no
-> `sessionStorage` da aba: ao restaurar, a recarga que vem em seguida **não** reoferece a
-> pergunta (e o estado é *consumido*, de modo que a **próxima entrada volta a perguntar**);
-> ao escolher "Nova sessão", a pergunta não aparece de novo naquela aba. A **oferta não
-> grava mais nada** — era isso que impedia a pergunta de aparecer quando você entrava.
-> Para oferecer a pergunta novamente, use o botão **↻** no rodapé, ao lado da chave do
-> autosave — ou restaure a qualquer momento pelo menu **🔄 Restaurar**.
+"> **A pergunta é feita uma vez por sessão (v0.7.5).** A marca "já mostrei" fica em
+> **três camadas** — `sessionStorage`, `localStorage` (validade de 12 h) e cookie de
+> sessão — e é gravada **antes** de a tela aparecer. Recargas internas (sincronização de
+> idioma, reinício do terminal, recarga do restore) **não** a consomem; uma nova aba ou
+> sessão volta a perguntar. Para oferecer a pergunta novamente sob demanda, use o botão
+> **↻** no rodapé, ao lado da chave do autosave — ou restaure a qualquer momento pelo menu
+> **🔄 Restaurar**.
+
+"> **Telas de abertura (v0.7.5):** a tela de Termos/"Bem-vindo de volta" e a pergunta de
+> retomada aparecem **uma única vez por sessão**. A marca sobrevive às 2–3 recargas da
+> abertura porque é gravada em três camadas (sessionStorage + localStorage + cookie de
+> sessão), **antes** de a tela ser exibida. O HTML é servido com `Cache-Control: no-store`
+> para o navegador nunca reutilizar um JavaScript antigo.
 
 > **Fallback (v0.7.3):** se o autosave mais recente falhar, a retomada tenta os anteriores
 > — agora os fallbacks alcançam também as **cópias preservadas das interações anteriores**
 > (`autosave_4..6`), ou seja, a conversa de antes da última.
+
+> **Modelos gratuitos do OpenCode (v0.7.3 — correção de 23/10):** a sessão restaurada é
+> criada pelo UFVAI e precisa nascer no **formato nativo de id** do motor (`ses_` + 12 hex
+> + 14 base62). Antes, o id saía como `ses_` + 16 hex e o gateway do *free tier* recusava a
+> conversa restaurada com HTTP 403 — `OpenCode's free tier can only be used from within
+> OpenCode` — na primeira mensagem **ou na compactação**, enquanto uma sessão nova
+> funcionava. Agora o formato é **inferido dos ids nativos vivos** (nunca presumido), e o
+> mesmo vale para os ids de mensagem. Se a restauração ocorrer com uma versão antiga, a
+> conversa restaurada pode continuar sujeita a esse erro: restaure novamente com a versão
+> atual para obter um id no formato nativo.
+
+> **Detalhamento da correção (23/10, verificado por reprodução controlada):** o bloqueio é
+> do **OpenCode Zen** (`providerID=opencode`) e vale para **qualquer modelo gratuito** —
+> o OpenCode Go não aplica o mesmo portão. Em sandbox isolado: sessão importada com id
+> **nativo** → responde (CLI e TUI); sessão importada com id **legado** → **403 free tier**.
+> Por isso a regra passou a ser: `NATIVE_ID_RE` é o **contrato** do id (`ses_` + 12 hex +
+> 14 base62), `mint_id_like()` usa **apenas amostras nativas** (a regra anterior, "tamanho
+> majoritário", podia escolher o formato legado e reintroduzir o bug) e, sem amostra, monta
+> o formato oficial. O `POST /api/restore` devolve o campo **`fit`** — o ajuste da sessão ao
+> contexto do modelo: `none` (cabe) · `compacted` (compactação **manual**, caminho que o
+> gateway não recusa) · `trimmed` (reimporta aparada, quando a compactação falha).
+
+> **Telas de abertura (23/10):** a tela de Termos e a de "Bem-vindo de volta" (que mostra o
+> seu e-mail) abrem **uma vez por entrada**. A detecção de idioma recarrega a página e o
+> fim da restauração também — antes, a tela voltava a cada recarga. Agora o "Bem-vindo"
+> guarda `ufvai_welcome_seen` no `sessionStorage` (fallback: cookie de sessão), os Termos
+> não reabrem se a versão atual já foi aceita neste navegador, e a sincronização de idioma
+> **espera** as telas fecharem antes de reiniciar o terminal.
 
 ---
 
@@ -934,7 +970,7 @@ Ou, em último caso: `sudo dpkg -i --force-depends pesquisai_*.deb` (o pip já e
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.7.3. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.7.5. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -945,7 +981,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
 **Formato simplificado (nota de rodapé):**
 
 ```
-UFVAI, versão 0.7.3, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
+UFVAI, versão 0.7.5, desenvolvido por Gustavo Bastos Braga (UFV, 2026). Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 ```
 
@@ -974,7 +1010,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 | **Tipo** | Software / Computer Program |
 | **Autor** | Braga, Gustavo Bastos |
 | **Título** | UFVAI: agente de inteligência artificial para pesquisa científica |
-| **Versão** | 0.7.3 |
+| **Versão** | 0.7.5 |
 | **Ano** | 2026 |
 | **Instituição** | Universidade Federal de Viçosa (UFV) |
 | **URL** | https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/ |
@@ -990,7 +1026,7 @@ https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 author = {Gustavo Bastos Braga},
 title = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial para Pesquisa Cient{\'\i}fica},
 year = {2026},
-version = {0.7.3},
+version = {0.7.5},
 institution = {Universidade Federal de Vi{\c{c}}osa (UFV)},
 url = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/},
 note = {Acessado em: DD m{\^e}s AAAA}
@@ -1047,7 +1083,7 @@ Ethics (COPE).
 
 Referência da ferramenta:
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para
-pesquisa científica. Versão 0.7.3. Viçosa: UFV, 2026. Disponível em:
+pesquisa científica. Versão 0.7.5. Viçosa: UFV, 2026. Disponível em:
 https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Registro SisPPG/UFV nº 10356285004 — http://sisppg.ufv.br
 ```
@@ -1333,6 +1369,8 @@ Resumo das versões da série 0.6.x (detalhes completos no `CHANGELOG.md` do rep
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
+| **0.7.5** | 23/10/2026 | 🪟 **Telas de abertura e retomada uma vez por sessão** — marca em **três camadas** (sessionStorage + localStorage 12 h + cookie), gravada antes de exibir; recargas internas não a consomem e o **↻** reoferece · 🧊 HTML com `Cache-Control: no-store` |
+| **0.7.4** | 23/10/2026 | 💾 **Autosave de todas as conversas** — com várias sessões abertas, o autosave salvava **só uma** (a do terminal); agora **cada conversa** viva que tenha conteúdo novo recebe o seu próprio arquivo (`backups/autosave/sessions/<id>.json`) e todas entram na lista do modal **Restaurar** · 🔓 **Free tier do OpenCode Zen na restauração corrigido** (o id da sessão importada agora nasce no **formato nativo** do motor — sem isso o gateway recusava com 403) · 🪟 **Telas de Termos / "Bem-vindo de volta" uma vez por entrada** |
 | **0.7.3** | 22/10/2026 | 📦 **O pacote `pesquisai` passa a ser INSTALADO no ambiente** (o boot do Colab faz `pip install -e` e prova a API do autopilot a partir de um CWD neutro — antes a "Minha memória" não salvava nada fora da pasta do repo) · 🔄 **Retomada uma vez na entrada, sem loop** (máquina de estados em `sessionStorage`) · ⏱️ **Autosave a cada 1 minuto** · 🗂️ **Fallback das 3 últimas interações** (`autosave_4..6` preservam o backup da conversa anterior) · 📅 **Calendário do "Restaurar" corrigido** (chips dos meses com backup, contagem nos dias, tooltip, item sem data visível) |
 | **0.7.2** | 22/10/2026 | 🔄 **Retomada sem laço**: a pergunta "continuar do autosave" é oferecida **uma única vez por aba** (flag em `sessionStorage`) — antes o `location.reload()` após o restore reoferecia a pergunta e criava um laço · 📅 **Calendário do "Restaurar" corrigido**: contagem de backups em cada dia, tooltip correto, chips dos meses que têm backup, item sem data nunca some do filtro, estado vazio acionável |
 | **0.7.1** | 22/10/2026 | 🔧 **Retomada corrigida na entrada** (`list_autosaves` devolvia o nome sem o prefixo `autosave/`) · 💾 Autosave sem duplicata (3 slots = 3 versões distintas) · 🗑 Botão de apagar backup no menu "Restaurar" · 🔁 Fallback na retomada (até 3 autosaves) |
@@ -1386,4 +1424,4 @@ O UFVAI usa estes marcadores para indicar o nível de confiança:
 ---
 
 *Documentação atualizada: Setembro 2026*  
-*UFVAI v0.7.3 · Registro SisPPG/UFV nº 10356285004*
+*UFVAI v0.7.5 · Registro SisPPG/UFV nº 10356285004*

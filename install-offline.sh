@@ -31,7 +31,7 @@ success() { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-VERSION="0.7.3"
+VERSION="0.7.5"
 UI_PORT="8001"      # interface web (wrapper HTTP)
 TERM_PORT="8000"    # terminal ttyd
 
@@ -67,7 +67,7 @@ install_python_deps() {
     || python3 -m pip install --user \
         "cryptography>=41.0" "requests>=2.31" "beautifulsoup4>=4.12" "pyyaml>=6.0" 2>/dev/null \
     || warn "Falha ao instalar dependências via pip — instale manualmente."
-    # v0.7.3 — instala o pacote `pesquisai` (API do autopilot) a partir
+    # v0.7.4 — instala o pacote `pesquisai` (API do autopilot) a partir
     # desta árvore. Antes o erro era ENGOULDO (`2>/dev/null || true`) e a
     # API do autopilot ficava indisponivel sem ninguem perceber.
     if python3 -m pip install --user --break-system-packages -e "$SCRIPT_DIR" 2>&1 | tail -3 \
