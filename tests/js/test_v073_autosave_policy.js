@@ -1,13 +1,12 @@
-// Teste de regressão v0.7.3 — UFVAI
+// Teste de regressão v0.7.5 — UFVAI
 //   1) O autosave passa de 3 para 1 MINUTO.
-//   2) A pergunta de retomada e' feita NA ENTRADA (uma vez), sem loop:
-//        - estado vazio      -> PERGUNTA
-//        - estado "restored" -> nao pergunta (reload do restore) e
-//                               CONSOME o estado (a proxima entrada
-//                               pergunta de novo)
-//        - estado "new"      -> nao pergunta de novo nesta aba
-//   3) A oferta NAO grava nada em sessionStorage (bug da v0.7.2: a
-//      flag ficava para sempre e a pergunta nunca mais aparecia).
+//   2) A pergunta de retomada e' feita UMA VEZ POR SESSÃO (v0.7.5):
+//        - sessão nova        -> PERGUNTA
+//        - recarga na sessão  -> NÃO pergunta (marca não é consumida)
+//        - restore -> reload  -> NÃO pergunta (sem loop)
+//        - "new"              -> NÃO pergunta de novo nesta aba
+//        - botão ↻            -> limpa a marca e reoferece
+//   3) A marca vai para sessionStorage + localStorage + cookie.
 //
 // Node puro, sem dependencias:
 //   node tests/js/test_v073_autosave_policy.js
@@ -45,7 +44,19 @@ function mk(id) {
 }
 function reloadDom() { els = {}; }
 
+let __cookies = {};
 global.document = {
+  get cookie() {
+    return Object.entries(__cookies).map(([k, v]) => `${k}=${v}`).join("; ");
+  },
+  set cookie(str) {
+    const [pair, ...attrs] = String(str).split(";");
+    const eq = pair.indexOf("=");
+    const name = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (/expires=Thu, 01 Jan 1970/i.test(attrs.join(";"))) delete __cookies[name];
+    else __cookies[name] = value;
+  },
   getElementById: (id) => mk(id),
   querySelectorAll: () => [],
   querySelector: () => null,
@@ -126,8 +137,10 @@ function sliceBlock(startMark, endMark) {
   return null;
 }
 
+const codeOpening = sliceBlock("const UFVAI_BOOT_ID", "// ── Detecção de idioma");
 const codeAutosave = sliceBlock("const AUTOSAVE_INTERVAL_MS", "// ── Inicialização");
 if (!codeAutosave) { console.error("❌ bloco do autosave não encontrado"); process.exit(1); }
+eval(codeOpening);
 eval(codeAutosave);
 
 let ok = 0, fail = 0;
@@ -146,60 +159,65 @@ function check(nome, cond) {
   check("o timer criado usa 60000 ms",
     global.__timer && global.__timer.ms === 60000);
 
-  console.log("\n=== 2. ENTRADA: a pergunta É feita (uma vez) ===");
-  for (const k of Object.keys(sstore)) delete sstore[k];
+  console.log("\n=== 2. ENTRADA: a pergunta É feita (1ª vez na sessão) ===");
   reloadDom();
   calls = [];
   await checkAutosaveResume();
-  check("modal abre na entrada", mk("autosave-overlay").classList.contains("open"));
+  check("modal abre na entrada",
+    mk("autosave-overlay").classList.contains("open"));
   check("consultou /api/autosave", calls.length === 1 && calls[0].url.endsWith("/api/autosave"));
 
-  console.log("\n=== 3. A OFERTA NÃO grava flag (bug da v0.7.2) ===");
-  check("sessionStorage sem flag de 'já oferecida'",
+  console.log("\n=== 3. A marca vai para as TRÊS camadas ===");
+  const BOOT = (html.match(/const UFVAI_BOOT_ID = "([^"]+)"/) || [])[1] || "";
+  check("sessionStorage: ufvai_seen_resume = boot id", sstore["ufvai_seen_resume"] === BOOT);
+  check("localStorage: ufvai_seen_resume = boot id", lstore["ufvai_seen_resume"] === BOOT);
+  check("cookie: ufvai_seen_resume = boot id",
+    document.cookie.indexOf("ufvai_seen_resume=" + encodeURIComponent(BOOT)) >= 0);
+  check("NENHUMA flag 'offered' (bug da v0.7.2)",
     Object.keys(sstore).filter((k) => k.includes("offered")).length === 0);
-  check("nenhum estado gravado na oferta",
-    Object.keys(sstore).filter((k) => k.includes("resume_state")).length === 0);
 
-  console.log("\n=== 4. ENTRADA DE NOVO: volta a perguntar (flag não trava) ===");
-  reloadDom();                       // simula F5 do autor na MESMA aba
+  console.log("\n=== 4. RECARGA na mesma sessão: NÃO pergunta de novo ===");
+  reloadDom();
   calls = [];
   await checkAutosaveResume();
-  check("modal abre de novo (o F5 nao suprime a pergunta)",
-    mk("autosave-overlay").classList.contains("open"));
-  check("consultou o backend", calls.length === 1);
+  check("modal NÃO reabre", !mk("autosave-overlay").classList.contains("open"));
+  check("nem consulta o backend", calls.length === 0);
 
   console.log("\n=== 5. RESTORE -> reload: SEM LOOP ===");
   reloadDom();
-  for (const k of Object.keys(sstore)) delete sstore[k];
-  await checkAutosaveResume();              // entrada (abre)
+  await checkAutosaveResume();              // já marcado: não abre
+  // limpa para simular a sessão em que a pergunta foi exibida
+  for (const k of ["ufvai_seen_resume"]) { delete sstore[k]; delete lstore[k]; }
+  __cookies = {};
+  await checkAutosaveResume();              // abre
   calls = [];
   await autosaveResumeContinue();           // restaura -> agenda reload
   check("POST /api/restore disparado",
     calls.some((c) => c.url.endsWith("/api/restore")));
-  check("reload agendado após o restore",
-    !!global.__timeouts.find((t) => t.ms === 3500));
-  check("estado = 'restored'", sstore["ufvai_autosave_resume_state"] === "restored");
+  // v0.7.5+: reload em 1,2 s (o backend já espera o ttyd subir).
+  check("reload agendado após o restore (1,2 s)",
+    !!global.__timeouts.find((t) => t.ms === 1200));
   reloadDom();                              // o reload recria o DOM
   calls = [];
   await checkAutosaveResume();              // carga apos o reload
   check("SEM LOOP: o modal NÃO volta após o reload",
     !mk("autosave-overlay").classList.contains("open"));
   check("SEM LOOP: nenhuma requisição disparada", calls.length === 0);
-  check("estado consumido (voltou a vazio)",
-    !("ufvai_autosave_resume_state" in sstore));
 
-  console.log("\n=== 6. PRÓXIMA ENTRADA pergunta de novo (estado consumido) ===");
+  console.log("\n=== 6. NOVA SESSÃO (storage limpo): pergunta de novo ===");
   reloadDom();
+  delete sstore["ufvai_seen_resume"];
+  delete lstore["ufvai_seen_resume"];
+  __cookies = {};
   calls = [];
   await checkAutosaveResume();
-  check("modal abre na entrada seguinte",
+  check("modal abre na sessão nova",
     mk("autosave-overlay").classList.contains("open"));
+  check("consultou o backend", calls.length === 1);
 
-  console.log("\n=== 7. 'NOVA SESSÃO' suprime a pergunta na aba ===");
-  for (const k of Object.keys(sstore)) delete sstore[k];
-  reloadDom();
+  console.log("\n=== 7. 'NOVA SESSÃO' encerra a oferta nesta execução ===");
   autosaveResumeNew();
-  check("estado = 'new'", sstore["ufvai_autosave_resume_state"] === "new");
+  check("marca 'resume' gravada (boot id)", sstore["ufvai_seen_resume"] === BOOT);
   reloadDom();
   calls = [];
   await checkAutosaveResume();
@@ -211,8 +229,6 @@ function check(nome, cond) {
   calls = [];
   await reofferAutosaveResume();
   check("modal abre pelo ↻", mk("autosave-overlay").classList.contains("open"));
-  check("estado limpo antes de oferecer",
-    !("ufvai_autosave_resume_state" in sstore));
 
   console.log(`\n=== RESULTADO: ${ok} ok · ${fail} falhas ===`);
   process.exit(fail ? 1 : 0);

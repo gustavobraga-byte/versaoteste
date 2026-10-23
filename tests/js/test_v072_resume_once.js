@@ -44,7 +44,19 @@ function mk(id) {
 /** Simula o reload da pagina: DOM novo, sessionStorage preservado. */
 function reloadDom() { els = {}; }
 
+let __cookies = {};
 global.document = {
+  get cookie() {
+    return Object.entries(__cookies).map(([k, v]) => `${k}=${v}`).join("; ");
+  },
+  set cookie(str) {
+    const [pair, ...attrs] = String(str).split(";");
+    const eq = pair.indexOf("=");
+    const name = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (/expires=Thu, 01 Jan 1970/i.test(attrs.join(";"))) delete __cookies[name];
+    else __cookies[name] = value;
+  },
   getElementById: (id) => mk(id),
   querySelectorAll: () => [],
   querySelector: () => null,
@@ -148,10 +160,13 @@ function sliceBlock(startMark, endMark) {
   return null;
 }
 
+const codeOpening = sliceBlock("const UFVAI_BOOT_ID", "// ── Detecção de idioma");
 const codeAutosave = sliceBlock("const AUTOSAVE_INTERVAL_MS", "// ── Inicialização");
 const codeRestore = sliceBlock("let _restoreItems = []", "function closeModal()");
+if (!codeOpening) { console.error("❌ bloco de abertura (v0.7.5) não encontrado"); process.exit(1); }
 if (!codeAutosave) { console.error("❌ bloco do autosave não encontrado"); process.exit(1); }
 if (!codeRestore) { console.error("❌ bloco do 'Restaurar' não encontrado"); process.exit(1); }
+eval(codeOpening);
 eval(codeAutosave);
 eval(codeRestore);
 
@@ -163,39 +178,39 @@ function check(nome, cond) {
 
 (async () => {
   // ══════════════════════════════════════════════════════════════════
-  console.log("=== 1. RETOMADA: a pergunta é oferecida na ENTRADA (v0.7.3) ===");
+  console.log("=== 1. RETOMADA: a pergunta aparece na ENTRADA (1ª vez) ===");
   reloadDom();
   calls = [];
   await checkAutosaveResume();
   check("1ª chamada abre o modal", mk("autosave-overlay").classList.contains("open"));
   check("consultou /api/autosave", calls.length === 1 && calls[0].url.endsWith("/api/autosave"));
-  // v0.7.3: a oferta NAO grava flag — a flag da v0.7.2 ("já oferecida")
-  // travava a pergunta na aba inteira e o autor entrou sem ver a pergunta.
-  check("NENHUMA flag gravada na oferta (v0.7.3)",
-    Object.keys(sstore).filter((k) => k.includes("offered")).length === 0);
-  check("flag NÃO foi para o localStorage",
-    !("ufvai_autosave_resume_offered" in lstore));
+  check("gravou a marca 'resume' no sessionStorage (v0.7.5)",
+    sstore["ufvai_seen_resume"] === (html.match(/const UFVAI_BOOT_ID = "([^"]+)"/) || [])[1]);
+  check("gravou a marca 'resume' no localStorage (v0.7.5)",
+    typeof lstore["ufvai_seen_resume"] === "string");
 
-  console.log("\n=== 2. 2ª ENTRADA (mesma aba): volta a perguntar ===");
+  console.log("\n=== 2. RECARGA na MESMA sessão: NÃO pergunta de novo (v0.7.5) ===");
   reloadDom();
   calls = [];
   await checkAutosaveResume();
-  check("modal abre na nova entrada", mk("autosave-overlay").classList.contains("open"));
-  check("consultou o backend de novo", calls.length === 1);
+  check("modal NÃO reabre na recarga", !mk("autosave-overlay").classList.contains("open"));
+  check("nem consulta o backend de novo", calls.length === 0);
 
-  console.log("\n=== 3. BUG DA v0.7.1: restore -> reload -> loop ===");
+  console.log("\n=== 3. RESTORE -> reload -> NÃO pergunta de novo (sem loop) ===");
   reloadDom();
-  await checkAutosaveResume();                  // 1ª (abre)
+  await checkAutosaveResume();
   calls = [];
-  await autosaveResumeContinue();               // restaura -> agenda reload
+  await autosaveResumeContinue();
   check("POST /api/restore disparado",
     calls.some((c) => c.url.endsWith("/api/restore")));
-  const reloadCall = global.__timeouts.find((t) => t.ms === 3500);
-  check("reload agendado após o restore", !!reloadCall);
-  reloadDom();                                  // o reload recria o DOM
+  // v0.7.5+: o backend já espera a porta do ttyd abrir — o reload é
+  // agendado em 1,2 s (antes: 3,5 s fixos).
+  const reloadCall = global.__timeouts.find((t) => t.ms === 1200);
+  check("reload agendado após o restore (1,2 s)", !!reloadCall);
+  reloadDom();
   global.__reloaded = false;
   calls = [];
-  await checkAutosaveResume();                  // 2ª, DEPOIS do reload
+  await checkAutosaveResume();
   check("SEM LOOP: o modal NÃO volta após o reload",
     !mk("autosave-overlay").classList.contains("open"));
   check("SEM LOOP: nenhuma requisição disparada", calls.length === 0);
@@ -205,8 +220,8 @@ function check(nome, cond) {
   calls = [];
   sremoved.length = 0;
   await reofferAutosaveResume();
-  check("o estado foi limpo antes de reoferecer (v0.7.3)",
-    sremoved.includes("ufvai_autosave_resume_state"));
+  check("a marca 'resume' foi limpa antes de reoferecer (v0.7.5)",
+    sremoved.includes("ufvai_seen_resume"));
   check("a pergunta volta a ser oferecida", mk("autosave-overlay").classList.contains("open"));
 
   console.log("\n=== 5. 'Nova sessão' também encerra a oferta ===");
@@ -218,6 +233,28 @@ function check(nome, cond) {
   await checkAutosaveResume();
   check("não reaparece depois de 'Nova sessão'",
     !mk("autosave-overlay").classList.contains("open"));
+
+  console.log("\n=== 5b. storage do navegador bloqueado: a marca sobrevive num deles ===");
+  reloadDom();
+  try { sessionStorage.removeItem("ufvai_seen_resume"); } catch (e) {}
+  // localStorage ainda tem a marca (é o fallback quando o sessionStorage
+  // é particionado/bloqueado no iframe do Colab)
+  calls = [];
+  await checkAutosaveResume();
+  check("com sessionStorage vazio e localStorage marcado, NÃO reabre",
+    !mk("autosave-overlay").classList.contains("open"));
+  check("e nem consulta o backend", calls.length === 0);
+
+  console.log("\n=== 5c. sessão NOVA (tudo limpo): volta a perguntar ===");
+  reloadDom();
+  delete sstore["ufvai_seen_resume"];
+  delete lstore["ufvai_seen_resume"];
+  __cookies = {};   // cookie de sessão também é novo
+  calls = [];
+  await checkAutosaveResume();
+  check("sessão nova pergunta (comportamento desejado)",
+    mk("autosave-overlay").classList.contains("open"));
+  check("consultou o backend", calls.length === 1);
 
   // ══════════════════════════════════════════════════════════════════
   console.log("\n=== 6. CALENDÁRIO: os dias com backup aparecem ===");
