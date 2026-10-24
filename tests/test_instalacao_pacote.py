@@ -79,10 +79,13 @@ def _boot_cell() -> str:
 
 def test_boot_cell_instala_o_pacote():
     src = _boot_cell()
-    assert "_install_pesquisai" in src, "a célula de boot deve instalar o pacote"
+    # A célula pode instalar por helper (`_install_pesquisai`) ou por um laço
+    # inline com pip + prova da API (formato do notebook em uso no Colab).
+    assert ("_install_pesquisai" in src or "_autopilot_ok" in src), (
+        "a célula de boot deve instalar o pacote e PROVAR a API do autopilot")
     assert re.search(r'pip["\',\s]+"install"', src) or '"pip", "install"' in src, (
         "a instalação precisa usar `pip install`")
-    assert re.search(r'-e["\',\s]+work_dir|"-e",\s*work_dir', src), (
+    assert re.search(r'"-e",\s*(WORK_DIR|work_dir)', src, re.I), (
         "a instalação deve ser editável (-e) para acompanhar o repo clonado")
 
 

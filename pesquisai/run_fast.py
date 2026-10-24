@@ -1125,8 +1125,14 @@ def seed_ufvai_greeting(
     timeout_s=25.0,
     opencode_bin=None,
     env=None,
+    cwd=None,
 ):
-    """Envia a saudação inicial na sessão ja pinned ao UFVAI (best-effort)."""
+    """Envia a saudação inicial na sessão ja pinned ao UFVAI (best-effort).
+
+    ``cwd`` (v0.7.5+, sem bump): o motor resolve a sessão pelo diretório do
+    projeto. Sem ele, o seed usava o cwd do processo do wrapper e podia
+    falhar com "Session not found" quando a sessão nasceu em outro diretório.
+    """
     import os as _os
     import shutil
     import subprocess
@@ -1135,11 +1141,15 @@ def seed_ufvai_greeting(
         bin_path = shutil.which("opencode") or "/root/.opencode/bin/opencode"
     run_env = env if isinstance(env, dict) else dict(_os.environ)
     # Verifica disponibilidade do "big pickle free" (OpenCode Zen).
+    # v0.7.5+ (sem bump): 25 s, não 10 s. A PRIMEIRA chamada de
+    # `opencode models` num boot frio passa de 10 s; o timeout devolvia
+    # model=None e a saudação caía no modelo padrão do opencode.json —
+    # se a chave dele estivesse sem quota, a mensagem não era semeada.
     if model is None:
         try:
             listed = subprocess.run(
                 [bin_path, "models"], capture_output=True, text=True,
-                timeout=10, env=run_env,
+                timeout=25, env=run_env,
             ).stdout or ""
             if "opencode/big-pickle" in listed:
                 model = "opencode/big-pickle"
@@ -1147,6 +1157,30 @@ def seed_ufvai_greeting(
                 model = None
         except Exception:
             model = None
+    # v0.7.5+ (sem bump): 1ª tentativa pela API do serviço.
+    # O `opencode run` RE-QUOTEIA o prompt quando ele tem parênteses/dois-pontos
+    # (reproduzido: "Olá! (Dica: ...)" chega ao histórico com aspas literais).
+    # A rota POST /api/session/{id}/prompt grava o texto exato.
+    try:
+        import json as _json
+        payload = _json.dumps(
+            {"text": greeting, "files": [], "agents": []}, ensure_ascii=False
+        )
+        api = subprocess.run(
+            [bin_path, "api", "post", f"/api/session/{session_id}/prompt",
+             "--data", payload],
+            capture_output=True, text=True, timeout=min(20.0, timeout_s),
+            cwd=cwd or _os.getcwd(), env=run_env,
+        )
+        if api.returncode == 0 and '"data"' in (api.stdout or ""):
+            return True
+        logger.debug(
+            "seed via API não concluiu (rc=%s): %s",
+            api.returncode, (api.stderr or api.stdout or "")[:160],
+        )
+    except Exception as exc:  # noqa: BLE001 — cai no fallback
+        logger.debug("seed via API falhou: %s", exc)
+
     try:
         cmd = [bin_path, "run", "--session", str(session_id)]
         if model:
@@ -1154,7 +1188,7 @@ def seed_ufvai_greeting(
         cmd += [greeting]
         result = subprocess.run(cmd,
             capture_output=True, text=True, timeout=timeout_s,
-            cwd=_os.getcwd(), env=run_env,
+            cwd=cwd or _os.getcwd(), env=run_env,
         )
         return result.returncode == 0
     except Exception:

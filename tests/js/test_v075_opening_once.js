@@ -181,7 +181,7 @@ import io, os, re
 p = os.path.join(${JSON.stringify(PKG)}, "launch_app.py")
 src = io.open(p, encoding="utf-8").read()
 i = src.find('if p in ("/", "/index.html")')
-chunk = src[i:i+1200]
+chunk = src[i:i+2400]   # v0.7.5+: o bloco cresceu (gzip/Vary)
 print("NO_STORE" if "no-store" in chunk else "SEM_NO_STORE")
 `;
 let noStore = "";

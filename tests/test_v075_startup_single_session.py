@@ -114,7 +114,8 @@ def test_api_lang_aceita_restart_false_e_nao_reinicia_sem_mudanca():
     assert start > 0
     bloco = src[start:src.find('if p == "/api/backups":', start)]
     assert 'body.get("restart"' in bloco
-    assert "_set_lang_only(full_lang)" in bloco
+    # v0.7.5+: a adoção grava a escolha no Drive ("browser")
+    assert "_set_lang_only(full_lang, source=_source)" in bloco
     assert "if not changed and _wait_port_open" in bloco
     assert '"restarted": False' in bloco
 
@@ -193,7 +194,7 @@ def test_sync_de_idioma_nao_reinicia_nem_recarrega():
 
 def test_navegador_em_chines_mapeia_para_zh_CN():
     html = _render(boot_id="abc123def456")
-    assert 'if (nav.startsWith("zh")) return "zh_CN";' in html
+    assert 'if (l.startsWith("zh")) return "zh_CN";' in html
 
 
 def test_retomada_guarda_por_execucao_e_nao_consome():

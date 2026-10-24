@@ -24,6 +24,21 @@ Compatível com o PesquisAI principal (v0.2.1+).
 ═════════════════════════════════════════════════════════════════════════
 Histórico de versões:
 ═══════════════════════════════════════════════════════════════════════
+  v0.7.6 — 24/10/2026: 🏷️ Rebrand do agente: "opencode" → "ufvai" (identidade
+            completa, no estilo Flint)
+            • DOCUMENTOS DO AGENTE: AGENTS.md + agents/AGENTS.{pt,en,es,fr,zh}.md
+              + novo agents/UFVAI.md — todas as ocorrências de opencode/OpenCode
+              viraram ufvai/UFVAI (caminhos ~/.config/ufvai/, ufvai.json,
+              ~/.local/share/ufvai/, comando `ufvai auth export`); §0.1 rebatizada
+              de "Motor UFVAI V2".
+            • ALIASING DO MOTOR: scripts/ufvai-alias.sh cria symlinks
+              (~/.config/ufvai, ~/.local/share/ufvai, ufvai.json) e o comando
+              `ufvai` (wrapper POSIX com OPENCODE_CONFIG_DIR/OPENCODE_CONFIG) —
+              o runtime físico continua sendo o motor original; nada renomeado
+              em execução (banco SQLite/crédenciais intactos).
+            • PRESERVADO: código (pesquisai/opencode_*.py), install-offline.sh,
+              Dockerfile, histórico do CHANGELOG e citações funcionais do
+              gateway (OpenCode Zen/Go) — o rebrand é de IDENTIDADE.
   v0.7.0 — 21/10/2026: 🏷️ Marca UFVAI na tela de NOVA SESSÃO + 4 correções
             de interface
             • LOGO: a arte de blocos "opencode" da tela de nova sessão foi
@@ -425,13 +440,13 @@ Histórico de versões:
 """
 
 # ── Versão semântica (SemVer) ──────────────────────────────────
-__version__: str = "0.7.5"
+__version__: str = "0.7.6"
 __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-10-22"
-__codename__: str = "Telas de abertura e retomada uma unica vez por sessao (marca em 3 camadas)"
+__release_date__: str = "2026-10-24"
+__codename__: str = "Rebrand do agente: opencode vira ufvai (identidade completa, estilo Flint)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
