@@ -1,5 +1,42 @@
 # Changelog — PesquisAI
 
+
+## [0.7.6] — 2026-10-24 — 🏷️ Rebrand do agente: **opencode → ufvai** (identidade completa, estilo Flint)
+
+### 🎯 Pedido do autor
+- *"faça uma nova versão trocando o 'opencode' por 'ufvai' como o Flint fez customizando o opencode"*
+  — o Flint rebrandizou o motor de verdade (binário `flint`, config em `~/.config/flint/`).
+  Aqui a troca é de **IDENTIDADE** (documentos do agente + nome de comando), com o
+  runtime físico preservado para não quebrar nada em execução.
+
+### 🏷️ O que virou "ufvai"
+- **Documentos do agente** (`AGENTS.md`, `agents/AGENTS.{pt,en,es,fr,zh}.md` e o **novo**
+  `agents/UFVAI.md` — o arquivo que era instalado como agente padrão): todas as ocorrências
+  de `opencode`/`OpenCode` passaram a `ufvai`/`UFVAI` — caminhos de config
+  (`~/.config/ufvai/...`), arquivo `ufvai.json`, dados em `~/.local/share/ufvai/` e comando
+  `ufvai auth export`. §0.1 rebatizada de **"Motor UFVAI V2"**; versão do agente → **v0.7.6**.
+  Frases que ficariam redundantes foram reescritas ("O UFVAI opera sobre o **motor UFVAI 2.x**").
+- **Aliasing do motor** (novo `scripts/ufvai-alias.sh`, idempotente e fail-open): cria
+  `~/.config/ufvai` → `~/.config/opencode` (symlink), `ufvai.json` → `opencode.json`,
+  `~/.local/share/ufvai` → `~/.local/share/opencode` e o comando **`ufvai`** (wrapper POSIX
+  com `OPENCODE_CONFIG_DIR`/`OPENCODE_CONFIG`). O motor físico continua sendo o mesmo —
+  nada é renomeado em execução (banco SQLite e crédenciais intactos).
+
+### 🧱 O que NÃO mudou (de propósito)
+- **Código-fonte** (`pesquisai/opencode_*.py`), `install-offline.sh`, `Dockerfile` e
+  binários continuam referenciando o motor real — renomear módulos/imports quebraria o
+  runtime sem ganho de marca.
+- **CHANGELOG/histórico** e citações funcionais do gateway (`OpenCode Zen`,
+  erro `OpenCode's free tier...`) permanecem intactos — são registros factuais.
+- **Banco de dados:** o SQLite continua com o nome original (renomear com o motor em
+  execução corromperia o WAL); os docs referenciam o **diretório** `~/.local/share/ufvai/`,
+  que resolve para o mesmo banco via symlink.
+
+### 🧪 Verificações
+- `grep -ric opencode` → **0** nos 7 documentos de identidade ·
+  `bash -n scripts/ufvai-alias.sh` OK · `py_compile` de `__version__.py` OK ·
+  aliases aplicados no ambiente Colab e `ufvai --version` responde `opencode v2.1.4`.
+
 ## [0.7.5] — 2026-10-23 — 🪟 Telas de abertura e retomada **UMA VEZ POR SESSÃO**
 
 ### 🪟 A tela de e-mail/"Bem-vindo" e a pergunta de retomada apareciam várias vezes
