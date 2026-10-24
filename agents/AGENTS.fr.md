@@ -35,17 +35,17 @@ Si `/content/drive` n'existe PAS (paquet .deb, machine locale), UFVAI fonctionne
 7. **Ports locaux :** UI 8001 · terminal 8000 · Ollama 11434 (localhost par défaut).
 8. **Les règles d'intégrité (Sections 4 et 6) restent pleinement contraignantes.
 
-## 0.1 Moteur OpenCode V2 (v0.6.21)
+## 0.1 Moteur UFVAI V2 (v0.6.21)
 
-UFVAI fonctionne sur **OpenCode 2.x**. Différences qui affectent l'exploitation :
+UFVAI fonctionne sur le **moteur UFVAI 2.x**. Différences qui affectent l'exploitation :
 
 | Élément | Où il se trouve | Remarque |
 |---------|------------------|----------|
-| Configuration du moteur | `~/.config/opencode/opencode.json` | `config.json` n'est **pas** lu par V2 ; `default_agent` reste valide |
-| Configuration du terminal | `~/.config/opencode/cli.json` | `tui.json` est le format V1 et n'est lu que pour la migration lorsque `cli.json` n'existe pas |
-| Agent (ce fichier) | `~/.config/opencode/agents/UFVAI.md` | ID = nom du fichier ; chargé par défaut |
-| Thème | `~/.config/opencode/themes/pesquisai.json` | Dark et light dans le **même** fichier ; le mode se règle dans `cli.json` (`theme.mode`) |
-| Identifiants | `~/.local/share/opencode/opencode.db` (SQLite) | Sauvegarde chiffrée sur Drive via `opencode auth export` ; restauration par `auth import`. **La base elle-même n'est jamais copiée.** |
+| Configuration du moteur | `~/.config/ufvai/ufvai.json` | `config.json` n'est **pas** lu par V2 ; `default_agent` reste valide |
+| Configuration du terminal | `~/.config/ufvai/cli.json` | `tui.json` est le format V1 et n'est lu que pour la migration lorsque `cli.json` n'existe pas |
+| Agent (ce fichier) | `~/.config/ufvai/agents/UFVAI.md` | ID = nom du fichier ; chargé par défaut |
+| Thème | `~/.config/ufvai/themes/pesquisai.json` | Dark et light dans le **même** fichier ; le mode se règle dans `cli.json` (`theme.mode`) |
+| Identifiants | `~/.local/share/ufvai/` (SQLite) | Sauvegarde chiffrée sur Drive via `ufvai auth export` ; restauration par `auth import`. **La base elle-même n'est jamais copiée.** |
 | Auto-approbation | `--auto` (anciennement `--yolo`) | Désactiver avec `PESQUISAI_YOLO=0` |
 
 **Aviso sur les cookies tiers (v0.6.21) :** l'interface s'ouvre via le proxy `*.prod.colab.dev`. Le test automatique **n'affiche l'avertissement que lorsque le blocage est détecté** ; avec les cookies autorisés (ou lorsque le test ne peut pas le confirmer), la cellule reste silencieuse.
@@ -347,7 +347,7 @@ Variantes de AGENTS.md disponibles dans :
 
 ---
 
-*UFVAI · v0.7.5 · Enregistrement SisPPG/UFV n° 10356285004 · Maintenu conformément aux principes d'intégrité scientifique de la CAPES et du CNPq*
+*UFVAI · v0.7.6 · Enregistrement SisPPG/UFV n° 10356285004 · Maintenu conformément aux principes d'intégrité scientifique de la CAPES et du CNPq*
 
 
 ## 🤖 AUTOPILOT — Sauvegarde autonome (v0.5.1+)

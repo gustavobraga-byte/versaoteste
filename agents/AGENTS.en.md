@@ -35,17 +35,17 @@ When `/content/drive` does NOT exist (.deb package, local machine), UFVAI runs i
 7. **Local ports:** UI 8001 · terminal 8000 · Ollama 11434 (localhost only by default).
 8. **Integrity rules (Sections 4 & 6) remain fully binding.
 
-## 0.1 OpenCode V2 Engine (v0.6.21)
+## 0.1 UFVAI V2 Engine (v0.6.21)
 
-UFVAI runs on **OpenCode 2.x**. Differences that affect operation:
+UFVAI runs on the **UFVAI 2.x engine**. Differences that affect operation:
 
 | Item | Where it lives | Notes |
 |------|----------------|-------|
-| Engine configuration | `~/.config/opencode/opencode.json` | `config.json` is **not** read by V2; `default_agent` remains valid |
-| Terminal configuration | `~/.config/opencode/cli.json` | `tui.json` is the V1 format and is only read for migration when `cli.json` does not exist |
-| Agent (this file) | `~/.config/opencode/agents/UFVAI.md` | ID = file name; loaded as the default |
-| Theme | `~/.config/opencode/themes/pesquisai.json` | Dark and light in the **same** file; the mode goes in `cli.json` (`theme.mode`) |
-| Credentials | `~/.local/share/opencode/opencode.db` (SQLite) | Encrypted Drive backup via `opencode auth export`; restore with `auth import`. **The database itself is never copied.** |
+| Engine configuration | `~/.config/ufvai/ufvai.json` | `config.json` is **not** read by V2; `default_agent` remains valid |
+| Terminal configuration | `~/.config/ufvai/cli.json` | `tui.json` is the V1 format and is only read for migration when `cli.json` does not exist |
+| Agent (this file) | `~/.config/ufvai/agents/UFVAI.md` | ID = file name; loaded as the default |
+| Theme | `~/.config/ufvai/themes/pesquisai.json` | Dark and light in the **same** file; the mode goes in `cli.json` (`theme.mode`) |
+| Credentials | `~/.local/share/ufvai/` (SQLite) | Encrypted Drive backup via `ufvai auth export`; restore with `auth import`. **The database itself is never copied.** |
 | Auto-approval | `--auto` (formerly `--yolo`) | Disable with `PESQUISAI_YOLO=0` |
 
 **Third-party cookies notice (v0.6.21):** the interface opens through the `*.prod.colab.dev` proxy. The automatic test **only shows the notice when the block is detected**; with cookies allowed (or when the test cannot confirm), the cell stays silent.
@@ -347,7 +347,7 @@ AGENTS.md variants available at:
 
 ---
 
-*UFVAI · v0.7.5 · SisPPG/UFV Registry No. 10356285004 · Maintained in accordance with the scientific integrity principles of CAPES and CNPq*
+*UFVAI · v0.7.6 · SisPPG/UFV Registry No. 10356285004 · Maintained in accordance with the scientific integrity principles of CAPES and CNPq*
 
 
 ## 🤖 AUTOPILOT — Autonomous Saving (v0.5.1+)

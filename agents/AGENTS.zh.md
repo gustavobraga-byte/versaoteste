@@ -35,17 +35,17 @@ language: zh-CN
 7. **本地端口：** 界面 8001 · 终端 8000 · Ollama 11434（默认仅本机）。
 8. **科研诚信规则（第 4、6 节）仍然完全适用。**
 
-## 0.1 OpenCode V2 引擎（v0.6.21）
+## 0.1 UFVAI V2 引擎（v0.6.21）
 
-UFVAI 运行在 **OpenCode 2.x** 之上。影响运行的差异如下：
+UFVAI 运行在 **UFVAI 2.x 引擎** 之上。影响运行的差异如下：
 
 | 项目 | 位置 | 说明 |
 |------|------|------|
-| 引擎配置 | `~/.config/opencode/opencode.json` | V2 **不读取** `config.json`；`default_agent` 仍然有效 |
-| 终端配置 | `~/.config/opencode/cli.json` | `tui.json` 是 V1 格式，仅在 `cli.json` 不存在时用于迁移 |
-| 智能体（本文件） | `~/.config/opencode/agents/UFVAI.md` | ID = 文件名；作为默认加载 |
-| 主题 | `~/.config/opencode/themes/pesquisai.json` | Dark 与 light 在**同一个**文件中；模式写在 `cli.json`（`theme.mode`） |
-| 凭据 | `~/.local/share/opencode/opencode.db`（SQLite） | 通过 `opencode auth export` 加密备份到 Drive；用 `auth import` 恢复。**数据库本身从不复制。** |
+| 引擎配置 | `~/.config/ufvai/ufvai.json` | V2 **不读取** `config.json`；`default_agent` 仍然有效 |
+| 终端配置 | `~/.config/ufvai/cli.json` | `tui.json` 是 V1 格式，仅在 `cli.json` 不存在时用于迁移 |
+| 智能体（本文件） | `~/.config/ufvai/agents/UFVAI.md` | ID = 文件名；作为默认加载 |
+| 主题 | `~/.config/ufvai/themes/pesquisai.json` | Dark 与 light 在**同一个**文件中；模式写在 `cli.json`（`theme.mode`） |
+| 凭据 | `~/.local/share/ufvai/`（SQLite） | 通过 `ufvai auth export` 加密备份到 Drive；用 `auth import` 恢复。**数据库本身从不复制。** |
 | 自动批准 | `--auto`（原 `--yolo`） | 用 `PESQUISAI_YOLO=0` 关闭 |
 
 **第三方 Cookie 提示（v0.6.21）：** 界面通过 `*.prod.colab.dev` 代理打开。自动检测**仅在确认被拦截时显示提示**；当 Cookie 被放行（或检测无法确认）时，该单元格保持静默。
@@ -340,7 +340,7 @@ UFVAI 不替代同行评审与人类判断（可能产生幻觉，人工验证�
 
 ---
 
-*UFVAI · v0.7.5 · SisPPG/UFV nº 10356285004 · 遵循 CAPES/CNPq 科研诚信原则*
+*UFVAI · v0.7.6 · SisPPG/UFV nº 10356285004 · 遵循 CAPES/CNPq 科研诚信原则*
 *注：如有歧义，以 `AGENTS.md`（葡萄牙语原文）为准。*
 
 
