@@ -119,3 +119,41 @@ def test_ensure_service_fast_path(tmp_path, monkeypatch):
 
     assert rf.ensure_service_project_dir(str(projeto)) is True
     assert chamadas == []
+
+
+# ── Saudação no idioma do cliente (27/10/2026) ─────────────────────
+
+def test_pref_do_drive_vence_current_lang(monkeypatch):
+    """Prefs pt_BR + _current_lang herdado (en_US) → TUI abre em pt_BR."""
+    monkeypatch.setattr(la, "_read_prefs", lambda: {"lang": "pt_BR", "lang_source": "user"})
+    monkeypatch.setattr(la, "_current_lang", "en_US")
+    monkeypatch.setattr(la, "resolve_opencode", lambda: ("/bin/true", {}))
+    monkeypatch.setattr(la, "_sync_terminal_locale", lambda *_: None)
+    monkeypatch.setattr(la, "preflight_ufvai_session_info", lambda cwd=None: ("ses_x", False))
+    monkeypatch.setattr(la, "_build_ttyd_args", lambda args, env: args)
+
+    _args, _env, full = la._build_ttyd_cmd(None, session_id="ses_x", seed_greeting=False)
+    assert full == "pt_BR"
+
+
+def test_fallback_da_saudacao_nao_usa_locale_do_servidor(monkeypatch):
+    """Sem cliente, a saudação pendente sai em pt_BR — nunca no en_US do servidor."""
+    monkeypatch.setattr(la, "_read_prefs", lambda: {})
+    monkeypatch.setattr(la, "_current_lang", "en_US")
+    captured: dict = {}
+    monkeypatch.setattr(
+        la, "_seed_greeting_async",
+        lambda sid, lang, delay=0.0: captured.update(sid=sid, lang=lang),
+    )
+    import time as _time
+    la._mark_greeting_pending("ses_fallback_teste", "en_US", fallback_s=1.0)
+    _time.sleep(1.4)
+    assert captured.get("lang") == "pt_BR"
+
+
+def test_touch_script_tem_keepalive_e_sem_laco_de_reload():
+    """ttyd: keepalive de aplicação (20 s) e reload limitado por sessionStorage."""
+    js = la._get_touch_handler_script()
+    assert "'1'+JSON.stringify" in js, "keepalive RESIZE ausente"
+    assert "ufvai_ttyd_reloads" in js, "limite de reload ausente"
+    assert "v.n>=2" in js, "orçamento de reload não aplicado"

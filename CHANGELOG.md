@@ -29,6 +29,50 @@
 - **Testes:** `tests/test_v077_start_dir.py` — 5/5 (preferência do Drive,
   fallback offline, `cwd` do ttyd, `location` da sessão, fast-path do serviço).
 
+### 🌐 Saudação inicial no idioma do CLIENTE (nunca no locale do servidor)
+- **Relato do autor (27/10/2026):** *“ainda está com a mensagem em inglês
+  `Hello! (tip: ...)` mesmo com a interface detectando corretamente o
+  português.”*
+- **Causa [DADO CONFIRMADO]:** quando não havia preferência no Drive, a
+  saudação ficava pendente e um **fallback de 8 s** a semeava com
+  `_current_lang` — que, no Colab, vinha do locale do **servidor** (`en_US`).
+  A interface abria depois (em português) e o `/api/lang` já não tinha o que
+  consumir: a mensagem em inglês permanecia no histórico.
+- **Correção:**
+  1. `_build_ttyd_cmd()` resolve o idioma na ordem **env → prefs do Drive →
+     `_current_lang` → sistema** (antes `_current_lang` vencia as prefs).
+  2. Só semeia a saudação imediatamente quando o idioma é **confirmado**
+     (env ou preferência salva). Sem confirmação, fica pendente para o
+     `/api/lang` do navegador.
+  3. O fallback passou de **8 s → 60 s** e usa **prefs ou `pt_BR`** — nunca
+     o locale do servidor.
+  4. Caminho `--prompt` (sem sessão pré-criada) usa `pt_BR` quando o idioma
+     não está confirmado.
+- **Testes:** +2 em `tests/test_v077_start_dir.py` (prefs vencem
+  `_current_lang`; fallback não usa locale do servidor) — **7/7**.
+
+### 🔌 ttyd sem quedas: keepalive de aplicação e fim do laço de reload
+- **Relato do autor (27/10/2026):** *“o terminal ttyd está desconectando
+  constantemente”*.
+- **Evidência [DADO CONFIRMADO]:** `ttyd.log` mostrava `WS closed` a cada
+  30–60 s, sempre seguido de `/token` + `/ws` novos — a página recarregava em
+  laço. O reload vinha do auto-reconnect injetado em v0.7.5, cujo contador
+  reiniciava a cada recarga (`_reloads<3`), e o proxy do Colab derruba
+  WebSocket **sem tráfego de aplicação** (o ping do ttyd é controle de
+  protocolo e não conta).
+- **Correção (no HTML injetado no ttyd, `_get_touch_handler_script`):**
+  1. **Keepalive**: a cada **20 s** envia um `RESIZE` do próprio protocolo do
+     ttyd (`'1' + JSON`) com o tamanho atual — idempotente, invisível na tela,
+     mantém o socket ativo.
+  2. **Auto-reconnect domado**: Enter no máximo 1×/5 s e só após 3 s de socket
+     fechado; reload só como último recurso, no máximo **2× por aba/10 min**
+     (`sessionStorage`) e apenas se o terminal exibir “Reconnect/Connection
+     closed”.
+- **Efeito imediato:** o ttyd serve o `index.html` do disco a cada request —
+  basta **recarregar a página** para o keepalive entrar em vigor (sem
+  reiniciar o app).
+- **Teste:** `test_touch_script_tem_keepalive_e_sem_laco_de_reload` — 8/8.
+
 ### 🔒 O agente não acessa mais “My Drive” fora da pasta PesquisAI
 - **Regra do autor:** *“não deixe acessar a pasta My Drive exceto a subpasta PesquisAI e
   todas as suas subpastas — mesmo estando em auto.”*
