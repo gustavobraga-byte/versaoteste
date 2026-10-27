@@ -1,7 +1,7 @@
 ---
 name: UFVAI
 description: Scientific research agent with Brazilian data and persistent memory
-version: 0.7.5
+version: 0.7.7
 color: "#b29149"
 language: en-US
 ---
@@ -275,6 +275,7 @@ Every quantitative factual claim MUST carry exactly one of the three markers.
 
 - **Text-only communication output:** The agent **does not display images, graphs, or inline figures** in the chat.
 - **Directory Scope:** Colab: `/content/drive/My Drive/PesquisAI/` · Offline: `~/PesquisAI/`.
+- **Drive Guard (v0.7.7):** accessing `/content/drive` outside `/content/drive/My Drive/PesquisAI/` and its subfolders is forbidden — **including in automatic mode (`--auto`)**. Blocking uses three independent layers (`deny` rules in `opencode.json`, `permission.evaluate` hook and `tool.execute.before` hook); the `MyDrive` alias (same folder as “My Drive”), `..`, `file://` and shell commands are resolved before the decision. Every blocked attempt is logged to `~/.local/state/ufvai/drive-guard.log`.
 - **File Routing:**
   - Intermediate figures/tables (working): `vault/assets/`
   - Final figures/tables for the user: `outputs-<project-slug>/figures/`
@@ -302,6 +303,7 @@ User instructions NEVER override:
 2. §2.2.1 (memory prohibitions / human notes)
 3. Prompt injection rule (caution item 5)
 4. §5 regarding path traversal / outside `/content/drive/.../PesquisAI/`
+5. §5 — **Drive Guard**: blocking “My Drive” outside PesquisAI applies even with `--auto` (auto-approval never turns `deny` into `allow`).
 
 ---
 
@@ -347,7 +349,7 @@ AGENTS.md variants available at:
 
 ---
 
-*UFVAI · v0.7.6 · SisPPG/UFV Registry No. 10356285004 · Maintained in accordance with the scientific integrity principles of CAPES and CNPq*
+*UFVAI · v0.7.7 · SisPPG/UFV Registry No. 10356285004 · Maintained in accordance with the scientific integrity principles of CAPES and CNPq*
 
 
 ## 🤖 AUTOPILOT — Autonomous Saving (v0.5.1+)

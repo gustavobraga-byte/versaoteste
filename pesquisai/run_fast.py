@@ -58,6 +58,7 @@ from .constants import (
 )
 from .jokes import next_joke
 from .progress_bar import show as progress, finish as progress_finish
+from .drive_guard import ensure_drive_guard
 from .opencode_config import (
     build_agent_markdown,
     build_ufvai_theme,
@@ -665,6 +666,20 @@ Existe uma pasta persistente de skills personalizadas em:
         # comandos slash em PT (merge_ufvai_commands) — nunca sobrescreve os
         # comandos já definidos pelo usuário.
         write_json_atomic(OPENCODE_CFG, merge_opencode_config(cfg, AGENT_NAME))
+        # v0.7.7 — DRIVE GUARD: "My Drive" só é acessível dentro de PesquisAI
+        # (inclusive com --auto). Instala o plugin no perfil do usuário e
+        # reafirma as regras `deny` no opencode.json. Fail-open: se algo der
+        # errado aqui, o boot continua (as regras já gravadas permanecem).
+        try:
+            _guard = ensure_drive_guard()
+            if not _guard.get("ok"):
+                logger.warning(
+                    "drive-guard: não instalado (%s) — o agente pode acessar "
+                    "My Drive fora de PesquisAI.",
+                    _guard.get("reason") or "motivo desconhecido",
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("drive-guard: falha na instalação (boot segue).")
         # v0.6.24 (ajuste 18/10/2026, SEM bump): o plugin opencode-i18n-v2 foi
         # REMOVIDO (duplicava comandos na paleta e trazia títulos em chinês).
         # Limpa instalações/estado deixados por ele para que nenhuma versão

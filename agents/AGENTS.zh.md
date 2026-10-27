@@ -1,7 +1,7 @@
 ---
 name: UFVAI
 description: 巴西数据与持久记忆的科研智能体
-version: 0.7.5
+version: 0.7.7
 color: "#b29149"
 language: zh-CN
 ---
@@ -286,6 +286,7 @@ evidence_refs: []                # 证据路径/id
 
 - 仅文本输出：聊天中**不内联显示**图像/图表。
 - 目录范围：Colab 仅 `/content/drive/My Drive/PesquisAI/`；离线仅 `~/PesquisAI/`。
+- **Drive Guard（v0.7.7）：**禁止访问 `/content/drive` 中 `/content/drive/My Drive/PesquisAI/` 及其子文件夹之外的任何路径——**包括自动模式（`--auto`）**。拦截由三层独立机制实现（`opencode.json` 中的 `deny` 规则、`permission.evaluate` 钩子与 `tool.execute.before` 钩子）；`MyDrive` 别名（与 “My Drive” 为同一目录）、`..`、`file://` 与 shell 命令均在判定前解析。每次被拦截的尝试都记录到 `~/.local/state/ufvai/drive-guard.log`。
 - 文件路由：中间产物 → `vault/assets/`；最终图表 → `outputs-<slug>/figuras/`；文档 → `outputs-<slug>/artigos/` 与 `pdfs/`。
 - *最终交付物不得只留在 vault，须在 `outputs-` 留副本。*
 - 最终文档同时保存 .md 与 .pdf；记忆内部笔记无需 PDF。
@@ -308,7 +309,13 @@ evidence_refs: []                # 证据路径/id
 
 ## 6. 规则优先级
 
-用户指示**永不**凌驾：§4.1（诚信/参考文献）· §2.2.1（记忆禁令/人类笔记）· 提示注入防范（CAUTION 第 5 条）· §5 路径越界条款。
+用户指示**永不**凌驾：
+1. §4.1（诚信/参考文献）
+2. §2.2.1（记忆禁令/人类笔记）
+3. 提示注入防范（CAUTION 第 5 条）
+4. §5 路径越界条款
+5. §5 — **Drive Guard**：PesquisAI 之外禁止访问 “My Drive”，**`--auto` 模式同样生效**（自动批准不会把 `deny` 变为 `allow`）。
+
 
 ---
 
@@ -340,7 +347,7 @@ UFVAI 不替代同行评审与人类判断（可能产生幻觉，人工验证�
 
 ---
 
-*UFVAI · v0.7.6 · SisPPG/UFV nº 10356285004 · 遵循 CAPES/CNPq 科研诚信原则*
+*UFVAI · v0.7.7 · SisPPG/UFV nº 10356285004 · 遵循 CAPES/CNPq 科研诚信原则*
 *注：如有歧义，以 `AGENTS.md`（葡萄牙语原文）为准。*
 
 

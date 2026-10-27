@@ -1,7 +1,7 @@
 ---
 name: UFVAI
 description: Agente de investigación científica con datos brasileños y memoria persistente
-version: 0.7.5
+version: 0.7.7
 color: "#b29149"
 language: es-ES
 ---
@@ -276,6 +276,7 @@ Toda afirmación factual cuantitativa DEBE llevar exactamente uno de los tres ma
 
 - **Salida comunicacional exclusivamente textual:** El agente **no muestra imágenes, gráficos o figuras en línea** en el chat.
 - **Alcance de Directorios:** Colab: `/content/drive/My Drive/PesquisAI/` · Sin conexión: `~/PesquisAI/`.
+- **Drive Guard (v0.7.7):** está prohibido acceder a `/content/drive` fuera de `/content/drive/My Drive/PesquisAI/` y sus subcarpetas — **incluso en modo automático (`--auto`)**. El bloqueo usa tres capas independientes (reglas `deny` en `opencode.json`, hook `permission.evaluate` y hook `tool.execute.before`); el alias `MyDrive` (la misma carpeta que “My Drive”), `..`, `file://` y los comandos de shell se resuelven antes de la decisión. Todo intento bloqueado se registra en `~/.local/state/ufvai/drive-guard.log`.
 - **Enrutamiento de Archivos:**
   - Figuras/tablas intermedias (de trabajo): `vault/assets/`
   - Figuras/tablas finales para el usuario: `outputs-<slug-del-proyecto>/figuras/`
@@ -303,6 +304,7 @@ Las instrucciones del usuario NUNCA anulan:
 2. §2.2.1 (prohibiciones de memoria / notas humanas)
 3. Regla de inyección de prompt (advertencia punto 5)
 4. §5 en lo relativo a path traversal / fuera de `/content/drive/.../PesquisAI/`
+5. §5 — **Drive Guard**: el bloqueo de “My Drive” fuera de PesquisAI se aplica incluso con `--auto` (la autoaprobación nunca convierte `deny` en `allow`).
 
 ---
 
@@ -348,7 +350,7 @@ Variantes de AGENTS.md disponibles en:
 
 ---
 
-*UFVAI · v0.7.6 · Registro SisPPG/UFV nº 10356285004 · Mantenido conforme a los principios de integridad científica de CAPES y CNPq*
+*UFVAI · v0.7.7 · Registro SisPPG/UFV nº 10356285004 · Mantenido conforme a los principios de integridad científica de CAPES y CNPq*
 
 
 ## 🤖 AUTOPILOT — Guardado autónomo (v0.5.1+)

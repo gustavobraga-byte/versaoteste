@@ -1,6 +1,56 @@
 # Changelog — PesquisAI
 
 
+## [0.7.7] — 2026-10-27 — 🔒 Drive Guard: **“My Drive” só dentro de PesquisAI**
+
+### 🔒 O agente não acessa mais “My Drive” fora da pasta PesquisAI
+- **Regra do autor:** *“não deixe acessar a pasta My Drive exceto a subpasta PesquisAI e
+  todas as suas subpastas — mesmo estando em auto.”*
+- **Antes:** o agente rodava com `--auto` (auto-aprovação) e podia ler, listar e gravar
+  qualquer arquivo de `/content/drive/My Drive` — inclusive os documentos pessoais do
+  usuário que não fazem parte da memória.
+- **Agora:** um plugin do servidor UFVAI V2 (`pesquisai/plugins/drive_guard/`) fecha
+  `/content/drive` e libera **somente** `/content/drive/My Drive/PesquisAI/**`. A decisão
+  **não depende de aprovação**, então `--auto` não a contorna.
+- **Três camadas independentes:**
+  1. **Regras declarativas** em `opencode.json` — `permissions` com `deny` da raiz vigiada
+     seguido de `allow` de PesquisAI para `external_directory`, `read` e `edit`. No motor,
+     `deny` é **final**: nenhuma flag de auto-aprovação a transforma em `allow`.
+  2. **Hook `permission.evaluate`** — qualquer decisão que sobrevenha para `read`, `edit`,
+     `external_directory`, `shell`, `glob` ou `grep` apontando para fora de PesquisAI é
+     reescrita para `deny`.
+  3. **Hook `tool.execute.before`** — inspeciona a entrada da ferramenta (`path`, `file`,
+     `pattern`, `command`, `cwd`, inclusive aninhada) e lança erro **antes** de tocar no disco.
+- **Resolução de caminho:** `realpath` do ancestral mais próximo (resolve symlinks e
+  alvos que ainda não existem), `..`, `file://`, `~`, `$HOME`, aspas e escapes. O alias
+  `MyDrive` do Colab (mesmo diretório de `My Drive`, mesmo inode) é normalizado na
+  comparação. Em comando de shell, além dos tokens, procura caminhos absolutos do Drive em
+  qualquer posição — pega `python3 -c "open('/content/drive/My Drive/x')"`. Referência
+  ofuscada (variável montada em tempo de execução) cai em **falha fechada**.
+- **Preservação:** o material criptográfico de “Minha memória”
+  (`*keys_store.json`, `*keys_encryption_key.bin`) continua com `deny`; `*.env` continua
+  exigindo aprovação. Arquivos do usuário relacionados ao agente não são tocados.
+- **O que NÃO muda:** o servidor Python da interface (memória, backups, autosave) continua
+  acessando o Drive normalmente — o guard governa **as ferramentas do agente**.
+- **Auditoria:** cada bloqueio é registrado em `~/.local/state/ufvai/drive-guard.log`
+  (ISO-8601, uma linha por evento).
+- **Fail-open no boot:** se a cópia do plugin falhar, o UFVAI inicia normalmente e avisa no
+  log; um `opencode.json` ilegível **nunca** é sobrescrito (as regras já gravadas
+  permanecem).
+
+### ⚙️ Instalação automática
+- `ensure_drive_guard()` é chamado por `ensure_ufvai_agent()` — portanto roda no boot e em
+  **todo** (re)spawn do terminal (troca de idioma, troca de chave, `/api/run_terminal`,
+  import de sessão). O plugin vai para `<config>/plugins/ufvai-drive-guard/` e o caminho
+  absoluto é registrado em `plugins`.
+
+### 🧪 Testes
+- `tests/js/test_drive_guard.mjs` (**novo**) 35/35 — caminhos, symlink real, comandos de
+  shell, entradas de ferramenta, hook de permissão e o contrato do `setup()` (um evento
+  que chega como `allow` — o que a auto-aprovação faz — é reescrito para `deny`).
+- `tests/test_drive_guard.py` (**novo**) 20/20 — ordem `deny` → `allow`, idempotência do
+  merge, preservação de regras do usuário, cópia do plugin e config ilegível.
+
 ## [0.7.6] — 2026-10-24 — 🏷️ Rebrand do agente: **opencode → ufvai** (identidade completa, estilo Flint)
 
 ### 🎯 Pedido do autor
