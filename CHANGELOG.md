@@ -3,6 +3,32 @@
 
 ## [0.7.7] — 2026-10-27 — 🔒 Drive Guard: **“My Drive” só dentro de PesquisAI**
 
+### 📂 O app inicia na pasta PesquisAI (não em `/root`)
+- **Relato do autor (27/10/2026):** *“a versão 0.7.7 quando inicia está no root,
+  deve iniciar na pasta PesquisAI no Drive.”*
+- **Causa [DADO CONFIRMADO no runtime]:** o motor V2 sobe um
+  `opencode serve --service` desanexado que **herda o cwd de quem o inicia**. No
+  Colab, o kernel roda em `/root`; o serviço nascia ali e as sessões criadas sem
+  `location` explícita adotavam `/root` como diretório de projeto — o agente
+  executava ferramentas fora do Drive mesmo com o `cd` no comando do ttyd.
+- **Correção (três camadas):**
+  1. `ensure_service_project_dir()` (`run_fast.py`) roda no boot, depois das
+     dependências: se o serviço está em outro cwd, faz `service stop` e sobe
+     `opencode serve --service` **com `cwd` = pasta PesquisAI** (fast-path quando
+     já está correto; best-effort, nunca derruba o boot).
+  2. `_workspace_dir()` (`launch_app.py`) resolve o diretório do projeto sem
+     nunca cair na raiz: `DRIVE_PATH` → `~/PesquisAI` → cria `DRIVE_PATH`. Todos
+     os spawns de terminal (`start_ttyd`, auto-cura, troca de idioma,
+     `/api/run_terminal`, importação de sessão) usam esse valor no `cd` **e** no
+     `cwd` do `Popen` do ttyd.
+  3. `preflight_ufvai_session_info()` cria a sessão com
+     `location: {"directory": <projeto>}` explícito — a sessão nasce presa ao
+     Drive mesmo se o processo estiver em outro diretório.
+- **Efeito:** sessões novas, o terminal e as ferramentas do agente passam a
+  abrir em `/content/drive/My Drive/PesquisAI` (offline: `~/PesquisAI`).
+- **Testes:** `tests/test_v077_start_dir.py` — 5/5 (preferência do Drive,
+  fallback offline, `cwd` do ttyd, `location` da sessão, fast-path do serviço).
+
 ### 🔒 O agente não acessa mais “My Drive” fora da pasta PesquisAI
 - **Regra do autor:** *“não deixe acessar a pasta My Drive exceto a subpasta PesquisAI e
   todas as suas subpastas — mesmo estando em auto.”*

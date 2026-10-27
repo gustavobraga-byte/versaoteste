@@ -346,6 +346,105 @@ def setup_drive() -> tuple[str, str]:
     return DRIVE_PATH, folder_url
 
 
+def _service_cwd() -> Optional[str]:
+    """cwd do processo ``opencode serve --service`` em execução (None se não há).
+
+    O motor V2 roda um servidor de background que herda o cwd de quem o
+    iniciou. Sessões criadas sem ``location`` explícita nascem nesse cwd —
+    por isso o servidor precisa nascer dentro da pasta PesquisAI.
+    """
+    try:
+        listing = subprocess.run(
+            ["pgrep", "-f", "opencode serve --service"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for pid in (listing.stdout or "").split():
+        try:
+            return os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            continue
+    return None
+
+
+def ensure_service_project_dir(project_dir: str, timeout_s: float = 20.0) -> bool:
+    """Garante que o serviço do OpenCode nasça com cwd na pasta do projeto.
+
+    v0.7.7 (correção 27/10/2026 — SEM bump): relatado pelo autor — "a versão
+    0.7.7 quando inicia está no root, deve iniciar na pasta PesquisAI no
+    drive". Causa [DADO CONFIRMADO no runtime]: o ``opencode serve --service``
+    era iniciado pelo kernel do Colab em ``/root``; as sessões criadas pelo
+    serviço herdavam ``/root`` como diretório de projeto e o agente executava
+    ferramentas fora do Drive, mesmo com o ``cd`` no comando do ttyd.
+
+    Esta rotina roda no boot, ANTES de qualquer TUI:
+      1. se o serviço já está no projeto, não faz nada (fast-path);
+      2. para o serviço antigo (``service stop``);
+      3. sobe ``opencode serve --service`` com ``cwd=project_dir``;
+      4. espera o serviço responder (``service status``).
+
+    Best-effort: qualquer falha devolve False e o boot segue — os spawns do
+    ttyd também passam a usar ``cwd`` explícito (camada 2).
+    """
+    target = os.path.abspath(project_dir or "")
+    if not target or not os.path.isdir(target):
+        return False
+
+    current = _service_cwd()
+    try:
+        if current and os.path.realpath(current) == os.path.realpath(target):
+            return True
+    except OSError:
+        pass
+
+    try:
+        from .opencode_utils import build_env, find_opencode
+        opencode_bin = find_opencode()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("ensure_service_project_dir: opencode indisponível (%s)", exc)
+        return False
+
+    try:
+        subprocess.run(
+            [opencode_bin, "service", "stop"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception as exc:  # noqa: BLE001 — serviço ausente é o caso normal
+        logger.debug("ensure_service_project_dir: service stop falhou (%s)", exc)
+
+    try:
+        subprocess.Popen(
+            [opencode_bin, "serve", "--service"],
+            cwd=target,
+            env=build_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ensure_service_project_dir: não subiu o serviço (%s)", exc)
+        return False
+
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        try:
+            status = subprocess.run(
+                [opencode_bin, "service", "status"],
+                capture_output=True, text=True, timeout=3,
+            )
+            if (status.stdout or "").strip().startswith("http"):
+                logger.info(
+                    "Serviço OpenCode iniciado em %s (cwd do projeto)", target,
+                )
+                return True
+        except (OSError, subprocess.SubprocessError):
+            pass
+        time.sleep(0.4)
+    logger.warning("ensure_service_project_dir: serviço não respondeu em %ss", timeout_s)
+    return False
+
+
 # ── Etapa 2: Dependências ────────────────────────────────────
 
 def _install_opencode_if_missing() -> bool:
@@ -760,10 +859,17 @@ def preflight_ufvai_session_info(
         logger.debug("preflight_ufvai_session: opencode não encontrado")
         return None, False
 
-    payload = _json.dumps({
+    payload_data: dict = {
         "agent": AGENT_NAME,
         "title": "Terminal PesquisAI (UFVAI)",
-    })
+    }
+    # v0.7.7 (correção 27/10/2026 — SEM bump): a sessão nasce explicitamente
+    # PRESA à pasta PesquisAI. Antes, quando ``cwd`` era relativo a um
+    # processo iniciado em /root (kernel do Colab), o motor criava a sessão
+    # em /root — o agente abria fora do Drive mesmo com o ``cd`` no ttyd.
+    if cwd and os.path.isdir(cwd):
+        payload_data["location"] = {"directory": os.path.abspath(cwd)}
+    payload = _json.dumps(payload_data)
 
     def _api(arguments: list[str]) -> dict:
         result = subprocess.run(
@@ -1304,6 +1410,9 @@ def run() -> None:
 
     folder_path, drive_url = setup_drive()
     setup_dependencies()
+    # v0.7.7 (27/10/2026 — SEM bump): o serviço do motor nasce no PesquisAI,
+    # não em /root — é dele que as sessões herdam o diretório de projeto.
+    ensure_service_project_dir(folder_path)
     setup_skills()
     setup_custom_skills()  # v0.6.18: skills personalizadas do usuário
     setup_obsidian_vault()

@@ -300,6 +300,39 @@ def resolve_opencode() -> tuple[str, dict]:
     return _opencode_bin, _env
 
 
+def _workspace_dir() -> str:
+    """Diretório de trabalho do UFVAI: a pasta PesquisAI (Drive no Colab).
+
+    v0.7.7 (correção 27/10/2026 — SEM bump): o terminal abria em ``/root``
+    porque cada ponto de spawn resolvia o projeto por conta própria e, quando
+    ``DRIVE_PATH`` ainda não existia (Drive montando) ou quando o caminho era
+    o do modo offline, caía em ``os.getcwd()`` — o cwd do kernel do Colab.
+    Aqui a ordem é explícita e NUNCA devolve a raiz:
+
+      1. ``DRIVE_PATH`` (``/content/drive/My Drive/PesquisAI``) se existir;
+      2. ``~/PesquisAI`` (modo offline/.deb) se existir;
+      3. ``DRIVE_PATH`` mesmo que precise ser criado (o chamador garante);
+      4. ``~/PesquisAI`` como último recurso.
+    """
+    try:
+        from .constants import DRIVE_PATH as _drive_path
+    except Exception:  # noqa: BLE001
+        _drive_path = os.path.join(os.environ.get("HOME", "/"), "PesquisAI")
+    home_dir = os.path.join(os.environ.get("HOME", "/"), "PesquisAI")
+    for candidate in (_drive_path, home_dir):
+        try:
+            if candidate and os.path.isdir(candidate):
+                return candidate
+        except OSError:
+            continue
+    target = _drive_path or home_dir
+    try:
+        os.makedirs(target, exist_ok=True)
+    except OSError:
+        return home_dir
+    return target
+
+
 # ── OpenCode V2 · tema do terminal (cli.json) ─────────────────
 # Um só tema (pesquisai) cobre claro e escuro: o modo fica em theme.mode.
 # A interface web continua usando os nomes 'pesquisai' / 'pesquisai-light'.
@@ -1248,13 +1281,18 @@ def _ttyd_event_log(evt: str, extra: str = "") -> None:
         pass
 
 
-def _spawn_ttyd(ttyd_args: list, env: dict | None) -> "subprocess.Popen":
+def _spawn_ttyd(ttyd_args: list, env: dict | None, cwd: str | None = None) -> "subprocess.Popen":
     """v0.6.5: Popen rastreado em NOVA SESSÃO de processos.
 
     start_new_session=True faz o ttyd ser líder do próprio grupo — assim
     _stop_terminal() consegue matar ttyd + bash + opencode (a árvore toda)
     com um único killpg, sem pkill -f global (que matava qualquer processo
     com 'opencode' na cmdline, inclusive o agente hospedeiro).
+
+    v0.7.7 (correção 27/10/2026 — SEM bump): o ttyd nasce com cwd na pasta
+    PesquisAI. Antes, os caminhos que não faziam ``cd`` no bash_cmd
+    (/api/run_terminal e /api/session-import) herdavam o cwd do processo
+    servidor — ``/root`` no Colab — e a sessão do agente abria fora do Drive.
     """
     global _TTYD_PROC
     logf = _ttyd_log_file()
@@ -1263,6 +1301,7 @@ def _spawn_ttyd(ttyd_args: list, env: dict | None) -> "subprocess.Popen":
         stdout=logf,
         stderr=subprocess.STDOUT,
         env=env,
+        cwd=cwd or _workspace_dir(),
         start_new_session=True,
     )
     _TTYD_PROC = proc
@@ -1403,11 +1442,7 @@ def _revive_ttyd(force: bool = False) -> bool:
     _ttyd_event_log("revive", f"force={force} pid_atual={getattr(_TTYD_PROC, 'pid', None)}")
     try:
         opencode_bin, env = resolve_opencode()
-        try:
-            from .constants import DRIVE_PATH as _DRIVE_PATH
-        except Exception:  # noqa: BLE001
-            _DRIVE_PATH = os.path.join(os.environ.get("HOME", "/"), "PesquisAI")
-        project_dir = _DRIVE_PATH if _DRIVE_PATH and os.path.isdir(_DRIVE_PATH) else os.getcwd()
+        project_dir = _workspace_dir()
         sid = _current_ttyd_session
         _yolo = "" if os.environ.get("PESQUISAI_YOLO", "1").strip().lower() in ("0", "false", "off", "no") else " --auto"
         if sid:
@@ -1460,11 +1495,7 @@ def _seed_greeting_async(session_id: str, lang: str, delay: float = 0.8) -> None
     def _run() -> None:
         try:
             opencode_bin, env = resolve_opencode()
-            try:
-                from .constants import DRIVE_PATH as _DRIVE_PATH
-            except Exception:  # noqa: BLE001
-                _DRIVE_PATH = os.path.join(os.environ.get("HOME", "/"), "PesquisAI")
-            project_dir = _DRIVE_PATH if _DRIVE_PATH and os.path.isdir(_DRIVE_PATH) else os.getcwd()
+            project_dir = _workspace_dir()
             # Usa o helper dedicado: ele escolhe o modelo gratuito do Zen
             # (`opencode/big-pickle`) quando existe. Sem isso, o `opencode run`
             # herda o modelo padrão do opencode.json — se ele estiver sem
@@ -1575,11 +1606,7 @@ def _build_ttyd_cmd(lang: str | None = None, session_id: str | None = None,
     # leaves the saudação unanswered). Best-effort: any failure (key/model/quota)
     # leaves the pinned session available; later typed messages still target
     # the UFVAI (post-baseline session agent persiste).
-    try:
-        from .constants import DRIVE_PATH as _DRIVE_PATH
-    except Exception:  # noqa: BLE001
-        _DRIVE_PATH = os.path.join(os.environ.get("HOME", "/"), "PesquisAI")
-    project_dir = _DRIVE_PATH if _DRIVE_PATH and os.path.isdir(_DRIVE_PATH) else os.getcwd()
+    project_dir = _workspace_dir()
 
     session_id = str(session_id or "").strip() or None
     created = False
@@ -3541,9 +3568,9 @@ def start_wrapper_server():
                 # entao nao precisa de segunda sanitizacao — isso causaria falso positivo
                 # pois sanitize_command bloqueia ";" mesmo em comandos validos.
                 if no_fallback:
-                    bash_cmd = f"{cmd}; exec bash"
+                    bash_cmd = f'cd "{_workspace_dir()}" && {cmd}; exec bash'
                 else:
-                    bash_cmd = f"{cmd}; {_opencode_bin}; exec bash"
+                    bash_cmd = f'cd "{_workspace_dir()}" && {cmd}; {_opencode_bin}; exec bash'
 
                 # v0.4.2.5: usar --index com touch handlers se disponível
                 base_ttyd = ["ttyd", "--writable", "-p", str(TERMINAL_PORT),
@@ -3901,7 +3928,8 @@ def start_wrapper_server():
 
                         def _spawn():
                             opencode_bin, env = resolve_opencode()
-                            bash_cmd = f'{opencode_bin} -s "{session_id}" ; exec bash'
+                            _pd = _workspace_dir()
+                            bash_cmd = f'cd "{_pd}" && {opencode_bin} -s "{session_id}" ; exec bash'
                             # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
                             base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable",
                                          *_ttyd_shell_argv(bash_cmd)]
