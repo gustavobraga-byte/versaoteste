@@ -110,5 +110,5 @@ Acesso em: DD mês. AAAA.
 
 ---
 
-🌐 Site oficial: https://gustavobraga-byte.github.io/ufvaisite/ (demonstração, novidades, slides e como citar).
+🌐 Site oficial: https://der.ufv.br/ufvai/ (demonstração, novidades, slides e como citar).
 

@@ -7,15 +7,15 @@
 
 **Agente de IA para pesquisa científica · Universidade Federal de Viçosa**
 
-[![Site oficial](https://img.shields.io/badge/🌐_Site-ufvaisite-2E3242?style=for-the-badge)](https://gustavobraga-byte.github.io/ufvaisite/)
+[![Site oficial](https://img.shields.io/badge/🌐_Site-ufvaisite-2E3242?style=for-the-badge)](https://der.ufv.br/ufvai/)
 [![Abrir no Colab](https://img.shields.io/badge/▶️_Começar_agora-Google_Colab-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
-[![Apresentação](https://img.shields.io/badge/📊_Slides-ver_apresentação-C9A227?style=for-the-badge)](https://gustavobraga-byte.github.io/ufvaisite/#apresentacao)
+[![Apresentação](https://img.shields.io/badge/📊_Slides-ver_apresentação-C9A227?style=for-the-badge)](https://der.ufv.br/ufvai/#apresentacao)
 
 [![Versão](https://img.shields.io/badge/versão-0.7.7-orange.svg)]() [![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/) [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br) [![LGPD](https://img.shields.io/badge/LGPD-conforme-success.svg)](PRIVACY.md)
 
 > Consulta dados oficiais do Brasil e literatura validada, cita cada fonte e declara honestamente quando não há evidência suficiente.
 
-[🌐 Site](https://gustavobraga-byte.github.io/ufvaisite/) · [📓 Colab](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb) · [📘 Manual](MANUAL.md) · [📜 Termos v3](docs/TERMS_OF_USE.md) · [🔒 Privacidade v1.1](PRIVACY.md) · [📊 Telemetria](TELEMETRY.md) · [📝 Changelog](CHANGELOG.md)
+[🌐 Site](https://der.ufv.br/ufvai/) · [📓 Colab](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb) · [📘 Manual](MANUAL.md) · [📜 Termos v3](docs/TERMS_OF_USE.md) · [🔒 Privacidade v1.1](PRIVACY.md) · [📊 Telemetria](TELEMETRY.md) · [📝 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -53,7 +53,7 @@ O **UFVAI** (marca) roda sobre o motor **PesquisAI** (este código, arquitetura 
 
 > 🚨 **Atenção:** ferramenta de apoio — **não substitui** revisão por pares nem o julgamento humano. Sempre revise. Sugira a [Declaração de Uso de IA](declaracao_uso_ia.md) nas entregas finais.
 
-📖 **Conheça em 2 minutos:** [site oficial](https://gustavobraga-byte.github.io/ufvaisite/) (demonstração animada do boot → Termos → tela principal) · [slides](https://gustavobraga-byte.github.io/ufvaisite/#apresentacao) · [vídeo tutorial](https://www.youtube.com/watch?v=8e8spp_7Gq4).
+📖 **Conheça em 2 minutos:** [site oficial](https://der.ufv.br/ufvai/) (demonstração animada do boot → Termos → tela principal) · [slides](https://der.ufv.br/ufvai/#apresentacao) · [vídeo tutorial](https://www.youtube.com/watch?v=8e8spp_7Gq4).
 
 ---
 
@@ -188,7 +188,7 @@ O agente opera por *skills* — cada uma conecta a uma fonte ou capacidade.
 
 </details>
 
-Histórico detalhado: [`CHANGELOG.md`](CHANGELOG.md) · Novidades do site: [ufvaisite/#novidades](https://gustavobraga-byte.github.io/ufvaisite/#novidades).
+Histórico detalhado: [`CHANGELOG.md`](CHANGELOG.md) · Novidades do site: [ufvaisite/#novidades](https://der.ufv.br/ufvai/#novidades).
 
 ---
 
@@ -246,7 +246,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
 }
 ```
 
-Site para divulgar: `https://gustavobraga-byte.github.io/ufvaisite/`. Modelos de declaração de IA: [`declaracao_uso_ia.md`](declaracao_uso_ia.md). Como citar dados: [`citacao_pesquisai.md`](citacao_pesquisai.md).
+Site para divulgar: `https://der.ufv.br/ufvai/`. Modelos de declaração de IA: [`declaracao_uso_ia.md`](declaracao_uso_ia.md). Como citar dados: [`citacao_pesquisai.md`](citacao_pesquisai.md).
 
 ---
 
@@ -307,7 +307,7 @@ Desenvolvido por **Gustavo Bastos Braga** — Universidade Federal de Viçosa (D
 
 - ✉️ gustavo.braga@ufv.br
 - 🐙 [@gustavobraga-byte](https://github.com/gustavobraga-byte)
-- 🌐 [Site oficial](https://gustavobraga-byte.github.io/ufvaisite/)
+- 🌐 [Site oficial](https://der.ufv.br/ufvai/)
 
 ---
 
