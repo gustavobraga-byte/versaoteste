@@ -605,6 +605,11 @@ function sendToPTY(data){
   }catch(e){return false}
 }
 
+// v0.7.8 (ajuste 29/10/2026 — SEM bump): exposto para o script de
+// teclado (Ctrl+C / Ctrl+V) enviar bytes crus ao PTY sem passar pelo
+// bracketed paste do xterm. Mantém um único socket capturado.
+window.__pesquisaiSendToPTY=sendToPTY;
+
 // ====== SCROLL: mouse wheel SGR via WebSocket ======
 // Bubble Tea habilita mouse SGR (1006). Wheel up=button 64, down=button 65.
 // ESC[<button;col;rowM
@@ -773,21 +778,291 @@ setInterval(function(){if(!term)findTerminal();if(!viewport)viewport=document.qu
 </script>"""
 
 
+def _get_clipboard_script() -> str:
+    """Teclado do terminal: **Ctrl+C copia** e **Ctrl+V cola** (v0.7.8, sem bump).
+
+    Problema (relatado em 29/10/2026): no ttyd, o Ctrl+C era entregue ao PTY
+    (``^C``). Na TUI do opencode ``^C`` com o campo vazio **encerra a
+    conversa** — o terminal "morria" no meio do trabalho. E o Ctrl+V puro
+    fazia o xterm mandar ``^V`` (0x16) para o aplicativo *além* de colar.
+
+    Comportamento novo (convenção de terminal):
+
+      • ``Ctrl+C``       → COPIA a seleção (``xterm.getSelection()``). Sem
+                           seleção NÃO envia ``^C``; mostra dica.
+      • ``Ctrl+Shift+C`` → envia ``^C`` de verdade (saída de emergência).
+      • ``Ctrl+V``       → COLA (o xterm deixa de mandar ``^V``; a colagem
+                           vem do evento ``paste`` do navegador).
+      • ``Ctrl+Shift+V`` → cola como texto puro (caminho nativo).
+
+    Duas camadas independentes:
+
+      1. ``attachCustomKeyEventHandler`` (API pública do xterm) — impede o
+         xterm de traduzir Ctrl+C/Ctrl+V em caracteres de controle. É o que
+         evita o ``^V``/``^C`` sujando a TUI.
+      2. Listener em fase de CAPTURA no ``document`` — copia a seleção no
+         Ctrl+C (antes do handler do textarea do xterm) e envia ``\x03`` no
+         Ctrl+Shift+C; trata também ``paste`` quando o foco está fora do
+         terminal (o xterm não recebe o evento e a colagem se perderia).
+
+    Rede de segurança: se em 400 ms nenhum ``paste`` chegou (navegador sem
+    o evento, foco perdido), tenta a Clipboard API. Quando o ``paste``
+    nativo já colou, nada é duplicado.
+    """
+    return """<script>
+(function(){'use strict';
+// ====== UFVAI — Ctrl+C copia / Ctrl+V cola (ttyd + xterm.js) ======
+var toastEl=null,toastTimer=null,lastHintAt=0,lastPasteAt=0,keyFilter=false;
+
+function toast(msg){
+  try{
+    if(!toastEl){
+      toastEl=document.createElement('div');
+      toastEl.id='ufvai-clip-toast';
+      toastEl.style.cssText=[
+        'position:fixed','right:16px','bottom:16px','z-index:2147483647',
+        'max-width:70vw','padding:8px 12px','border-radius:8px',
+        'background:rgba(20,22,26,.93)','color:#f6f5f0',
+        'border:1px solid rgba(184,145,47,.55)',
+        'box-shadow:0 6px 18px rgba(0,0,0,.35)',
+        'font:12px/1.35 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
+        'opacity:0','transition:opacity .15s','pointer-events:none',
+        'white-space:nowrap','overflow:hidden','text-overflow:ellipsis'
+      ].join(';');
+      (document.body||document.documentElement).appendChild(toastEl);
+    }
+    toastEl.textContent=msg;
+    toastEl.style.opacity='1';
+    if(toastTimer)clearTimeout(toastTimer);
+    toastTimer=setTimeout(function(){toastEl.style.opacity='0'},1700);
+  }catch(e){}
+}
+
+function hint(msg){
+  var now=Date.now();
+  if(now-lastHintAt<10000)return;
+  lastHintAt=now;
+  toast(msg);
+}
+
+function terminal(){
+  var t=window.term;
+  if(t&&typeof t.getSelection==='function')return t;
+  return null;
+}
+
+function selectionText(){
+  var t=terminal(),s='';
+  if(t){try{s=t.getSelection()||''}catch(e){}}
+  if(!s){try{s=String(window.getSelection())}catch(e){}}
+  return s;
+}
+
+function legacyCopy(txt){
+  try{
+    var ta=document.createElement('textarea');
+    ta.value=txt;
+    ta.setAttribute('readonly','readonly');
+    ta.style.cssText='position:fixed;top:-1000px;left:-1000px;opacity:0';
+    (document.body||document.documentElement).appendChild(ta);
+    ta.select();
+    var ok=document.execCommand('copy');
+    (ta.parentNode||document.body).removeChild(ta);
+    return ok;
+  }catch(e){return false}
+}
+
+function copySelection(){
+  var txt=selectionText();
+  if(!txt)return false;
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt)['catch'](function(){legacyCopy(txt)});
+      return true;
+    }
+  }catch(e){}
+  return legacyCopy(txt);
+}
+
+function sendRaw(text){
+  if(!text)return false;
+  if(typeof window.__pesquisaiSendToPTY==='function'){
+    try{if(window.__pesquisaiSendToPTY(text))return true}catch(e){}
+  }
+  var t=terminal();
+  if(t&&typeof t.paste==='function'){try{t.paste(text);return true}catch(e){}}
+  return false;
+}
+
+function pasteText(text){
+  if(!text)return false;
+  var t=terminal();
+  if(t&&typeof t.paste==='function'){try{t.paste(text);return true}catch(e){}}
+  return sendRaw(text);
+}
+
+function insideTerminal(el){
+  if(!el)return false;
+  try{
+    if(el.closest&&(el.closest('.xterm')||el.closest('#terminal')))return true;
+  }catch(e){}
+  return false;
+}
+
+function isFormField(el){
+  if(!el||!el.tagName)return false;
+  var tag=String(el.tagName).toLowerCase();
+  if(tag==='textarea'){
+    return !(el.classList&&el.classList.contains('xterm-helper-textarea'));
+  }
+  return tag==='input'||tag==='select'||el.isContentEditable===true;
+}
+
+// ====== 1) FILTRO NO XTERM: Ctrl+C / Ctrl+V não viram bytes de controle ======
+function installKeyFilter(){
+  var t=terminal();
+  if(!t||typeof t.attachCustomKeyEventHandler!=='function')return false;
+  if(keyFilter)return true;
+  try{
+    t.attachCustomKeyEventHandler(function(e){
+      if(!(e.ctrlKey||e.metaKey)||e.altKey)return true;
+      var k=String(e.key||'').toLowerCase();
+      if(k==='c')return false;          // Ctrl+C copia; Ctrl+Shift+C é nosso
+      if(k==='v'&&!e.shiftKey)return false; // deixa o navegador colar (sem ^V)
+      return true;
+    });
+    keyFilter=true;
+    return true;
+  }catch(e){return false}
+}
+
+// ====== 2) ATALHOS ======
+function onKeyDown(e){
+  var mod=e.ctrlKey||e.metaKey;
+  if(!mod||e.altKey)return;
+  var k=String(e.key||'').toLowerCase();
+  if(k!=='c'&&k!=='v')return;
+  if(isFormField(e.target))return;                 // campos de formulário intocados
+  if(!document.querySelector('.xterm'))return;     // terminal ainda não montado
+  installKeyFilter();
+
+  if(k==='c'){
+    if(e.shiftKey){
+      // Ctrl+Shift+C = ^C real (convenção dos terminais / saída de emergência)
+      e.preventDefault();e.stopImmediatePropagation();
+      if(sendRaw('\\x03'))toast('Ctrl+C enviado ao terminal');
+      return;
+    }
+    // Ctrl+C: NUNCA vai para o PTY — copia a seleção.
+    e.preventDefault();e.stopImmediatePropagation();
+    if(copySelection())toast('Seleção copiada');
+    else hint('Nada selecionado · Ctrl+Shift+C envia Ctrl+C');
+    return;
+  }
+
+  // Ctrl+V: a colagem vem do evento 'paste' do navegador (o filtro acima
+  // evita o ^V). Rede de segurança só se nada chegar em 400 ms.
+  if(e.shiftKey)return;
+  var t0=Date.now();
+  setTimeout(function(){
+    if(lastPasteAt>=t0)return;
+    if(!(navigator.clipboard&&navigator.clipboard.readText))return;
+    navigator.clipboard.readText().then(function(txt){
+      if(!txt||lastPasteAt>=t0)return;
+      pasteText(txt);
+    })['catch'](function(){});
+  },400);
+}
+
+function onPaste(e){
+  var dt=e.clipboardData||window.clipboardData;
+  if(!dt)return;
+  var txt='';
+  try{txt=dt.getData('text/plain')||dt.getData('text')||''}catch(err){}
+  lastPasteAt=Date.now();
+  if(!txt)return;
+  if(insideTerminal(e.target))return;   // xterm trata (bracketed paste)
+  // Foco fora do terminal: o xterm não recebe o evento — entregamos ao PTY.
+  e.preventDefault();e.stopImmediatePropagation();
+  if(!pasteText(txt))toast('Não foi possível colar');
+}
+
+document.addEventListener('keydown',onKeyDown,true);
+document.addEventListener('paste',onPaste,true);
+setInterval(installKeyFilter,1500);
+installKeyFilter();
+console.log('[UFVAI] Ctrl+C copia · Ctrl+V cola · Ctrl+Shift+C envia ^C');
+})();
+</script>"""
+
+
+def _get_terminal_inject_script() -> str:
+    """Scripts injetados no ``--index`` do ttyd: touch + teclado (Ctrl+C/Ctrl+V)."""
+    return _get_touch_handler_script() + _get_clipboard_script()
+
+
+def _terminal_inject_fingerprint() -> str:
+    """Impressão digital do script injetado no HTML do ttyd (16 hex).
+
+    v0.7.8 (ajuste 29/10/2026 — SEM bump): o cache do index só verificava a
+    EXISTÊNCIA do arquivo. Um ``ttyd_touch_*.html`` gravado por uma versão
+    anterior era reaproveitado para sempre e o terminal continuava servindo o
+    JavaScript velho — foi exatamente o que aconteceu com o Ctrl+C/Ctrl+V:
+    o HTML em disco (14:06) tinha só o script de touch, então o atalho
+    "não funcionava" mesmo com o código novo no módulo.
+
+    A impressão digital vai gravada no próprio HTML como comentário
+    (``<!-- ufvai-inject:<fp> -->``), logo depois de ``<head>``. Se o arquivo
+    não traz a marca do script ATUAL, ele é regenerado.
+    """
+    import hashlib
+
+    return hashlib.sha256(
+        _get_terminal_inject_script().encode("utf-8")
+    ).hexdigest()[:16]
+
+
+#: Marca dentro do HTML do ttyd que identifica a versão do script injetado.
+_TTYD_INJECT_MARK = "<!-- ufvai-inject:%s -->"
+
+
+def _ttyd_index_is_current(path: str) -> bool:
+    """True se ``path`` já contém o script injetado da versão ATUAL."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            inicio = f.read(8192)
+    except OSError:
+        return False
+    return (_TTYD_INJECT_MARK % _terminal_inject_fingerprint()) in inicio
+
+
 def _prepare_ttyd_touch_index(env: dict) -> str | None:
     """Prepara um index.html custom com touch handlers para o ttyd.
 
     1. Inicia ttyd temporariamente com comando dummy
     2. Busca o HTML padrão em http://localhost:{TERMINAL_PORT}/
-    3. Injeta o script de touch handlers antes de </body>
+    3. Injeta os scripts de touch e de teclado (Ctrl+C copia/Ctrl+V cola)
+       no <head>, antes do bundle do ttyd
     4. Salva em /tmp/ttyd_touch.html
     5. Mata o ttyd temporário
     6. Retorna o caminho do arquivo (ou None se falhar)
 
-    Usa cache: só busca o HTML uma vez por sessão.
+    Cache: reaproveita o HTML só quando ele já tem a marca do script atual
+    (``_ttyd_index_is_current``) — evita servir JavaScript velho depois de
+    uma atualização do módulo (o ttyd relê o ``--index`` a cada requisição,
+    então regenerar o arquivo basta: um F5 na página já aplica).
     """
     global _TTYD_TOUCH_INDEX_PATH
     if _TTYD_TOUCH_INDEX_PATH and os.path.exists(_TTYD_TOUCH_INDEX_PATH):
-        return _TTYD_TOUCH_INDEX_PATH
+        if _ttyd_index_is_current(_TTYD_TOUCH_INDEX_PATH):
+            return _TTYD_TOUCH_INDEX_PATH
+        logger.info(
+            "Index do ttyd em cache está desatualizado (%s) — regenerando para "
+            "aplicar o script atual (Ctrl+C copia / Ctrl+V cola).",
+            _TTYD_TOUCH_INDEX_PATH,
+        )
+        # NÃO zera o global ainda: se a regeneração falhar, o ttyd continua
+        # com o --index antigo (touch funcionando) em vez de perder a flag.
 
     import socket as _socket
     import urllib.request as _urllib
@@ -806,7 +1081,7 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
 
     # 1. Iniciar ttyd temporário com comando dummy
     #    v0.6.5: nova sessão de processos + log em arquivo
-    print("📱 Preparando HTML do ttyd com touch handlers...")
+    print("📱 Preparando HTML do ttyd (touch + Ctrl+C/Ctrl+V)...")
     tmp_proc = subprocess.Popen(
         ["ttyd", "-p", str(_tmp_port), "echo", "pesquisai_touch_tmp"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
@@ -845,24 +1120,34 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
     time.sleep(0.5)
 
     if not html_content:
-        print("⚠️  Não foi possível obter HTML do ttyd — touch handlers não injetados.")
+        if _TTYD_TOUCH_INDEX_PATH and os.path.exists(_TTYD_TOUCH_INDEX_PATH):
+            print("⚠️  HTML do ttyd indisponível — mantendo o index anterior (touch/teclado).")
+            return _TTYD_TOUCH_INDEX_PATH
+        print("⚠️  Não foi possível obter HTML do ttyd — touch/teclado não injetados.")
         return None
 
     # 4. Injetar script de touch handlers no <head> (ANTES do bundle do ttyd)
     # CRÍTICO: o patch do WebSocket constructor deve rodar antes do ttyd criar
     # seu socket. O bundle do ttyd fica no <body>, então injetar no <head>
     # garante que o constructor patch capture o socket na criação.
-    touch_script = _get_touch_handler_script()
+    # v0.7.8 (sem bump): touch + teclado (Ctrl+C copia / Ctrl+V cola) e a
+    # marca de versão do script (cache invalidado quando o módulo muda).
+    inject = (_TTYD_INJECT_MARK % _terminal_inject_fingerprint()) + _get_terminal_inject_script()
     if "<head>" in html_content:
-        html_content = html_content.replace("<head>", "<head>" + touch_script, 1)
+        html_content = html_content.replace("<head>", "<head>" + inject, 1)
     elif "<head " in html_content:
-        html_content = html_content.replace("<head ", "<head " + touch_script, 1)
+        _i = html_content.find("<head ")
+        _j = html_content.find(">", _i)
+        if _j != -1:
+            html_content = html_content[:_j + 1] + inject + html_content[_j + 1:]
+        else:
+            html_content = inject + html_content
     elif "</head>" in html_content:
-        html_content = html_content.replace("</head>", touch_script + "</head>", 1)
+        html_content = html_content.replace("</head>", inject + "</head>", 1)
     elif "</body>" in html_content:
-        html_content = html_content.replace("</body>", touch_script + "</body>", 1)
+        html_content = html_content.replace("</body>", inject + "</body>", 1)
     else:
-        html_content = touch_script + html_content
+        html_content = inject + html_content
 
     # 5. Salvar HTML custom — v0.6.9-5: caminho do usuário para evitar Permission denied
     # quando /tmp/ttyd_touch.html pertence a root (instalação via sudo)
@@ -902,7 +1187,7 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
             continue
     if index_path:
         _TTYD_TOUCH_INDEX_PATH = index_path
-        print(f"✅ Touch handlers injetados no HTML do ttyd: {index_path}")
+        print(f"✅ Touch + Ctrl+C/Ctrl+V injetados no HTML do ttyd: {index_path}")
         return index_path
     logger.warning("Falha ao salvar HTML custom do ttyd em todos os candidatos")
     return None
