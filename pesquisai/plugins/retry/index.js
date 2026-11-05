@@ -17,7 +17,15 @@
 
 export const PLUGIN_ID = "ufvai.retry"
 
-const QUOTA_RE = /quota|rate.?limit|RESOURCE_EXHAUSTED|exceeded your current quota/i
+// Só a mensagem de cota/limite por minuto merece a espera de 1 minuto.
+// Outros 429/503 (ex.: "Too many requests", "overloaded") seguem o retry
+// padrão do motor — este plugin não os atrasa.
+const QUOTA_RE =
+  /quota|RESOURCE_EXHAUSTED|exceeded your current quota|rate.?limit|free_tier|per.?minute/i
+
+// Sobrecarga momentânea (503/"high demand") não é cota: espera curta.
+const DEMAND_RE =
+  /high demand|overload|temporarily|try again later|service unavailable|capacity/i
 const RETRY_IN_RE =
   /(?:retry|try again)[^0-9]{0,48}?([0-9]+(?:\.[0-9]+)?)\s*(ms|s|sec|secs|seconds|m|min)\b/i
 
@@ -49,6 +57,7 @@ export default {
     const fallbackMs = Number(options.delayMs || process.env.UFVAI_RETRY_DELAY_MS || 62_000)
     const maxAttempts = Number(options.maxAttempts || process.env.UFVAI_RETRY_MAX_ATTEMPTS || 8)
     const switchAfter = Number(options.switchAfter || process.env.UFVAI_RETRY_SWITCH_AFTER || 5)
+    const demandMs = Number(options.demandDelayMs || process.env.UFVAI_RETRY_DEMAND_MS || 5_000)
     const fallbackRef = String(
       options.fallbackModel ||
         process.env.UFVAI_RETRY_FALLBACK ||
@@ -57,10 +66,19 @@ export default {
     const switched = new Map() // sessionID -> timestamp do último fallback
 
     await ctx.session.hook("retry", async (event) => {
-      const status = Number((event.error && event.error.status) || 0)
       const message = String((event.error && event.error.message) || "")
-      const isQuota = status === 429 || status === 503 || QUOTA_RE.test(message)
-      if (!isQuota) return
+      const isQuota = QUOTA_RE.test(message)
+      if (!isQuota) {
+        // v0.7.10: "high demand"/"overloaded" → espera curta (5 s padrão),
+        // nunca os 62 s da cota.
+        if (DEMAND_RE.test(message)) {
+          event.decision =
+            event.attempt >= maxAttempts
+              ? { retry: false }
+              : { retry: true, delay: clamp(demandMs, 1_000, 30_000) }
+        }
+        return
+      }
 
       const fallback = selector(fallbackRef)
       const current = event.model ? `${event.model.providerID}/${event.model.id}` : ""
