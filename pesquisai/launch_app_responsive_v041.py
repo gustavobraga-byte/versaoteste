@@ -5230,7 +5230,7 @@ def create_wrapper_html(
   #onboard-overlay .ob-brand em{font-style:normal;font-weight:600;color:#b29149}
   #onboard-overlay .ob-kicker{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
     color:#9a9790;border:1px solid rgba(255,255,255,.1);border-radius:3px;padding:2px 6px;}
-  #onboard-overlay .ob-x{margin-left:auto;background:transparent;border:0;color:#9a9790;
+  #onboard-overlay .ob-x{display:none;margin-left:auto;background:transparent;border:0;color:#9a9790;
     font-size:16px;cursor:pointer;padding:4px 8px;border-radius:6px;}
   #onboard-overlay .ob-x:hover{color:#e8e6e0;background:rgba(255,255,255,.05)}
   #onboard-overlay h2{font-size:19px;line-height:1.3;margin:0 0 6px;letter-spacing:-.01em;}
@@ -5287,6 +5287,19 @@ def create_wrapper_html(
     letter-spacing:.08em;text-transform:uppercase;color:#9a9790;background:rgba(20,28,36,.85);
     border:1px solid rgba(255,255,255,.12);border-radius:3px;padding:1px 4px}
   #onboard-overlay .ob-shot.light{color:#111}
+  #onboard-overlay .ob-shot-img{display:block;width:100%;height:auto}
+  #onboard-overlay .ob-print{position:relative;display:block;line-height:0}
+  #onboard-overlay .ob-ring{position:absolute;left:85.3%;top:36.5%;width:30px;height:30px;
+    transform:translate(-50%,-50%);border:2px solid #ffd166;border-radius:50%;
+    box-shadow:0 0 0 4px rgba(255,209,102,.25);animation:obring 1.5s infinite;pointer-events:none}
+  @keyframes obring{0%,100%{box-shadow:0 0 0 4px rgba(255,209,102,.25)}50%{box-shadow:0 0 0 10px rgba(255,209,102,.06)}}
+  #onboard-overlay .ob-call{position:absolute;left:calc(85.3% - 30px);top:36.5%;
+    transform:translate(-100%,-50%);background:#ffd166;color:#1a1408;font-weight:700;
+    font-size:11px;line-height:1;padding:6px 10px;border-radius:6px;white-space:nowrap;
+    box-shadow:0 6px 18px rgba(0,0,0,.5);pointer-events:none;animation:obbob 1.6s infinite}
+  #onboard-overlay .ob-call::after{content:"";position:absolute;left:100%;top:50%;
+    transform:translateY(-50%);border:7px solid transparent;border-left-color:#ffd166}
+  @keyframes obbob{0%,100%{transform:translate(-100%,-50%)}50%{transform:translate(calc(-100% - 4px),-50%)}}
   #onboard-overlay .ob-g{padding:12px 14px;font-size:11px;background:#fff;color:#111}
   #onboard-overlay .ob-g-head{display:flex;align-items:center;gap:7px;font-size:10px;
     color:#5f6368;margin-bottom:10px}
@@ -5444,14 +5457,13 @@ def create_wrapper_html(
     if (provider === "google"){
       return '<div class="ob-shot">' +
         '<div class="ob-shot-bar"><i></i><i></i><i></i> aistudio.google.com/api-keys</div>' +
-        '<div class="ob-g">' +
-          '<div class="ob-g-head"><b>Google AI Studio</b><span class="sp"></span><span>minha conta</span></div>' +
-          '<div class="ob-g-title">API keys</div>' +
-          '<div class="ob-g-desc">Crie e gerencie chaves para usar a Gemini API.</div>' +
-          '<div class="ob-g-row"><span class="n">UFVAI</span><span class="k">AIza••••••••••••••••</span>' +
-            '<span class="ob-g-copy">Copiar</span></div>' +
-          '<div class="ob-g-btn">+ Criar chave de API</div>' +
-        '</div><span class="ob-shot-tag">reprodução da tela</span></div>';
+        '<div class="ob-print">' +
+          '<img class="ob-shot-img" src="/assets/print-google-apikey.png" ' +
+            'alt="Tela real do Google AI Studio — Chaves de API (o ícone de copiar está destacado)">' +
+          '<span class="ob-ring" aria-hidden="true"></span>' +
+          '<span class="ob-call">clique aqui para copiar</span>' +
+        '</div>' +
+        '<span class="ob-shot-tag">tela real</span></div>';
     }
     if (provider === "nvidia"){
       return '<div class="ob-shot">' +
@@ -5480,11 +5492,11 @@ def create_wrapper_html(
     var p = (DATA.providers || []).filter(function(x){ return x.id === provider; })[0] || {};
     var steps = "", extra = "";
     if (provider === "google"){
-      steps = '<li>Abra a página de chaves do Google AI Studio (botão abaixo).</li>' +
-              '<li>Clique em <b>Criar chave de API</b> / <b>Create API key</b> e confirme.</li>' +
-              '<li>Clique em <b>Copiar</b> na chave criada, volte para esta janela e cole no campo.</li>';
+      steps = '<li>Abra a página <b>Chaves de API</b> do Google AI Studio (botão abaixo).</li>' +
+              '<li>Clique em <b>Criar chave de API</b> (canto superior direito) e confirme.</li>' +
+              '<li>Na linha da chave, clique no <b>ícone de copiar</b>, volte para esta janela e cole no campo.</li>';
       extra = '<p class="ob-note">A chave começa com <b>AIza</b>. Ao salvar, o modelo padrão vira o ' +
-              '<b>Gemini 3.5 Flash</b> — nos próximos usos ele já abre assim.</p>';
+              '<b>Gemini 3.1 Flash Lite</b> com esforço <b>high</b> — e continua nos próximos usos.</p>';
     } else if (provider === "nvidia"){
       steps = '<li>Entre em <b>build.nvidia.com</b> com sua conta NVIDIA.</li>' +
               '<li>Escolha um modelo, abra a opção de <b>API</b> e clique em <b>Get API Key</b>.</li>' +
@@ -5565,7 +5577,7 @@ def create_wrapper_html(
         $("ob-done").style.display = "block";
         $("ob-done-title").textContent = "Chave salva — " + (d.masked || "");
         $("ob-done-text").textContent = d.model
-          ? ("Modelo padrão: " + d.model + ". Reiniciando…")
+          ? ("Modelo padrão: " + String(d.model).replace("#", " · ") + ". Reiniciando…")
           : "Reiniciando o terminal…";
         setTimeout(function(){ try { location.reload(); } catch(e){} }, 1600);
       })["catch"](function(e){
@@ -5577,8 +5589,8 @@ def create_wrapper_html(
 
   // ── navegação ───────────────────────────────────────────────
   $("ob-have").addEventListener("click", function(){
-    OV.style.display = "none";
-    try { sessionStorage.setItem("ufvai_ob_skip", "1"); } catch(e){}
+    // v0.7.10: o onboarding continua atrás do modal; se o usuário fechar o
+    // modal sem salvar, ele volta a ver esta tela (o terminal ainda não existe).
     if (typeof connectProvider === "function") { connectProvider(); }
   });
   $("ob-nohave").addEventListener("click", function(){ renderProviders(); showStep("ob-step1"); });
@@ -5613,6 +5625,19 @@ def create_wrapper_html(
       if (!DATA.needs) return;
       renderProviders();
       arm();
+      // v0.7.10: se a chave entrar por outro caminho (modal de provedores),
+      // recarrega para o terminal subir já com o provedor e o modelo certos.
+      var _watch = setInterval(function(){
+        if (OV.style.display === "none") return;
+        fetch("/api/onboarding", {cache: "no-store"})
+          .then(function(r){ return r.json(); })
+          .then(function(x){
+            if (x && x.needs === false){
+              clearInterval(_watch);
+              try { location.reload(); } catch(e){}
+            }
+          })["catch"](function(){});
+      }, 3000);
     })["catch"](function(){});
 })();
 </script>

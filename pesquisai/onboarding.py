@@ -36,7 +36,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "paid": False,
         "recommended": True,
         "tagline": "Grátis no Google AI Studio · recomendado",
-        "model": "google/gemini-3.5-flash",
+        "model": "google/gemini-3.1-flash-lite",
     },
     "nvidia": {
         "id": "nvidia",
@@ -81,14 +81,20 @@ ONBOARDING_ORDER: tuple[str, ...] = ("google", "nvidia", "openrouter", "opencode
 # Modelo padrão quando existe chave do Google. Pedido do autor (v0.7.10):
 # "se o usuário tem uma key do google o modelo padrão é o gemini 3.5 flash".
 # O id pode ser trocado por `UFVAI_GOOGLE_MODEL` sem mexer no código.
-GOOGLE_DEFAULT_MODEL: str = "google/gemini-3.5-flash"
+GOOGLE_DEFAULT_MODEL: str = "google/gemini-3.1-flash-lite"
+
+# v0.7.10: o modelo padrão é "Gemini 3.1 Flash Lite · high". O sufixo `#high`
+# é um VARIANTE do motor (esforço de raciocínio) — o `model` raiz não guarda
+# variante (doc V2 de modelos), então ele vai no modelo do AGENTE UFVAI.
+GOOGLE_DEFAULT_VARIANT: str = "high"
 
 # Ordem de preferência caso o catálogo do motor não tenha o modelo acima.
 GOOGLE_MODEL_FALLBACKS: tuple[str, ...] = (
+    "google/gemini-3.1-flash-lite",
+    "google/gemini-3.5-flash-lite",
     "google/gemini-3.5-flash",
     "google/gemini-3-flash",
     "google/gemini-2.5-flash",
-    "google/gemini-2.5-pro",
 )
 
 CHAVES_DOC_URL = (
@@ -233,6 +239,19 @@ def google_model() -> str:
     return GOOGLE_DEFAULT_MODEL
 
 
+def google_variant() -> str:
+    """Variante (esforço) do modelo Google. Padrão: ``high``."""
+    override = str(os.environ.get("UFVAI_GOOGLE_VARIANT", "") or "").strip()
+    return override if override else GOOGLE_DEFAULT_VARIANT
+
+
+def google_model_selector(variant: str | None = None) -> str:
+    """``google/modelo#high`` — referência com variante (agente/comando)."""
+    base = google_model().split("#", 1)[0]
+    var = google_variant() if variant is None else str(variant or "").strip()
+    return f"{base}#{var}" if var else base
+
+
 def google_model_from_catalog(lines: Iterable[str]) -> str:
     """Escolhe o primeiro modelo do Google disponível no catálogo do motor.
 
@@ -258,13 +277,31 @@ def default_model_for(provider_id: str, catalog: Iterable[str] | None = None) ->
     return str(prov.get("model") or "")
 
 
-def merge_model(existing: Mapping[str, Any] | None, model_id: str) -> dict[str, Any]:
-    """Copia a configuração e define ``model`` — preserva todo o resto."""
+def merge_model(
+    existing: Mapping[str, Any] | None,
+    model_id: str,
+    variant: str = "",
+    agent: str = "UFVAI",
+) -> dict[str, Any]:
+    """Copia a configuração e define o modelo — preserva todo o resto.
+
+    v0.7.10: o ``model`` raiz fica SEM variante (limite do motor V2) e a
+    variante (ex.: ``high``) é gravada no modelo do agente ``UFVAI``, que é
+    quem aparece no seletor da TUI ("… · high").
+    """
     mid = str(model_id or "").strip()
     if not mid:
         raise ValueError("model_id vazio")
+    base, _, inline = mid.partition("#")
+    var = str(variant or inline or "").strip()
     merged = dict(existing or {})
-    merged["model"] = mid
+    merged["model"] = base
+    if var and agent:
+        agents = dict(merged.get("agents") or {})
+        entry = dict(agents.get(agent) or {})
+        entry["model"] = f"{base}#{var}"
+        agents[agent] = entry
+        merged["agents"] = agents
     return merged
 
 

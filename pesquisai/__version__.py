@@ -36,7 +36,7 @@ Histórico de versões:
     • GOOGLE: link para aistudio.google.com/api-keys, instrução de clicar em
       Copiar e voltar; a chave é salva como GOOGLE_GENERATIVE_AI_API_KEY.
     • MODELO PADRÃO: com chave do Google, o padrão passa a ser
-      `google/gemini-3.5-flash` (constante `GOOGLE_DEFAULT_MODEL`, ajustável
+      `google/gemini-3.1-flash-lite` (constante `GOOGLE_DEFAULT_MODEL`, ajustável
       por UFVAI_GOOGLE_MODEL) e continua valendo nos próximos usos.
     • SEM CHAVE = TELA: a condição é objetiva (`needs_onboarding`), sem flag
       de "já viu" — quem perdeu a chave volta a ver o guia.

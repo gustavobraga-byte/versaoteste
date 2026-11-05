@@ -1464,7 +1464,16 @@ def run() -> None:
     setup_dependencies()
     # v0.7.7 (27/10/2026 — SEM bump): o serviço do motor nasce no PesquisAI,
     # não em /root — é dele que as sessões herdam o diretório de projeto.
-    ensure_service_project_dir(folder_path)
+    # v0.7.10: sem chave, o motor NÃO nasce — o onboarding espera a chave.
+    try:
+        from .launch_app import needs_onboarding_now as _needs_ob
+        _skip_engine = _needs_ob()
+    except Exception:  # noqa: BLE001
+        _skip_engine = False
+    if _skip_engine:
+        logger.info("Onboarding pendente: serviço do motor não iniciado (sem chave).")
+    else:
+        ensure_service_project_dir(folder_path)
     setup_skills()
     setup_custom_skills()  # v0.6.18: skills personalizadas do usuário
     setup_obsidian_vault()

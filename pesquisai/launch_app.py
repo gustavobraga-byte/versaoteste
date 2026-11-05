@@ -240,11 +240,15 @@ def set_drive_info(folder_path: str, drive_url: str) -> None:
     _folder_path = folder_path
 
 
-def _write_default_model(model_id: str) -> str:
-    """Grava ``model`` no opencode.json preservando o restante (v0.7.10).
+def _write_default_model(model_id: str, variant: str = "") -> str:
+    """Grava ``model`` (+ variante no agente UFVAI) preservando o resto.
 
-    Devolve o id gravado, ou ``""`` quando não havia o que gravar / o arquivo
-    existente não pôde ser lido (nesse caso nada é sobrescrito).
+    v0.7.10: o motor V2 não retém variante no ``model`` raiz, então a variante
+    (ex.: ``high``) vai em ``agents.UFVAI.model`` — é o que a TUI mostra como
+    "Gemini 3.1 Flash Lite Google · high".
+
+    Devolve a referência gravada (``provider/modelo#variante``), ou ``""``
+    quando não havia o que gravar / o arquivo não pôde ser lido.
     """
     from . import onboarding as _ob
     from .opencode_config import load_json_config, write_json_atomic
@@ -258,11 +262,13 @@ def _write_default_model(model_id: str) -> str:
         if not can_write:
             logger.warning("onboarding: opencode.json ilegível; modelo não alterado")
             return ""
-        if cfg.get("model") == mid:
-            return mid
-        write_json_atomic(path, _ob.merge_model(cfg, mid))
-        logger.info("onboarding: modelo padrão = %s", mid)
-        return mid
+        selector = f"{mid}#{variant}" if str(variant or "").strip() else mid
+        _agent_model = ((cfg.get("agents") or {}).get("UFVAI") or {}).get("model", "")
+        if cfg.get("model") == mid and (not selector.count("#") or _agent_model == selector):
+            return selector
+        write_json_atomic(path, _ob.merge_model(cfg, mid, variant=variant))
+        logger.info("onboarding: modelo padrão = %s", selector)
+        return selector
     except Exception as exc:  # noqa: BLE001
         logger.warning("onboarding: falha ao gravar modelo padrão (%s)", exc)
         return ""
@@ -282,7 +288,7 @@ def _ensure_google_default_model() -> str:
         return ""
     if not _ob.google_key_present(_env):
         return ""
-    return _write_default_model(_ob.google_model())
+    return _write_default_model(_ob.google_model(), _ob.google_variant())
 
 
 def load_keys_from_drive(
@@ -2927,6 +2933,22 @@ def _keys_backup_dir() -> str:
     return os.path.join(os.path.expanduser("~"), "PesquisAI", "backups")
 
 
+def needs_onboarding_now() -> bool:
+    """True quando ainda não existe chave utilizável (v0.7.10).
+
+    Nesse estado o boot NÃO inicia o motor/terminal: o usuário precisa
+    escolher um provedor e colar a chave primeiro.
+    """
+    from . import onboarding as _ob
+    try:
+        store = load_encrypted_keys(_keys_backup_dir())
+    except Exception:  # noqa: BLE001
+        store = {}
+    env = dict(os.environ)
+    env.update(_env)
+    return _ob.needs_onboarding(store, env)
+
+
 def _start_opencode_service_with_keys(timeout_s: float = 20.0) -> bool:
     """Sobe o serviço do motor já com as chaves decifradas do Drive.
 
@@ -2952,28 +2974,45 @@ def _start_opencode_service_with_keys(timeout_s: float = 20.0) -> bool:
     )
 
 
-def _apply_opencode_env_change_async() -> None:
-    """Após salvar/remover chave: reergue o serviço com o ambiente novo.
+def _hard_restart_engine(reason: str = "key") -> None:
+    """Encerra o motor e TODAS as sessões e sobe tudo de novo (v0.7.10).
 
-    Paramos o serviço em background, subimos de novo JÁ com as chaves
-    decifradas (v0.7.8) e reiniciamos o terminal. Roda em thread para não
-    atrasar a resposta HTTP.
+    Pedido do autor: *"quando inserir a key, finalizar o opencode e todas as
+    sessões e iniciar novamente com o código correto"*. Ordem:
+
+    1. mata o terminal (ttyd + bash + TUI — árvore inteira, v0.6.5);
+    2. derruba o serviço do motor (sessões em memória incluídas);
+    3. sobe o serviço JÁ com as chaves decifradas;
+    4. abre um terminal novo (sessão nova) com o modelo padrão correto.
     """
-    def _worker() -> None:
-        try:
-            _shutdown_stop_opencode_service()
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            _start_opencode_service_with_keys()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Serviço não voltou com as chaves novas: %s", exc)
-        try:
-            restart_ttyd_with_lang(_current_lang or "pt_BR")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Reinício do terminal após troca de chave falhou: %s", exc)
+    try:
+        _stop_terminal()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Restart duro (%s): terminal não encerrou (%s)", reason, exc)
+    try:
+        _shutdown_stop_opencode_service()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Restart duro (%s): serviço não encerrou (%s)", reason, exc)
+    try:
+        _start_opencode_service_with_keys()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Restart duro (%s): serviço não subiu (%s)", reason, exc)
+    try:
+        restart_ttyd_with_lang(_current_lang or "pt_BR")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Restart duro (%s): terminal não reabriu (%s)", reason, exc)
 
-    threading.Thread(target=_worker, daemon=True, name="ufvai-apply-keys").start()
+
+def _apply_opencode_env_change_async() -> None:
+    """Após salvar/remover chave: reinício DURO (motor + todas as sessões).
+
+    Roda em thread para não atrasar a resposta HTTP.
+    """
+    threading.Thread(
+        target=lambda: _hard_restart_engine("env-change"),
+        daemon=True,
+        name="ufvai-apply-keys",
+    ).start()
 
 
 def start_wrapper_server():
@@ -3154,6 +3193,8 @@ def start_wrapper_server():
                 if _name in (
                     "logo-oficial-288.jpg", "logo.svg", "ico.svg",
                     "icon.png", "ufvai-256.png", "ufvai-128.png", "ufvai-64.png",
+                    # v0.7.10: print real do Google AI Studio usado no onboarding
+                    "print-google-apikey.png",
                 ):
                     _roots = [
                         Path(__file__).resolve().parent.parent / "assets",
@@ -6093,7 +6134,12 @@ def launch():
         boot.done(95)
         
         boot.active("Iniciando terminal interativo", 96)
-        start_ttyd()
+        if needs_onboarding_now():
+            # v0.7.10: primeiro uso sem chave — o motor só nasce depois que
+            # o usuário escolher o provedor e colar a chave no onboarding.
+            logger.info("Onboarding pendente: terminal não iniciado (sem chave).")
+        else:
+            start_ttyd()
         boot.done(97)
         
         if IN_COLAB and output:
