@@ -1,0 +1,72 @@
+UFVAI — pacote Debian offline (pesquisai @VERSION@)
+====================================================
+
+O que este pacote instala
+-------------------------
+  /opt/pesquisai              aplicativo (código, agentes, i18n, docs)
+  /opt/pesquisai/bin/ttyd     terminal web empacotado (sem sudo no boot)
+  /usr/bin/ufvai              comando principal
+  /usr/bin/pesquisai          alias de compatibilidade
+  /usr/bin/ufvai-engine       instalador do motor OpenCode V2
+  /usr/lib/python3/dist-packages/ufvai.pth
+                              torna `import pesquisai` disponível para o
+                              agente (autopilot) em qualquer diretório
+
+Dados do usuário (nunca removidos pelo dpkg)
+--------------------------------------------
+  ~/PesquisAI/vault           memória persistente (Obsidian)
+  ~/PesquisAI/outputs         entregáveis
+  ~/PesquisAI/backups         backups e chaves cifradas
+  ~/PesquisAI/logs            logs
+  ~/PesquisAI/sessions        sessões
+
+Motor (OpenCode V2)
+-------------------
+O motor NÃO é embutido no .deb (binário de ~240 MB, atualizado com frequência).
+A release foi validada contra o OpenCode 2.2.5 (02/11/2026).
+
+  ufvai --engine-install          instala a versão de referência (2.2.5)
+  ufvai --engine-install --latest instala a última 2.x
+
+O binário vai para ~/.opencode/bin/opencode (sem sudo). No primeiro boot com
+internet o próprio app também tenta instalar o motor, caso ausente.
+
+Dependências Python
+-------------------
+São resolvidas pelo apt (sem pip no postinst):
+  python3-cryptography, python3-requests, python3-bs4, python3-yaml
+
+Portas
+------
+  8001  interface web (http://localhost:8001)
+  8000  terminal integrado (ttyd)
+  8002  tela de carregamento (apenas durante o boot)
+
+Uso
+---
+  ufvai                 inicia em segundo plano
+  ufvai --foreground    inicia no terminal (logs visíveis)
+  ufvai --status        estado da instância
+  ufvai --doctor        diagnóstico do ambiente
+  ufvai --stop          encerra a instância do usuário
+
+Solução de problemas
+--------------------
+1. Interface não abre:
+     ufvai --doctor
+     tail -n 50 ~/PesquisAI/logs/ufvai.log
+
+2. Motor ausente ou antigo (1.x):
+     ufvai --engine-install
+     opencode --version        # deve responder 2.x
+
+3. Porta ocupada:
+     ufvai --stop
+     ss -ltnp | grep -E ':(8000|8001)\b'
+
+4. Python abaixo de 3.10: o pacote exige python3 >= 3.10.
+
+Desinstalação
+-------------
+  sudo apt remove pesquisai      # mantém ~/PesquisAI
+  sudo apt purge pesquisai       # idem; dados só saem com rm -rf ~/PesquisAI

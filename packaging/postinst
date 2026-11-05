@@ -1,0 +1,74 @@
+#!/bin/bash
+# postinst do pacote pesquisai (UFVAI) — versão @VERSION@
+set -e
+
+PKG_VERSION="@VERSION@"
+APP_DIR="/opt/pesquisai"
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "🧬 UFVAI ${PKG_VERSION} (engine PesquisAI) — pós-instalação"
+echo "═══════════════════════════════════════════════════════════════"
+
+# ── Permissões ────────────────────────────────────────────────
+# O .deb pode ser construído a partir de Drive FUSE (600/700). Garantimos
+# leitura para todos e execução apenas onde é necessário.
+if [ -d "$APP_DIR" ]; then
+    find "$APP_DIR" -type d -exec chmod 755 {} + 2>/dev/null || true
+    find "$APP_DIR" -type f -exec chmod 644 {} + 2>/dev/null || true
+fi
+[ -f "$APP_DIR/bin/ttyd" ] && chmod 755 "$APP_DIR/bin/ttyd" 2>/dev/null || true
+[ -f "$APP_DIR/install-offline.sh" ] && chmod 755 "$APP_DIR/install-offline.sh" 2>/dev/null || true
+if [ -d "$APP_DIR/scripts" ]; then
+    find "$APP_DIR/scripts" -maxdepth 1 -type f -name '*.sh' -exec chmod 755 {} + 2>/dev/null || true
+fi
+for f in /usr/bin/pesquisai /usr/bin/ufvai /usr/bin/ufvai-engine; do
+    [ -e "$f" ] && chmod 755 "$f" 2>/dev/null || true
+done
+
+# ── Diretórios do usuário que chamou o sudo ───────────────────
+# Criados aqui para o primeiro boot já encontrar tudo com o dono correto.
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    USER_HOME="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
+    USER_GROUP="$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")"
+    if [ -n "$USER_HOME" ] && [ -d "$USER_HOME" ]; then
+        for sub in vault outputs backups logs sessions config chrome-profile; do
+            install -d -m 755 -o "$SUDO_USER" -g "$USER_GROUP" \
+                "$USER_HOME/PesquisAI/$sub" 2>/dev/null || true
+        done
+        # Corrige apenas o que ficou com dono root (legado de instalações antigas)
+        if [ -d "$USER_HOME/PesquisAI" ]; then
+            find "$USER_HOME/PesquisAI" -maxdepth 2 -user root -exec \
+                chown "$SUDO_USER:$USER_GROUP" {} + 2>/dev/null || true
+        fi
+    fi
+fi
+
+# ── Integração com o desktop (se houver sessão gráfica) ───────
+command -v update-desktop-database >/dev/null 2>&1 && \
+    update-desktop-database -q /usr/share/applications 2>/dev/null || true
+command -v gtk-update-icon-cache >/dev/null 2>&1 && \
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+
+# ── Motor OpenCode (não baixamos nada no postinst) ────────────
+ENGINE="$(command -v opencode 2>/dev/null || true)"
+if [ -n "$ENGINE" ]; then
+    ENGINE_VERSION="$("$ENGINE" --version 2>/dev/null | head -n1 || true)"
+    echo "✅ Motor detectado: ${ENGINE_VERSION:-desconhecido} (${ENGINE})"
+else
+    echo "ℹ️  Motor OpenCode 2.x ainda não instalado."
+    echo "   Instale com:  ufvai --engine-install"
+    echo "   (ou o app tenta instalar no primeiro boot com internet)"
+fi
+
+echo ""
+echo "✅ Instalação concluída."
+echo ""
+echo "  Iniciar:        ufvai"
+echo "  Diagnóstico:    ufvai --doctor"
+echo "  Interface:      http://localhost:8001"
+echo "  Dados:          ~/PesquisAI/  (vault, outputs, backups, logs)"
+echo ""
+echo "  A desinstalação NÃO remove ~/PesquisAI/."
+echo "═══════════════════════════════════════════════════════════════"
+
+exit 0

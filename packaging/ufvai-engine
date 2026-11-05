@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+# ufvai-engine — instala/atualiza o motor OpenCode V2 no perfil do usuário
+# ═══════════════════════════════════════════════════════════════════════════
+# Usa o instalador oficial (https://opencode.ai/v2/install) e grava em
+# ~/.opencode/bin/opencode — sem sudo e sem tocar no Python do sistema.
+#
+#   ufvai-engine                 instala a versão de referência (2.2.5)
+#   ufvai-engine --latest        instala a última 2.x publicada
+#   ufvai-engine --version 2.2.5 instala uma versão específica
+#   ufvai-engine --check         apenas mostra o motor em uso
+#
+# A versão de referência é a validada com esta release do UFVAI
+# (testada em 02/11/2026 contra o OpenCode 2.2.5).
+# ═══════════════════════════════════════════════════════════════════════════
+set -euo pipefail
+
+DEFAULT_VERSION="${UFVAI_ENGINE_VERSION:-2.2.5}"
+VERSION="$DEFAULT_VERSION"
+
+_blue() { printf '\033[34m%s\033[0m\n' "$*"; }
+_green() { printf '\033[32m%s\033[0m\n' "$*"; }
+_red() { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+
+case "${1:-}" in
+    --check)
+        if command -v opencode >/dev/null 2>&1; then
+            echo "Motor: $(opencode --version 2>/dev/null | head -n1) ($(command -v opencode))"
+        else
+            echo "Motor: não encontrado"
+            exit 1
+        fi
+        exit 0
+        ;;
+    --latest) VERSION="" ;;
+    --version)
+        VERSION="${2:-}"
+        [ -n "$VERSION" ] || { _red "--version exige um número (ex.: 2.2.5)"; exit 2; }
+        ;;
+    --help|-h)
+        sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+        exit 0
+        ;;
+    "") ;;
+    *) _red "Opção desconhecida: $1"; exit 2 ;;
+esac
+
+command -v curl >/dev/null 2>&1 || { _red "curl não encontrado. Instale: sudo apt install curl"; exit 1; }
+command -v bash >/dev/null 2>&1 || { _red "bash não encontrado."; exit 1; }
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/ufvai-engine.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+
+_blue "Baixando o instalador oficial do OpenCode V2…"
+curl -fsSL --retry 3 --connect-timeout 15 https://opencode.ai/v2/install -o "$TMP/install.sh"
+chmod +x "$TMP/install.sh"
+
+ARGS=(--no-modify-path)
+if [ -n "$VERSION" ]; then
+    ARGS+=(--version "$VERSION")
+    _blue "Instalando OpenCode ${VERSION} em ${HOME}/.opencode/bin…"
+else
+    _blue "Instalando a última OpenCode V2 em ${HOME}/.opencode/bin…"
+fi
+
+# O instalador oficial grava em $HOME/.opencode/bin e valida o binário.
+bash "$TMP/install.sh" "${ARGS[@]}"
+
+BIN="$HOME/.opencode/bin/opencode"
+if [ -x "$BIN" ]; then
+    _green "Motor instalado: $("$BIN" --version 2>/dev/null | head -n1)"
+    _green "Caminho: $BIN"
+else
+    _red "O instalador terminou, mas $BIN não foi encontrado."
+    exit 1
+fi
+
+# Aviso quando houver outro opencode antes no PATH (ex.: 1.x antigo)
+FOUND="$(command -v opencode 2>/dev/null || true)"
+if [ -n "$FOUND" ] && [ "$FOUND" != "$BIN" ]; then
+    echo
+    _blue "Atenção: existe outro binário no PATH: $FOUND"
+    echo "  O UFVAI prioriza ~/.opencode/bin automaticamente; para o terminal"
+    echo "  do sistema, ordene o PATH ou remova o binário antigo."
+fi

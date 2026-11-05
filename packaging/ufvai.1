@@ -1,0 +1,84 @@
+.TH UFVAI 1 "02/11/2026" "UFVAI @VERSION@" "Manual do usuário"
+.SH NOME
+ufvai \- agente de pesquisa científica com integridade (engine PesquisAI)
+.SH SINOPSE
+.B ufvai
+[\fIOPÇÃO\fR]
+.SH DESCRIÇÃO
+O \fBUFVAI\fR é um agente de pesquisa científica que combina dados oficiais
+brasileiros (IBGE, DataSUS, agroBR), normas UFV/ABNT e memória persistente
+em vault Obsidian. A interface web sobe em \fBhttp://localhost:8001\fR e o
+terminal integrado (ttyd) na porta 8000.
+.PP
+O pacote é a versão \fBoffline/.deb\fR: todos os dados do usuário ficam em
+\fB~/PesquisAI/\fR e nada é sincronizado com a nuvem.
+.SH OPÇÕES
+.TP
+.B (sem opção)
+Inicia em segundo plano e mostra a URL da interface.
+.TP
+.BR \-f ", " \-\-foreground
+Inicia em primeiro plano, com os logs no terminal.
+.TP
+.BR \-s ", " \-\-status
+Mostra o estado da instância, do motor e da memória.
+.TP
+.BR \-d ", " \-\-doctor
+Executa o diagnóstico do ambiente (Python, dependências, ttyd, motor, portas).
+.TP
+.B \-\-stop
+Encerra a instância do UFVAI do usuário atual.
+.TP
+.B \-\-engine\-install
+Instala ou atualiza o motor OpenCode V2 em \fB~/.opencode/bin\fR.
+.TP
+.BR \-V ", " \-\-version
+Mostra as versões do aplicativo e do motor.
+.TP
+.BR \-h ", " \-\-help
+Mostra a ajuda.
+.SH AMBIENTE
+.TP
+.B UFVAI_HOME
+Pasta de dados (padrão: \fB~/PesquisAI\fR).
+.TP
+.B UFVAI_PYTHON
+Interpretador Python usado no boot (padrão: \fBpython3\fR).
+.TP
+.B UFVAI_ENGINE_VERSION
+Versão do motor instalada por \fBufvai \-\-engine\-install\fR (padrão: 2.2.5).
+.TP
+.B PESQUISAI_OBSIDIAN_VAULT
+Caminho do vault da memória persistente.
+.SH ARQUIVOS
+.TP
+.I /opt/pesquisai
+Código do aplicativo, agentes, i18n, documentação e ttyd empacotado.
+.TP
+.I /usr/bin/ufvai
+Atalho principal (e \fB/usr/bin/pesquisai\fR, mantido por compatibilidade).
+.TP
+.I ~/PesquisAI/vault
+Memória persistente (Obsidian).
+.TP
+.I ~/PesquisAI/outputs
+Entregáveis (artigos, PDFs, figuras, datasets).
+.TP
+.I ~/PesquisAI/logs/ufvai.log
+Log do boot e da interface.
+.SH DIAGNÓSTICO
+Se a interface não abrir, rode:
+.PP
+.nf
+    ufvai --doctor
+    tail -n 50 ~/PesquisAI/logs/ufvai.log
+.fi
+.SH LIMITAÇÕES
+O UFVAI não substitui revisão por pares, não realiza coleta primária de dados
+e não emite pareceres médicos, jurídicos ou de CEP/CONEP. Toda referência
+bibliográfica deve ser validada; dados sem fonte são declarados como
+\fB[SEM DADOS SUFICIENTES]\fR.
+.SH AUTOR
+Gustavo Bastos Braga <gustavo.braga@ufv.br> — Universidade Federal de Viçosa.
+.SH VER
+\fBhttps://github.com/gustavobraga-byte/PesquisAI\fR

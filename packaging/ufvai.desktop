@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=UFVAI
+GenericName=Agente de Pesquisa Científica
+Comment=Pesquisa científica com dados brasileiros, ABNT/UFV e memória persistente
+Exec=ufvai
+TryExec=ufvai
+Icon=ufvai
+Terminal=false
+StartupNotify=true
+StartupWMClass=UFVAI
+Categories=Science;Education;Office;
+Keywords=pesquisa;ciência;cientifica;ibge;datasus;abnt;ufv;obsidian;ia;
+MimeType=

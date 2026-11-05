@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+# ufvai — launcher do UFVAI (engine PesquisAI) para a versão .deb/offline
+# ═══════════════════════════════════════════════════════════════════════════
+# Instalado como /usr/bin/pesquisai (compatibilidade) e /usr/bin/ufvai.
+#
+#   ufvai                 inicia em segundo plano e mostra a URL
+#   ufvai --foreground    inicia em primeiro plano (logs no terminal)
+#   ufvai --status        mostra estado (portas, motor, versão)
+#   ufvai --doctor        diagnóstico do ambiente (deps, ttyd, engine, vault)
+#   ufvai --stop          encerra a instância do usuário
+#   ufvai --engine-install instala/atualiza o motor OpenCode V2 (2.x)
+#   ufvai --version       versão do app e do motor
+#   ufvai --help          ajuda
+# ═══════════════════════════════════════════════════════════════════════════
+set -u
+
+APP_DIR="${UFVAI_APP_DIR:-/opt/pesquisai}"
+INSTALLED_VERSION="$(sed -n 's/^__version__: *str *= *"\([^"]*\)".*/\1/p' \
+    "$APP_DIR/pesquisai/__version__.py" 2>/dev/null | head -n1)"
+: "${INSTALLED_VERSION:=desconhecida}"
+
+export PYTHONPATH="$APP_DIR${PYTHONPATH:+:$PYTHONPATH}"
+# ttyd empacotado + motor instalado pelo usuário (instalador oficial V2)
+export PATH="$APP_DIR/bin:$HOME/.opencode/bin:$HOME/.local/bin:$PATH"
+export UFVAI_HOME="${UFVAI_HOME:-$HOME/PesquisAI}"
+export UFVAI_LOG_DIR="${UFVAI_LOG_DIR:-$UFVAI_HOME/logs}"
+LOG_FILE="$UFVAI_LOG_DIR/ufvai.log"
+UI_URL="http://localhost:8001"
+
+PY="${UFVAI_PYTHON:-python3}"
+
+_red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+_green() { printf '\033[32m%s\033[0m\n' "$*"; }
+_blue()  { printf '\033[34m%s\033[0m\n' "$*"; }
+_dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
+
+_port_open() {
+    timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null
+}
+
+_engine_bin() {
+    command -v opencode 2>/dev/null || true
+}
+
+_engine_version() {
+    local bin
+    bin="$(_engine_bin)"
+    [ -n "$bin" ] || return 1
+    "$bin" --version 2>/dev/null | head -n1
+}
+
+_python_ok() {
+    "$PY" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+PY
+}
+
+_require_python() {
+    if ! command -v "$PY" >/dev/null 2>&1; then
+        _red "Python 3 não encontrado. Instale: sudo apt install python3"
+        exit 1
+    fi
+    if ! _python_ok; then
+        _red "Python 3.10+ é obrigatório (encontrado: $("$PY" -V 2>&1))."
+        exit 1
+    fi
+}
+
+_ensure_dirs() {
+    mkdir -p "$UFVAI_HOME"/{vault,outputs,backups,logs,sessions,config} 2>/dev/null || true
+    mkdir -p "$UFVAI_LOG_DIR" 2>/dev/null || true
+}
+
+cmd_version() {
+    echo "UFVAI ${INSTALLED_VERSION} (engine PesquisAI) — pacote Debian offline"
+    local ev
+    if ev="$(_engine_version)"; then
+        echo "Motor: ${ev}"
+    else
+        echo "Motor: não encontrado (rode: ufvai --engine-install)"
+    fi
+    echo "Python: $("$PY" -V 2>&1)"
+    echo "Pacote: ${APP_DIR}"
+}
+
+cmd_help() {
+    cat <<EOF
+UFVAI ${INSTALLED_VERSION} — Agente de pesquisa científica (modo offline/.deb)
+
+USO
+  ufvai [opção]
+
+OPÇÕES
+  (sem opção)          inicia em segundo plano e mostra a URL
+  -f, --foreground     inicia em primeiro plano (logs no terminal)
+  -s, --status         estado da instância, motor e memória
+  -d, --doctor         diagnóstico completo do ambiente
+      --stop           encerra a instância deste usuário
+      --engine-install instala/atualiza o motor OpenCode V2
+  -V, --version        versão do app e do motor
+  -h, --help           esta ajuda
+
+AMBIENTE
+  UFVAI_HOME            pasta de dados (padrão: ~/PesquisAI)
+  UFVAI_PYTHON          interpretador Python (padrão: python3)
+  UFVAI_ENGINE_VERSION  versão do motor a instalar (padrão: 2.2.5)
+  PESQUISAI_OBSIDIAN_VAULT  vault da memória persistente
+
+PORTAS
+  8001  interface web      http://localhost:8001
+  8000  terminal (ttyd)
+  8002  tela de carregamento (apenas durante o boot)
+
+DADOS (nunca removidos na desinstalação)
+  ~/PesquisAI/vault      memória persistente (Obsidian)
+  ~/PesquisAI/outputs    entregáveis
+  ~/PesquisAI/backups    backups (chaves cifradas, sessões)
+  ~/PesquisAI/logs       logs
+EOF
+}
+
+cmd_status() {
+    _blue "UFVAI ${INSTALLED_VERSION} — estado"
+    if _port_open 8001; then
+        _green "  interface: ATIVA em ${UI_URL}"
+    else
+        _dim "  interface: parada (inicie com: ufvai)"
+    fi
+    if _port_open 8000; then
+        _green "  terminal : ATIVO na porta 8000"
+    else
+        _dim "  terminal : parado"
+    fi
+    local ev
+    if ev="$(_engine_version)"; then
+        _green "  motor    : ${ev}"
+    else
+        _red   "  motor    : ausente (ufvai --engine-install)"
+    fi
+    if [ -d "$UFVAI_HOME/vault" ]; then
+        _green "  memória  : ${UFVAI_HOME}/vault"
+    else
+        _dim   "  memória  : ainda não inicializada"
+    fi
+    if [ -f "$LOG_FILE" ]; then
+        _dim "  log      : ${LOG_FILE}"
+    fi
+}
+
+cmd_doctor() {
+    _blue "UFVAI ${INSTALLED_VERSION} — diagnóstico"
+    echo "  app       : ${APP_DIR}"
+    echo "  dados     : ${UFVAI_HOME}"
+    echo "  python    : $("$PY" -V 2>&1) ($(command -v "$PY"))"
+    echo
+    _blue "Dependências Python"
+    "$PY" - <<'PY'
+import importlib.util
+mods = [("cryptography", "python3-cryptography"),
+        ("requests", "python3-requests"),
+        ("bs4", "python3-bs4"),
+        ("yaml", "python3-yaml")]
+for mod, pkg in mods:
+    ok = importlib.util.find_spec(mod) is not None
+    print(f"  {'OK  ' if ok else 'FALTA'} {mod}" + ("" if ok else f"  → sudo apt install {pkg}"))
+PY
+    echo
+    _blue "Executáveis"
+    if [ -x "$APP_DIR/bin/ttyd" ]; then
+        echo "  OK    ttyd (empacotado): $("$APP_DIR/bin/ttyd" --version 2>/dev/null | head -n1)"
+    else
+        echo "  FALTA ttyd (empacotado)"
+    fi
+    local ev
+    if ev="$(_engine_version)"; then
+        echo "  OK    motor: ${ev} ($(_engine_bin))"
+    else
+        echo "  FALTA motor OpenCode 2.x → ufvai --engine-install"
+    fi
+    for bin in tmux xclip xsel curl git; do
+        command -v "$bin" >/dev/null 2>&1 && echo "  OK    $bin" || echo "  opc.  $bin ausente"
+    done
+    echo
+    _blue "Portas"
+    for p in 8000 8001; do
+        _port_open "$p" && echo "  $p em uso" || echo "  $p livre"
+    done
+    echo
+    _blue "Import do pacote"
+    ( cd / && "$PY" -c "import pesquisai, pesquisai.obsidian.autopilot as a; print('  OK    ', pesquisai.__file__)" ) 2>&1 | head -n3
+    echo
+    _blue "Memória"
+    echo "  vault     : ${PESQUISAI_OBSIDIAN_VAULT:-${UFVAI_HOME}/vault}"
+    [ -d "${PESQUISAI_OBSIDIAN_VAULT:-${UFVAI_HOME}/vault}" ] && echo "  estado    : presente" || echo "  estado    : será criado no primeiro boot"
+}
+
+cmd_stop() {
+    local uid; uid="$(id -u)"
+    local found=0 pids
+    pids="$(pgrep -u "$uid" -f 'pesquisai\.run_fast' 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+        found=1
+        kill -TERM $pids 2>/dev/null || true
+        sleep 2
+        pids="$(pgrep -u "$uid" -f 'pesquisai\.run_fast' 2>/dev/null || true)"
+        [ -n "$pids" ] && kill -KILL $pids 2>/dev/null || true
+    fi
+    pkill -u "$uid" -f 'ttyd .*-p 8000' 2>/dev/null && found=1 || true
+    rm -f "$UFVAI_HOME/ufvai.pid" 2>/dev/null || true
+    if [ "$found" = "1" ]; then
+        _green "UFVAI encerrado."
+    else
+        _dim "Nenhuma instância do UFVAI em execução para este usuário."
+    fi
+}
+
+cmd_start_bg() {
+    if _port_open 8001; then
+        _green "UFVAI já está em execução: ${UI_URL}"
+        return 0
+    fi
+    _ensure_dirs
+    {
+        echo
+        echo "════════════════════════════════════════════════════════════════"
+        echo " UFVAI ${INSTALLED_VERSION} — início em $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "════════════════════════════════════════════════════════════════"
+    } >>"$LOG_FILE" 2>/dev/null || true
+
+    nohup "$PY" -m pesquisai.run_fast >>"$LOG_FILE" 2>&1 &
+    local pid=$!
+    echo "$pid" >"$UFVAI_HOME/ufvai.pid" 2>/dev/null || true
+    _blue "Iniciando UFVAI (pid ${pid})…"
+
+    local i
+    for i in $(seq 1 45); do
+        if _port_open 8001; then
+            _green "Interface pronta: ${UI_URL}"
+            _dim  "Logs: ${LOG_FILE}"
+            return 0
+        fi
+        if ! kill -0 "$pid" 2>/dev/null; then
+            _red "O processo terminou durante o boot. Últimas linhas do log:"
+            tail -n 25 "$LOG_FILE" 2>/dev/null || true
+            return 1
+        fi
+        sleep 1
+    done
+
+    _dim "O boot continua em segundo plano (primeira execução instala skills)."
+    _dim "Acompanhe: tail -f ${LOG_FILE}"
+    _dim "Interface: ${UI_URL}"
+}
+
+_require_python
+
+case "${1:-}" in
+    "" )                     cmd_start_bg ;;
+    -f|--foreground)         _ensure_dirs; shift; exec "$PY" -m pesquisai.run_fast ;;
+    -s|--status)             cmd_status ;;
+    -d|--doctor)             cmd_doctor ;;
+    --stop)                  cmd_stop ;;
+    --engine-install)        shift; exec /usr/bin/ufvai-engine "$@" ;;
+    -V|--version)            cmd_version ;;
+    -h|--help)               cmd_help ;;
+    * )                      _red "Opção desconhecida: $1"; echo; cmd_help; exit 2 ;;
+esac

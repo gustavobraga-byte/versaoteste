@@ -1,0 +1,9 @@
+#!/bin/bash
+# prerm do pacote pesquisai (UFVAI)
+set -e
+
+echo "🗑️  Removendo o UFVAI (pacote pesquisai)…"
+echo "ℹ️  Seus dados em ~/PesquisAI/ NÃO serão removidos."
+echo "   Para apagar tudo depois: rm -rf ~/PesquisAI"
+
+exit 0
