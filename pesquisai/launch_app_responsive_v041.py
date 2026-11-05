@@ -5496,7 +5496,7 @@ def create_wrapper_html(
               '<li>Clique em <b>Criar chave de API</b> (canto superior direito) e confirme.</li>' +
               '<li>Na linha da chave, clique no <b>ícone de copiar</b>, volte para esta janela e cole no campo.</li>';
       extra = '<p class="ob-note">A chave começa com <b>AIza</b>. Ao salvar, o modelo padrão vira o ' +
-              '<b>Gemini 3.1 Flash Lite</b> com esforço <b>high</b> — e continua nos próximos usos.</p>';
+              '<b>Gemini Flash-Lite Latest</b> com esforço <b>high</b> — e continua nos próximos usos.</p>';
     } else if (provider === "nvidia"){
       steps = '<li>Entre em <b>build.nvidia.com</b> com sua conta NVIDIA.</li>' +
               '<li>Escolha um modelo, abra a opção de <b>API</b> e clique em <b>Get API Key</b>.</li>' +

@@ -410,6 +410,13 @@ def ensure_service_project_dir(
     if not target or not os.path.isdir(target):
         return False
 
+    # v0.7.10: retry automático de cota/429 antes de qualquer subida do motor.
+    try:
+        from .retry_plugin import ensure_retry_plugin
+        ensure_retry_plugin()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("retry-plugin: instalação falhou (%s)", exc)
+
     keys_dir = backup_dir or os.path.join(target, "backups")
     if backup_dir is None:
         # Modo offline/Drive não gravável: a interface pode ter usado

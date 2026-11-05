@@ -36,7 +36,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "paid": False,
         "recommended": True,
         "tagline": "Grátis no Google AI Studio · recomendado",
-        "model": "google/gemini-3.1-flash-lite",
+        "model": "google/gemini-flash-lite-latest",
     },
     "nvidia": {
         "id": "nvidia",
@@ -81,15 +81,16 @@ ONBOARDING_ORDER: tuple[str, ...] = ("google", "nvidia", "openrouter", "opencode
 # Modelo padrão quando existe chave do Google. Pedido do autor (v0.7.10):
 # "se o usuário tem uma key do google o modelo padrão é o gemini 3.5 flash".
 # O id pode ser trocado por `UFVAI_GOOGLE_MODEL` sem mexer no código.
-GOOGLE_DEFAULT_MODEL: str = "google/gemini-3.1-flash-lite"
+GOOGLE_DEFAULT_MODEL: str = "google/gemini-flash-lite-latest"
 
-# v0.7.10: o modelo padrão é "Gemini 3.1 Flash Lite · high". O sufixo `#high`
+# v0.7.10: o modelo padrão é "Gemini Flash-Lite Latest · high". O sufixo `#high`
 # é um VARIANTE do motor (esforço de raciocínio) — o `model` raiz não guarda
 # variante (doc V2 de modelos), então ele vai no modelo do AGENTE UFVAI.
 GOOGLE_DEFAULT_VARIANT: str = "high"
 
 # Ordem de preferência caso o catálogo do motor não tenha o modelo acima.
 GOOGLE_MODEL_FALLBACKS: tuple[str, ...] = (
+    "google/gemini-flash-lite-latest",
     "google/gemini-3.1-flash-lite",
     "google/gemini-3.5-flash-lite",
     "google/gemini-3.5-flash",

@@ -245,7 +245,7 @@ def _write_default_model(model_id: str, variant: str = "") -> str:
 
     v0.7.10: o motor V2 não retém variante no ``model`` raiz, então a variante
     (ex.: ``high``) vai em ``agents.UFVAI.model`` — é o que a TUI mostra como
-    "Gemini 3.1 Flash Lite Google · high".
+    "Gemini Flash-Lite Latest Google · high".
 
     Devolve a referência gravada (``provider/modelo#variante``), ou ``""``
     quando não havia o que gravar / o arquivo não pôde ser lido.
