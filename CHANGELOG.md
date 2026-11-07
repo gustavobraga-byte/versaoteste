@@ -28,10 +28,15 @@
   continua na internet normal.
 
 ### 🌐 Modo total e modelo local (OpenCode)
-- **Modo total:** com `redirect-gateway def1` e o serviço do OpenCode + ttyd
-  dentro do namespace (`unshare -Urnm`), o **agente, as ferramentas e o
-  terminal** passam a sair pela UFV. O wrapper (8001) e o kernel do notebook
-  continuam fora. Ativar/desativar reinicia o terminal/agente.
+- **Modo total (padrão = split + serviço no netns):** o serviço do OpenCode +
+  ttyd rodam **dentro** do namespace (`unshare -Urnm`); só a rede da UFV
+  (`100.65.0.0/17`…, `200.235.128.0/17`) sai por `tun0` e a internet comum
+  (LLM, GitHub, PyPI) continua pelo Colab via `tap0`. O wrapper (8001) e o
+  kernel do notebook continuam fora. Ativar/desativar reinicia o terminal/agente.
+- **Túnel total opcional** (`redirect-gateway def1`, checkbox “Túnel total”):
+  manda TODO o tráfego para a UFV — medido em 07/11/2026, a UFV **bloqueia a
+  saída externa** (OpenRouter, Google, OpenAI, GitHub, PyPI dão timeout; só
+  hosts da UFV respondem 200). Serve só para modelos/serviços internos da UFV.
 - **Modelo local:** encaminhador TCP `127.0.0.1:<porta>` → serviço da
   intranet (ex.: Ollama `10.0.0.10:11434`), com DNS da VPN. No OpenCode,
   use `http://127.0.0.1:<porta>/v1` como `baseURL`.
@@ -53,9 +58,13 @@
   - **Não** → segue sem VPN; a escolha fica em `prefs.json` + `localStorage`
     e não volta a perguntar (o botão 🛡 da topbar reabre quando quiser).
 - Painel: status ao vivo (desconectado/conectando/conectado/erro), avisos
-  (1 dispositivo por CPF, split tunnel, senha), **Conectar/Desconectar**,
+  (1 dispositivo por CPF, túnel total, senha), **Conectar/Desconectar**,
   **Testar acesso** (`https://sistemas.ufv.br/`), **baixar/colar** o `.ovpn`,
   **esquecer** credenciais e detalhes técnicos (modo, TUN, rotas, DNS, log).
+- **OpenCode pela VPN é o PADRÃO**: “Usar a VPN em todo o UFVAI” já vem
+  marcada (split tunnel); a conexão move o serviço do OpenCode
+  + ttyd para o namespace. A porta do serviço é republicada no host via
+  slirp (`add_hostfwd`), então o wrapper/CLI continuam funcionando.
 
 ### 🔐 Segurança
 - Senha **nunca** em linha de comando, log ou `state.json`: arquivo `auth`
@@ -72,8 +81,10 @@
 - CLI: `python -m pesquisai.vpn status|connect|disconnect|profile|test`.
 
 ### 🧪 Testes
-- `tests/test_v0711_vpn.py` — **22 testes offline** (perfil, máscara,
-  redaction, prefs, credenciais cifradas, SOCKS5 + relay local, capacidades).
+- `tests/test_v0711_vpn.py` — **30 testes offline** (perfil, máscara,
+  redaction, prefs, credenciais cifradas, SOCKS5 + relay local, capacidades,
+  bind `0.0.0.0`/porta publicada do serviço, padrão split tunnel e modo
+  total aceitando split).
 - **Prova de conceito no Colab:** UDP 1195 alcança o servidor, o TLS completa
   e credenciais falsas retornam `AUTH_FAILED`; o caminho
   `netns → slirp → SOCKS5 → 127.0.0.1:1081` devolveu **HTTP 200** para

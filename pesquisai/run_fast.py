@@ -370,7 +370,8 @@ def _service_cwd() -> Optional[str]:
 
 def ensure_service_project_dir(
     project_dir: str, timeout_s: float = 20.0, backup_dir: Optional[str] = None,
-    netns_pid: int | None = None,
+    netns_pid: int | None = None, service_host: str | None = None,
+    service_port: int | None = None,
 ) -> bool:
     """Garante que o serviço do OpenCode nasça com cwd E chaves do projeto.
 
@@ -403,6 +404,13 @@ def ensure_service_project_dir(
         timeout_s: espera máxima pelo ``service status``.
         backup_dir: pasta das chaves cifradas. Padrão:
             ``<project_dir>/backups`` (com fallback ``~/PesquisAI/backups``).
+        netns_pid: sobe o serviço DENTRO deste network namespace (modo
+            "todo o UFVAI na VPN"). O TUI e o agente passam a sair pela UFV.
+        service_host: endereço de bind do ``opencode serve``. No modo VPN
+            usa-se ``0.0.0.0`` porque o slirp4netns publica a porta no guest
+            IP (10.0.2.100) — ``127.0.0.1`` não é alcançável por ele.
+        service_port: porta fixa do serviço no namespace; o host publica a
+            mesma porta via slirp (``add_hostfwd``) para o wrapper/CLI.
 
     Best-effort: qualquer falha devolve False e o boot segue — os spawns do
     ttyd também passam a usar ``cwd`` explícito (camada 2).
@@ -446,11 +454,40 @@ def ensure_service_project_dir(
         os.environ.update(keys_env)
 
     current = _service_cwd()
+    same_cwd = False
     try:
-        if current and os.path.realpath(current) == os.path.realpath(target) and not missing:
-            return True
+        same_cwd = bool(
+            current and os.path.realpath(current) == os.path.realpath(target)
+        )
     except OSError:
-        pass
+        same_cwd = False
+
+    # v0.7.11: no modo "todo o UFVAI na VPN" o serviço precisa estar no
+    # namespace da VPN, não basta estar no cwd certo. Sem esta checagem, um
+    # serviço do host faria o ensure() retornar cedo e o OpenCode continuaria
+    # fora do túnel.
+    if netns_pid is None:
+        if same_cwd and not missing:
+            return True
+    else:
+        try:
+            target_ns = os.readlink(f"/proc/{int(netns_pid)}/ns/net")
+        except OSError:
+            target_ns = ""
+        pgrep = subprocess.run(
+            ["pgrep", "-f", "opencode serve --service"],
+            capture_output=True, text=True, timeout=5,
+        )
+        in_ns = False
+        for pid in (pgrep.stdout or "").split():
+            try:
+                if os.readlink(f"/proc/{pid}/ns/net") == target_ns:
+                    in_ns = True
+                    break
+            except OSError:
+                continue
+        if in_ns and same_cwd and not missing:
+            return True
 
     if missing:
         logger.info(
@@ -472,19 +509,42 @@ def ensure_service_project_dir(
         ["nsenter", "-t", str(netns_pid), "-m", "-n"] if netns_pid else []
     )
 
+    # v0.7.11: bind publicado pelo slirp4netns. O `serve` precisa escutar em
+    # 0.0.0.0 para o hostfwd (guest 10.0.2.100:<porta>) alcançar o serviço;
+    # a porta é fixa para o wrapper/CLI do host reutilizarem service.json.
+    serve_cmd = [opencode_bin, "serve", "--service"]
+    if service_host:
+        serve_cmd += ["--hostname", str(service_host)]
+    if service_port:
+        serve_cmd += ["--port", str(int(service_port))]
+
+    # Fora do namespace, o stop é local. Dentro dele, o service.json ainda
+    # aponta para o serviço antigo do host (inacessível pelo guest), então o
+    # stop é feito pelo chamador antes de entrar no namespace.
+    stop_prefix = _prefix if netns_pid is None else []
     try:
         subprocess.run(
-            _prefix + [opencode_bin, "service", "stop"],
+            stop_prefix + [opencode_bin, "service", "stop"],
             capture_output=True, text=True, timeout=10,
         )
     except Exception as exc:  # noqa: BLE001 — serviço ausente é o caso normal
         logger.debug("ensure_service_project_dir: service stop falhou (%s)", exc)
 
+    env = build_env(keys_env)
+    if netns_pid:
+        # O roteamento é do namespace (tun0). Variáveis de proxy herdadas do
+        # Colab apontariam para portas que não existem lá dentro.
+        for _proxy_key in (
+            "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy",
+            "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy",
+        ):
+            env.pop(_proxy_key, None)
+
     try:
         subprocess.Popen(
-            _prefix + [opencode_bin, "serve", "--service"],
+            _prefix + serve_cmd,
             cwd=target,
-            env=build_env(keys_env),
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

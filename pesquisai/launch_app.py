@@ -203,6 +203,9 @@ _RATE: dict[str, list[float]] = {}
 _TTYD_PROC: "subprocess.Popen | None" = None
 # v0.7.11: PID do namespace quando o modo "todo o UFVAI na VPN" está ativo.
 _SYSTEM_MODE_NETNS_PID: "int | None" = None
+# v0.7.11: porta do serviço OpenCode publicada no host pelo slirp quando o
+# modo "todo o UFVAI na VPN" está ativo (hostfwd 127.0.0.1:<porta>).
+_SYSTEM_MODE_SERVICE_PORT: "int | None" = None
 # v0.7.5 (correção 23/10/2026 — SEM bump): sessão que o terminal está
 # exibindo AGORA. Um reinício do ttyd (idioma/chave/keepalive) reabre esta
 # mesma sessão em vez de pré-criar outra — era o que fazia o UFVAI abrir
@@ -2978,10 +2981,16 @@ def _start_opencode_service_with_keys(timeout_s: float = 20.0) -> bool:
         logger.warning("Serviço com chaves: import indisponível (%s)", exc)
         return False
     project = _workspace_dir()
+    _in_ns = _SYSTEM_MODE_NETNS_PID is not None
+    _svc_port = _SYSTEM_MODE_SERVICE_PORT
+    if _in_ns and not _svc_port:
+        _, _svc_port = _opencode_service_endpoint()
     return bool(
         ensure_service_project_dir(
             project, timeout_s=timeout_s, backup_dir=_keys_backup_dir(),
             netns_pid=_SYSTEM_MODE_NETNS_PID,
+            service_host="0.0.0.0" if (_in_ns and _svc_port) else None,
+            service_port=int(_svc_port) if (_in_ns and _svc_port) else None,
         )
     )
 
@@ -3045,23 +3054,84 @@ def _port_accepts(port: int, timeout: float = 0.3) -> bool:
         return False
 
 
+def _opencode_service_endpoint() -> tuple[str, int]:
+    """(host, porta) do serviço OpenCode, lido de ``service.json``.
+
+    O motor V2 grava ``~/.local/state/opencode/service.json`` com a URL do
+    servidor de background. No modo "todo o UFVAI na VPN" a MESMA porta é
+    reaproveitada dentro do namespace e publicada de volta no host, para o
+    wrapper/CLI continuarem falando com o mesmo endpoint.
+    """
+    import json as _json
+    from urllib.parse import urlparse as _urlparse
+
+    candidates: list[str] = []
+    _xdg = os.environ.get("XDG_STATE_HOME")
+    if _xdg:
+        candidates.append(os.path.join(_xdg, "opencode", "service.json"))
+    candidates.append(os.path.expanduser("~/.local/state/opencode/service.json"))
+    candidates.append("/root/.local/state/opencode/service.json")
+    for path in candidates:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = _json.load(fh)
+        except (OSError, ValueError):
+            continue
+        parsed = _urlparse(str(data.get("url") or ""))
+        if parsed.port:
+            return (parsed.hostname or "127.0.0.1", int(parsed.port))
+    return ("127.0.0.1", 0)
+
+
+def _wait_service_on_host(port: int, timeout_s: float = 10.0) -> bool:
+    """Espera o serviço publicado responder em 127.0.0.1:<porta>.
+
+    O ``/global/health`` do OpenCode V2 responde sem senha (a autenticação
+    vale para as rotas de API). É a prova de que o hostfwd do slirp está
+    levando o wrapper ao serviço que roda DENTRO da VPN.
+    """
+    import http.client
+
+    deadline = time.monotonic() + max(0.5, float(timeout_s))
+    while time.monotonic() < deadline:
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", int(port), timeout=2)
+            conn.request("GET", "/global/health")
+            resp = conn.getresponse()
+            resp.read(256)
+            conn.close()
+            if resp.status < 500:
+                return True
+        except OSError:
+            pass
+        except Exception:  # noqa: BLE001 — melhor tentar de novo
+            pass
+        time.sleep(0.3)
+    return False
+
+
 def _vpn_system_enable(backup_dir: str) -> dict:
     """Move o serviço do OpenCode + ttyd para o namespace da VPN.
 
     v0.7.11: é o modo "todo o UFVAI na VPN". O terminal e o agente passam a
-    sair pela UFV (o OpenVPN é conectado com redirect-gateway); o wrapper
-    (porta 8001) e o kernel do notebook continuam fora.
+    usar o namespace da VPN; o wrapper (porta 8001) e o kernel do notebook
+    continuam fora.
+
+    Funciona nos DOIS modos de túnel:
+
+    - **split (padrão):** só a rede da UFV (`100.65.0.0/17`…,
+      `200.235.128.0/17`) sai por `tun0`; a internet comum (LLM, GitHub,
+      PyPI) continua por `tap0`/Colab. É o modo recomendado para LLM em
+      nuvem + sistemas internos.
+    - **total (`redirect-gateway`):** todo o tráfego vai para a UFV, que
+      **bloqueia a saída externa** (medido em 07/11/2026). Só faz sentido
+      para modelos/serviços internos da UFV.
     """
     from . import vpn as _vpn
 
     st = _vpn.status(backup_dir)
     if st.get("state") != "connected":
         raise _vpn.VPNError("Conecte a VPN da UFV antes de ativar o modo total.")
-    if not st.get("full_tunnel"):
-        raise _vpn.VPNError(
-            "O modo total exige túnel total (redirect-gateway). Desconecte, "
-            "marque 'Usar a VPN em todo o UFVAI' e conecte de novo."
-        )
     if st.get("system_mode"):
         return st
     ns_pid = (st.get("pids") or {}).get("ns")
@@ -3095,10 +3165,24 @@ def _vpn_system_enable(backup_dir: str) -> dict:
 def _system_enable_steps(backup_dir: str, ns_pid: int) -> None:
     """Passos internos do modo total (separados para permitir rollback)."""
     from . import vpn as _vpn
+    global _SYSTEM_MODE_NETNS_PID, _SYSTEM_MODE_SERVICE_PORT
+
     try:
         opencode_bin = find_opencode()
     except Exception:  # noqa: BLE001
         opencode_bin = "opencode"
+
+    # A porta atual do serviço no host é reaproveitada dentro do namespace.
+    # Assim o service.json (URL 127.0.0.1:<porta>) continua válido para o
+    # wrapper e para o CLI do host, que a alcançam pelo hostfwd do slirp.
+    _svc_host, _svc_port = _opencode_service_endpoint()
+    if not _svc_port:
+        try:
+            _svc_port = int(_vpn._free_port(4096))
+        except Exception:  # noqa: BLE001
+            _svc_port = 4096
+    _SYSTEM_MODE_SERVICE_PORT = int(_svc_port)
+
     for cmd in (
         [opencode_bin, "service", "stop"],
         ["tmux", "-L", "ufvai", "kill-server"],
@@ -3109,12 +3193,32 @@ def _system_enable_steps(backup_dir: str, ns_pid: int) -> None:
             pass
     time.sleep(1.2)
 
-    # 4. sobe serviço + terminal DENTRO do namespace
+    # 4. sobe o serviço DENTRO do namespace, escutando em 0.0.0.0:<porta>
+    #    (o hostfwd do slirp entrega no guest IP 10.0.2.100, nunca no
+    #    loopback do namespace).
     from .run_fast import ensure_service_project_dir
-    ensure_service_project_dir(
-        _workspace_dir(), netns_pid=int(ns_pid), timeout_s=30
+    _ok = ensure_service_project_dir(
+        _workspace_dir(), netns_pid=int(ns_pid), timeout_s=30,
+        service_host="0.0.0.0", service_port=int(_svc_port),
     )
-    global _SYSTEM_MODE_NETNS_PID
+    if not _ok:
+        raise _vpn.VPNError(
+            "O serviço do OpenCode não subiu dentro da VPN. O modo total foi "
+            "desfeito para o agente não continuar fora do túnel."
+        )
+
+    # 5. publica a porta do serviço no host. Sem isto, o wrapper/CLI lê
+    #    service.json e tenta 127.0.0.1:<porta> — que existe só no namespace.
+    _vpn.unpublish_port(int(_svc_port))
+    _vpn.publish_port(int(_svc_port), int(_svc_port))
+    if not _wait_service_on_host(int(_svc_port), timeout_s=10):
+        raise _vpn.VPNError(
+            "O serviço subiu na VPN, mas 127.0.0.1:%d não respondeu. "
+            "Verifique o hostfwd do slirp4netns." % int(_svc_port)
+        )
+
+    # 6. terminal (ttyd) também dentro do namespace; a porta 8000 já foi
+    #    publicada por _vpn_system_enable antes deste passo.
     _SYSTEM_MODE_NETNS_PID = int(ns_pid)
     start_ttyd(netns_pid=int(ns_pid))
     _vpn.set_system_mode(True)
@@ -3124,9 +3228,25 @@ def _vpn_system_disable(backup_dir: str) -> dict:
     """Volta o serviço + ttyd para o namespace do host e desconecta a VPN."""
     from . import vpn as _vpn
 
-    global _SYSTEM_MODE_NETNS_PID
+    global _SYSTEM_MODE_NETNS_PID, _SYSTEM_MODE_SERVICE_PORT
+    _svc_port = int(_SYSTEM_MODE_SERVICE_PORT or 0)
     _SYSTEM_MODE_NETNS_PID = None
+    _SYSTEM_MODE_SERVICE_PORT = None
     _stop_terminal()
+
+    # Ainda há hostfwd ativo: o `service stop` do host alcança o serviço que
+    # roda no namespace e encerra limpo (sessões em memória incluídas).
+    try:
+        opencode_bin = find_opencode()
+    except Exception:  # noqa: BLE001
+        opencode_bin = "opencode"
+    try:
+        subprocess.run(
+            [opencode_bin, "service", "stop"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        pass
     try:
         subprocess.run(
             ["pkill", "-f", "opencode serve --service"],
@@ -3134,6 +3254,18 @@ def _vpn_system_disable(backup_dir: str) -> dict:
         )
     except Exception:  # noqa: BLE001
         pass
+
+    # Remove os hostfwds antes de derrubar o namespace.
+    try:
+        _vpn.unpublish_port(TERMINAL_PORT)
+    except Exception:  # noqa: BLE001
+        pass
+    if _svc_port:
+        try:
+            _vpn.unpublish_port(_svc_port)
+        except Exception:  # noqa: BLE001
+            pass
+
     _vpn.disconnect(backup_dir)
     try:
         from .run_fast import ensure_service_project_dir
@@ -4455,8 +4587,16 @@ def start_wrapper_server():
             if p == "/api/vpn/connect":
                 from . import vpn as _vpn
                 try:
+                    # v0.7.11: o PADRÃO é split tunnel. O serviço do OpenCode
+                    # roda no namespace e usa a VPN para a rede da UFV; a
+                    # internet comum continua pelo Colab (LLM funciona).
+                    # Túnel total é opcional (modelos/serviços internos), mas
+                    # a UFV bloqueia a saída externa nesse modo.
                     _full = bool(body.get("full_tunnel", False))
                     _cur = _vpn.status(DRIVE_BACKUP_DIR)
+                    if _cur.get("system_mode"):
+                        # mudar de modo exige devolver terminal/serviço ao host
+                        _vpn_system_disable(DRIVE_BACKUP_DIR)
                     if (_full and _cur.get("state") == "connected"
                             and not _cur.get("full_tunnel")):
                         # já conectado em split tunnel: reconecta em túnel total
@@ -4480,7 +4620,13 @@ def start_wrapper_server():
 
             if p == "/api/vpn/disconnect":
                 from . import vpn as _vpn
-                self._json(200, _vpn.disconnect(DRIVE_BACKUP_DIR))
+                _cur = _vpn.status(DRIVE_BACKUP_DIR)
+                if _cur.get("system_mode"):
+                    # o ttyd/serviço estão DENTRO do namespace: é preciso
+                    # trazê-los de volta ao host antes de derrubar a VPN.
+                    self._json(200, _vpn_system_disable(DRIVE_BACKUP_DIR))
+                else:
+                    self._json(200, _vpn.disconnect(DRIVE_BACKUP_DIR))
                 return
 
             if p == "/api/vpn/profile":

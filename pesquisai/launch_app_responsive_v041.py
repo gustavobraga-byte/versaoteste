@@ -5611,7 +5611,7 @@ def create_wrapper_html(
       <ul>
         <li data-i18n="vpn.warn1">Use suas credenciais pessoais do portal vpn.ufvnet.ufv.br (CPF + senha).</li>
         <li data-i18n="vpn.warn2">A UFV limita a VPN a 1 dispositivo por CPF: conectar aqui pode desconectar seu computador.</li>
-        <li data-i18n="vpn.warn3">O túnel cobre somente a rede da UFV (split tunnel). O restante do Colab continua na internet normal.</li>
+        <li data-i18n="vpn.warn3">Por padrão o túnel é total: o OpenCode (agente + terminal) sai pela UFV. O kernel do notebook e o wrapper continuam fora.</li>
         <li data-i18n="vpn.warn4">A senha não é gravada, a menos que você marque “lembrar” (aí fica cifrada no seu Drive).</li>
       </ul>
     </div>
@@ -5627,10 +5627,15 @@ def create_wrapper_html(
         <span data-i18n="vpn.remember">Lembrar neste Drive (cifrado)</span>
       </label>
       <label class="vpn-check" for="vpn-system">
-        <input type="checkbox" id="vpn-system">
+        <input type="checkbox" id="vpn-system" checked>
         <span data-i18n="vpn.system_mode">Usar a VPN em todo o UFVAI (terminal + OpenCode)</span>
       </label>
-      <p class="vpn-fwd-hint" data-i18n="vpn.system_hint">Reinicia o terminal e o agente dentro da VPN. O kernel do notebook e o wrapper continuam fora.</p>
+      <p class="vpn-fwd-hint" data-i18n="vpn.system_hint">Padrão: o OpenCode (agente + terminal) roda dentro da VPN — a rede da UFV sai por tun0 e a internet comum (LLM) continua pelo Colab.</p>
+      <label class="vpn-check" for="vpn-full">
+        <input type="checkbox" id="vpn-full">
+        <span data-i18n="vpn.full_mode">Túnel total (todo o tráfego pela UFV)</span>
+      </label>
+      <p class="vpn-fwd-hint" data-i18n="vpn.full_hint">Só para modelos/serviços internos da UFV: nesse modo a UFV bloqueia a internet externa e o LLM em nuvem para de responder.</p>
       <div class="vpn-actions">
         <button type="button" id="vpn-connect-btn" class="vpn-primary" onclick="vpnConnect()" data-i18n="vpn.connect">Conectar</button>
         <button type="button" id="vpn-disconnect-btn" class="vpn-danger" onclick="vpnDisconnect()" style="display:none" data-i18n="vpn.disconnect">Desconectar</button>
@@ -6060,6 +6065,7 @@ def create_wrapper_html(
     var btn = $("vpn-btn");
     if (btn) btn.className = "tb-icon" + (state === "connected" ? " connected" : "");
     if ($("vpn-system") && last.system_mode) $("vpn-system").checked = true;
+    if ($("vpn-full") && state === "connected") $("vpn-full").checked = !!last.full_tunnel;
 
     var cbtn = $("vpn-connect-btn"), dbtn = $("vpn-disconnect-btn");
     if (cbtn){
@@ -6160,6 +6166,7 @@ def create_wrapper_html(
     if (!pass && !saved){ toast(tr("vpn.need_pass", "Informe a senha da VPN."), "warn"); return; }
 
     var system = !!($("vpn-system") && $("vpn-system").checked);
+    var full = !!($("vpn-full") && $("vpn-full").checked);
     pendingSystem = system;
     busy = true;
     var btn = $("vpn-connect-btn");
@@ -6172,7 +6179,8 @@ def create_wrapper_html(
         password: pass,
         remember: !!($("vpn-remember") && $("vpn-remember").checked),
         use_saved: saved && !pass,
-        full_tunnel: system
+        full_tunnel: full,
+        system: system
       })
     }).then(function(r){ return r.json(); }).then(function(d){
       busy = false;
@@ -6210,13 +6218,26 @@ def create_wrapper_html(
       var res = $("vpn-test-result");
       var lines = [];
       if (d && d.error) lines.push("⚠️ " + d.error);
+      function fmtBytes(n){
+        n = Number(n) || 0;
+        if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB";
+        if (n >= 1024) return (n / 1024).toFixed(1) + " KB";
+        return n + " B";
+      }
       lines.push("IP direto: " + ((d && d.direct_ip) || "—"));
-      lines.push("IP pela VPN: " + ((d && d.proxy_ip) || "—") + ((d && d.exit_ip_differs) ? "  [diferente]" : "  [igual]"));
+      var vpnTag = (d && d.proxy_ip)
+        ? ((d.exit_ip_differs) ? "  [diferente]" : "  [igual]")
+        : "  [sem resposta externa]";
+      lines.push("IP pela VPN: " + ((d && d.proxy_ip) || "—") + vpnTag);
       lines.push("www.ufv.br: " + (pub.http || "falhou"));
       lines.push("sistemas.ufv.br: " + (inner.http || "falhou"));
       lines.push("TUN: " + ((d && d.tun_ip) || "—") + " · modo: " + ((d && d.full_tunnel) ? "total" : "split") + " · caminho: " + ((d && d.path) || "—"));
       lines.push("DNS: " + (((d && d.dns) || []).join(", ") || "— (slirp 10.0.2.3)"));
-      if (d && d.dns && d.dns.length) lines.push("DNS da VPN: " + d.dns.join(", "));
+      lines.push("DNS interno: " + ((d && d.dns_internal) ? "ok (sistemas.ufv.br resolve)" : "não resolveu sistemas.ufv.br"));
+      if (d && (d.tun_tx || d.tun_rx)){
+        lines.push("Túnel tun0 no teste: +" + fmtBytes(d.tun_tx) + " ↑ / +" + fmtBytes(d.tun_rx) + " ↓" + ((d.tunnel_active) ? "  [tráfego passou pela VPN]" : ""));
+      }
+      if (d && d.route_default) lines.push("Rota de 1.1.1.1: " + d.route_default);
       if (d && d.diag_internal && d.diag_internal.ip) lines.push("sistemas.ufv.br → " + d.diag_internal.ip + (d.diag_internal.route ? " · " + d.diag_internal.route : ""));
       if (d && d.diag_public && d.diag_public.ip) lines.push("www.ufv.br → " + d.diag_public.ip + (d.diag_public.route ? " · " + d.diag_public.route : ""));
       if (inner.error) lines.push("interno: " + inner.error);
@@ -6796,7 +6817,7 @@ def create_wrapper_html(
             "vpn.warn_title": "Antes de conectar",
             "vpn.warn1": "Use suas credenciais pessoais do portal vpn.ufvnet.ufv.br (CPF + senha).",
             "vpn.warn2": "A UFV limita a VPN a 1 dispositivo por CPF: conectar aqui pode desconectar seu computador.",
-            "vpn.warn3": "O túnel cobre somente a rede da UFV (split tunnel). O restante do Colab continua na internet normal.",
+            "vpn.warn3": "Por padrão o OpenCode (agente + terminal) roda dentro da VPN: a rede da UFV sai por tun0 e a internet comum continua pelo Colab. O kernel do notebook e o wrapper ficam fora.",
             "vpn.warn4": "A senha não é gravada, a menos que você marque “lembrar” (aí fica cifrada no seu Drive).",
             "vpn.cpf": "CPF",
             "vpn.password": "Senha da VPN",
@@ -6824,7 +6845,9 @@ def create_wrapper_html(
             "vpn.forward_ok": "Porta encaminhada",
             "vpn.forward_bad": "Informe host e porta.",
             "vpn.system_mode": "Usar a VPN em todo o UFVAI (terminal + OpenCode)",
-            "vpn.system_hint": "Reinicia o terminal e o agente dentro da VPN. O kernel do notebook e o wrapper continuam fora.",
+            "vpn.system_hint": "Padrão: o OpenCode (agente + terminal) roda dentro da VPN — a rede da UFV sai por tun0 e a internet comum (LLM) continua pelo Colab.",
+            "vpn.full_mode": "Túnel total (todo o tráfego pela UFV)",
+            "vpn.full_hint": "Só para modelos/serviços internos da UFV: nesse modo a UFV bloqueia a internet externa e o LLM em nuvem para de responder.",
             "vpn.system_on": "Modo total ativado. Recarregando…",
             "vpn.system_badge": "todo o UFVAI na VPN",
             "vpn.system_off": "Modo total desativado.",
@@ -7000,7 +7023,7 @@ def create_wrapper_html(
             "vpn.warn_title": "Before connecting",
             "vpn.warn1": "Use your personal credentials from vpn.ufvnet.ufv.br (CPF + password).",
             "vpn.warn2": "UFV limits the VPN to 1 device per CPF: connecting here may disconnect your computer.",
-            "vpn.warn3": "The tunnel covers only the UFV network (split tunnel). The rest of Colab stays on normal internet.",
+            "vpn.warn3": "By default OpenCode (agent + terminal) runs inside the VPN: the UFV network goes through tun0 and regular internet keeps using Colab. The notebook kernel and the wrapper stay outside.",
             "vpn.warn4": "The password is not stored unless you tick “remember” (then it is encrypted in your Drive).",
             "vpn.cpf": "CPF",
             "vpn.password": "VPN password",
@@ -7028,7 +7051,9 @@ def create_wrapper_html(
             "vpn.forward_ok": "Port forwarded",
             "vpn.forward_bad": "Enter host and port.",
             "vpn.system_mode": "Use the VPN for the whole UFVAI (terminal + OpenCode)",
-            "vpn.system_hint": "Restarts the terminal and the agent inside the VPN. The notebook kernel and the wrapper stay outside.",
+            "vpn.system_hint": "Default: OpenCode (agent + terminal) runs inside the VPN — the UFV network goes through tun0 and regular internet (LLM) keeps using Colab.",
+            "vpn.full_mode": "Full tunnel (all traffic through UFV)",
+            "vpn.full_hint": "Only for UFV-internal models/services: in this mode UFV blocks external internet and cloud LLMs stop responding.",
             "vpn.system_on": "Full mode enabled. Reloading…",
             "vpn.system_badge": "whole UFVAI on the VPN",
             "vpn.system_off": "Full mode disabled.",
@@ -7204,7 +7229,7 @@ def create_wrapper_html(
             "vpn.warn_title": "Antes de conectar",
             "vpn.warn1": "Usa tus credenciales personales del portal vpn.ufvnet.ufv.br (CPF + contraseña).",
             "vpn.warn2": "La UFV limita la VPN a 1 dispositivo por CPF: conectar aquí puede desconectar tu computadora.",
-            "vpn.warn3": "El túnel cubre solo la red de la UFV (split tunnel). El resto de Colab sigue en la internet normal.",
+            "vpn.warn3": "Por defecto OpenCode (agente + terminal) se ejecuta dentro de la VPN: la red de la UFV sale por tun0 y la internet común sigue por Colab. El kernel del notebook y el wrapper quedan fuera.",
             "vpn.warn4": "La contraseña no se guarda, a menos que marques «recordar» (entonces queda cifrada en tu Drive).",
             "vpn.cpf": "CPF",
             "vpn.password": "Contraseña de la VPN",
@@ -7232,7 +7257,9 @@ def create_wrapper_html(
             "vpn.forward_ok": "Puerto reenviado",
             "vpn.forward_bad": "Informa host y puerto.",
             "vpn.system_mode": "Usar la VPN en todo el UFVAI (terminal + OpenCode)",
-            "vpn.system_hint": "Reinicia el terminal y el agente dentro de la VPN. El kernel del notebook y el wrapper quedan fuera.",
+            "vpn.system_hint": "Predeterminado: OpenCode (agente + terminal) se ejecuta dentro de la VPN — la red de la UFV sale por tun0 y la internet común (LLM) sigue por Colab.",
+            "vpn.full_mode": "Túnel total (todo el tráfico por la UFV)",
+            "vpn.full_hint": "Solo para modelos/servicios internos de la UFV: en este modo la UFV bloquea la internet externa y el LLM en la nube deja de responder.",
             "vpn.system_on": "Modo total activado. Recargando…",
             "vpn.system_badge": "todo el UFVAI en la VPN",
             "vpn.system_off": "Modo total desactivado.",
@@ -7408,7 +7435,7 @@ def create_wrapper_html(
             "vpn.warn_title": "Avant de connecter",
             "vpn.warn1": "Utilisez vos identifiants personnels du portail vpn.ufvnet.ufv.br (CPF + mot de passe).",
             "vpn.warn2": "L'UFV limite le VPN à 1 appareil par CPF : vous connecter ici peut déconnecter votre ordinateur.",
-            "vpn.warn3": "Le tunnel couvre uniquement le réseau de l'UFV (split tunnel). Le reste de Colab reste sur l'internet normal.",
+            "vpn.warn3": "Par défaut OpenCode (agent + terminal) s'exécute dans le VPN : le réseau de l'UFV sort par tun0 et l'internet courant reste via Colab. Le noyau du notebook et le wrapper restent dehors.",
             "vpn.warn4": "Le mot de passe n'est pas enregistré, sauf si vous cochez « mémoriser » (il est alors chiffré sur votre Drive).",
             "vpn.cpf": "CPF",
             "vpn.password": "Mot de passe du VPN",
@@ -7436,7 +7463,9 @@ def create_wrapper_html(
             "vpn.forward_ok": "Port redirigé",
             "vpn.forward_bad": "Indiquez l'hôte et le port.",
             "vpn.system_mode": "Utiliser le VPN pour tout l'UFVAI (terminal + OpenCode)",
-            "vpn.system_hint": "Redémarre le terminal et l'agent dans le VPN. Le noyau du notebook et le wrapper restent dehors.",
+            "vpn.system_hint": "Par défaut : OpenCode (agent + terminal) s'exécute dans le VPN — le réseau de l'UFV sort par tun0 et l'internet courant (LLM) reste via Colab.",
+            "vpn.full_mode": "Tunnel complet (tout le trafic par l'UFV)",
+            "vpn.full_hint": "Uniquement pour les modèles/services internes de l'UFV : dans ce mode l'UFV bloque l'internet externe et le LLM cloud cesse de répondre.",
             "vpn.system_on": "Mode total activé. Rechargement…",
             "vpn.system_badge": "tout l'UFVAI sur le VPN",
             "vpn.system_off": "Mode total désactivé.",
@@ -7607,7 +7636,7 @@ def create_wrapper_html(
             "vpn.warn_title": "连接前",
             "vpn.warn1": "请使用 vpn.ufvnet.ufv.br 的个人凭据（CPF + 密码）。",
             "vpn.warn2": "UFV 限制每个 CPF 只能有 1 台设备：在此连接可能会断开您的电脑。",
-            "vpn.warn3": "隧道仅覆盖 UFV 网络（拆分隧道）。Colab 的其余流量仍走普通互联网。",
+            "vpn.warn3": "默认情况下 OpenCode（智能体 + 终端）运行在 VPN 内：UFV 网络经 tun0 出口，普通互联网仍走 Colab。笔记本内核和 wrapper 仍在外部。",
             "vpn.warn4": "除非勾选“记住”，否则不会保存密码（勾选后将加密保存在您的 Drive 中）。",
             "vpn.cpf": "CPF",
             "vpn.password": "VPN 密码",
@@ -7635,7 +7664,9 @@ def create_wrapper_html(
             "vpn.forward_ok": "端口已转发",
             "vpn.forward_bad": "请输入主机和端口。",
             "vpn.system_mode": "让整个 UFVAI 使用 VPN（终端 + OpenCode）",
-            "vpn.system_hint": "在 VPN 内重启终端和智能体。笔记本内核和 wrapper 仍在外部。",
+            "vpn.system_hint": "默认：OpenCode（智能体 + 终端）运行在 VPN 内 — UFV 网络经 tun0 出口，普通互联网（LLM）仍走 Colab。",
+            "vpn.full_mode": "全隧道（所有流量经 UFV）",
+            "vpn.full_hint": "仅用于 UFV 内部模型/服务：此模式下 UFV 会阻断外部互联网，云端 LLM 将停止响应。",
             "vpn.system_on": "全局模式已启用，正在重新加载…",
             "vpn.system_badge": "整个 UFVAI 走 VPN",
             "vpn.system_off": "全局模式已停用。",

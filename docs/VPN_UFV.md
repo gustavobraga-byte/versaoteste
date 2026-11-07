@@ -13,11 +13,16 @@
   (ex.: CAPES Periódicos), quando a UFV roteia esse acesso pela VPN.
 - Fazer o agente UFVAI consultar esses recursos **de dentro do Colab**.
 
-> ⚠️ **Não é** um túnel total do Colab. Só os processos que usam o **proxy
-> local** (`socks5h://127.0.0.1:1081`) entram na VPN. O restante do ambiente
-> continua na internet normal do Google. Isso é uma limitação do Colab, não uma
-> escolha de configuração: sem `CAP_NET_ADMIN` no namespace raiz não é possível
-> instalar rotas no contêiner.
+> ℹ️ **Padrão: o OpenCode inteiro dentro da VPN (split tunnel).** Ao conectar,
+> o UFVAI já marca **“Usar a VPN em todo o UFVAI”**: o serviço do OpenCode
+> (agente, ferramentas, `bash`, `curl`) e o terminal passam a rodar **dentro**
+> do namespace — a rede da UFV sai por `tun0` e a internet comum (LLM, GitHub,
+> PyPI) continua pelo Colab via `tap0`. O **kernel do notebook** e o **wrapper**
+> (porta 8001) continuam fora — o Colab não permite rotear o contêiner raiz sem
+> `CAP_NET_ADMIN`. O **túnel total** (`redirect-gateway def1`, todo o tráfego
+> pela UFV) é opcional (checkbox “Túnel total”): medido em 07/11/2026, a UFV
+> **bloqueia a saída externa** nesse modo — só serve para modelos/serviços
+> internos da UFV.
 
 ---
 
@@ -56,20 +61,26 @@
 
 ---
 
-## 3-A. Modo total — todo o UFVAI na VPN
+## 3-A. Modo total — todo o UFVAI na VPN (PADRÃO = split + serviço no netns)
 
-Marque **“Usar a VPN em todo o UFVAI (terminal + OpenCode)”** antes de
-conectar. É o modo para quando o modelo local só existe na intranet da UFV.
+A opção **“Usar a VPN em todo o UFVAI (terminal + OpenCode)”** já vem
+**marcada**. É o modo recomendado: o OpenCode acessa a **intranet/modelos
+locais** pelo túnel (`tun0`) e a **internet comum (LLM, buscas, `pip`,
+`curl`)** continua pelo Colab. Desmarque se quiser só o proxy SOCKS5, sem
+mover o serviço.
 
 O que acontece:
 
-1. A VPN conecta com `redirect-gateway def1` (túnel total).
+1. A VPN conecta em **split tunnel** (padrão; `redirect-gateway def1` só se
+   “Túnel total” estiver marcado).
 2. O UFVAI cria o namespace com **mount namespace + `/etc/resolv.conf` próprio**
    (`unshare -Urnm`), para o DNS interno funcionar.
 3. O **serviço do OpenCode** e o **ttyd/tmux/TUI** passam a rodar **dentro** do
    namespace.
-4. O host publica a porta 8000 via `slirp4netns`; o iframe continua em
-   `localhost:8000`.
+4. O host publica a porta 8000 **e a porta do serviço do OpenCode** via
+   `slirp4netns`; o iframe continua em `localhost:8000` e o wrapper/CLI do
+   host continuam alcançando o serviço (que agora escuta em `0.0.0.0` dentro
+   do namespace).
 5. O agente, as ferramentas (`bash`, `curl`, Python) e o terminal usam a VPN.
 
 O que **não** passa pela VPN:
@@ -180,7 +191,7 @@ Colab (namespace raiz, sem NET_ADMIN)
      │        │                                                     │
      │        ├── UDP 1195 ──► vpn.ufvnet.ufv.br (OpenVPN)          │
      │        │                        │                            │
-     │        └── tun0 ◄───────────────┘  rotas da UFV (split)      │
+     │        └── tun0 ◄───────────────┘  split (UFV) / total opcional │
      │  SOCKS5 0.0.0.0:1080 ──► hosts da UFV via tun0               │
      └──────────────────────────────────────────────────────────────┘
 ```
@@ -191,8 +202,8 @@ Colab (namespace raiz, sem NET_ADMIN)
    o OpenCode/terminal resolverem nomes internos.
 3. `slirp4netns --configure` cria `tap0` e o NAT em espaço de usuário.
 4. O OpenVPN roda com o perfil reescrito para **fixar o IP** do servidor
-   (o DNS do namespace não resolve `vpn.ufvnet.ufv.br`). No modo total,
-   recebe `redirect-gateway def1`.
+   (o DNS do namespace não resolve `vpn.ufvnet.ufv.br`). Só recebe
+   `redirect-gateway def1` se “Túnel total” estiver marcado (padrão: split).
 5. O SOCKS5 em Python puro (stdlib) roda dentro do namespace; o
    `slirp4netns add_hostfwd` o publica em `127.0.0.1:1081`.
 6. O proxy resolve nomes pelo **DNS empurrado pela VPN**, depois por
@@ -237,9 +248,10 @@ No painel, abra **Detalhes técnicos** para ver modo, TUN, rotas, DNS e as
 python -m pytest tests/test_v0711_vpn.py -q -o addopts=""
 ```
 
-22 testes offline: parsing/validação do perfil, máscara de CPF, redaction,
+31 testes offline: parsing/validação do perfil, máscara de CPF, redaction,
 decisão da tela inicial, credenciais cifradas, handshake SOCKS5 + relay local,
-capacidades e formato do status.
+capacidades, formato do status, bind `0.0.0.0`/porta publicada do serviço,
+padrão split tunnel e modo total aceitando split.
 
 O teste **real** com a UFV depende das suas credenciais e não é automatizado.
 A prova de conceito feita no Colab mostrou:

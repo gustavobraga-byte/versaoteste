@@ -289,3 +289,229 @@ def test_test_without_proxy_is_no_proxy():
     assert res["verdict"] == "no_proxy"
     assert res["proxy_ip"] == ""
     assert res["direct_ip"] == ""
+
+
+def test_parse_pushed_reads_dns_from_any_line():
+    log = (
+        "PUSH: Received control message: 'PUSH_REPLY,route 100.65.0.0 255.255.128.0,"
+        "dhcp-option DNS 200.235.168.10,route 200.235.168.0 255.255.255.0'\n"
+        "dhcp-option DNS 10.255.0.1\n"
+    )
+    routes, dns = vpn._parse_pushed(log)
+    assert "200.235.168.10" in dns
+    assert "10.255.0.1" in dns
+    assert any("100.65.0.0" in route for route in routes)
+
+
+def test_discover_dns_prefers_the_server_that_resolves_internal(monkeypatch):
+    def fake_probe(ns_pid, server, host, timeout=4.0):
+        if server == "10.255.0.1" and host == "sistemas.ufv.br":
+            return ["200.235.168.50"]
+        if host == "www.ufv.br":
+            return ["200.235.168.227"]
+        return []
+
+    monkeypatch.setattr(vpn, "_dns_probe", fake_probe)
+    res = vpn._discover_dns(123, ["200.235.168.10"])
+    assert res["internal"] == ["10.255.0.1"]
+    assert res["servers"][0] == "10.255.0.1"
+    assert "200.235.168.10" in res["detail"]
+
+
+def test_tun_counters_read_sysfs_inside_namespace(monkeypatch):
+    class _Proc:
+        def __init__(self, out):
+            self.stdout = out
+
+    def fake_ns(args, ns_pid, timeout=10):
+        return _Proc("1234\n" if "tx_bytes" in args[-1] else "5678\n")
+
+    monkeypatch.setattr(vpn, "_ns", fake_ns)
+    assert vpn._tun_counters(1) == {"tx": 1234, "rx": 5678}
+
+
+def test_verdict_is_vpn_when_tun_counters_grow(monkeypatch):
+    with vpn._LOCK:
+        vpn._STATE.update(
+            {
+                "state": "connected",
+                "mode": "netns",
+                "pids": {"ns": 99999},
+                "proxy": "socks5h://127.0.0.1:1081",
+                "full_tunnel": True,
+                "tun_ip": "10.255.0.228",
+                "routes": [],
+                "dns": ["10.0.2.3"],
+            }
+        )
+    monkeypatch.setattr(vpn, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(vpn, "_ip_via", lambda *a, **k: ("34.1.1.1", "ipify"))
+    monkeypatch.setattr(vpn, "_ip_via_ns", lambda *a, **k: ("", ""))
+
+    def fake_curl(ns_pid, url, timeout=15, want_body=False):
+        return {
+            "ok": url.startswith("https://www.ufv.br"),
+            "url": url,
+            "http": "200" if url.startswith("https://www.ufv.br") else "000",
+            "body": "",
+            "error": "",
+        }
+
+    monkeypatch.setattr(vpn, "_curl_in_ns", fake_curl)
+    counters = iter([{"tx": 100, "rx": 100}, {"tx": 5000, "rx": 6000}])
+    monkeypatch.setattr(vpn, "_tun_counters", lambda pid: next(counters))
+    monkeypatch.setattr(
+        vpn, "_ns_diag", lambda pid, host: {"host": host, "ip": "", "route": ""}
+    )
+    monkeypatch.setattr(
+        vpn, "_ns",
+        lambda *a, **k: type("_P", (), {"stdout": "1.1.1.1 via 10.255.0.1 dev tun0\n"})(),
+    )
+    res = vpn.test()
+    assert res["verdict"] == "vpn"
+    assert res["tunnel_active"] is True
+    assert res["tun_tx"] == 4900
+    assert res["tun_rx"] == 5900
+    assert "dev tun0" in res["route_default"]
+
+
+# ── v0.7.11: OpenCode SEMPRE pela VPN (padrão) ───────────────
+
+def test_connect_defaults_to_split_tunnel():
+    """O padrão do conector é split tunnel (serviço no netns; LLM continua no Colab).
+
+    full_tunnel=True manda TODO o tráfego para a UFV, que bloqueia a saída
+    externa (medido em 07/11/2026: OpenRouter/GitHub/GitHub timeout).
+    """
+    import inspect
+
+    assert inspect.signature(vpn.connect).parameters["full_tunnel"].default is False
+
+
+def test_system_enable_accepts_split_tunnel(monkeypatch):
+    """O modo total aceita split tunnel (não exige mais redirect-gateway)."""
+    from pesquisai import launch_app as la
+    from pesquisai import vpn as _vpn
+
+    monkeypatch.setattr(
+        _vpn,
+        "status",
+        lambda *a, **k: {
+            "state": "connected",
+            "system_mode": False,
+            "full_tunnel": False,
+            "pids": {"ns": 4242},
+        },
+    )
+    monkeypatch.setattr(la, "_stop_terminal", lambda: None)
+    monkeypatch.setattr(la, "_port_accepts", lambda *a, **k: False)
+    monkeypatch.setattr(_vpn, "unpublish_port", lambda *a, **k: None)
+    monkeypatch.setattr(_vpn, "publish_port", lambda *a, **k: None)
+    monkeypatch.setattr(la, "_system_enable_steps", lambda *a, **k: None)
+    out = la._vpn_system_enable("")
+    assert out["state"] == "connected"
+    assert out["full_tunnel"] is False
+
+
+def test_service_endpoint_reads_xdg_state(tmp_path, monkeypatch):
+    """A porta do serviço é lida do service.json para ser republicada."""
+    from pesquisai import launch_app
+
+    state = tmp_path / "opencode"
+    state.mkdir()
+    (state / "service.json").write_text(
+        '{"url": "http://127.0.0.1:49374", "pid": 123}', encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    assert launch_app._opencode_service_endpoint() == ("127.0.0.1", 49374)
+
+
+def test_ensure_service_in_netns_binds_and_strips_proxies(monkeypatch):
+    """No namespace o serviço escuta 0.0.0.0:<porta> e não herda proxy."""
+    import subprocess as _sp
+    from unittest.mock import MagicMock
+
+    from pesquisai import run_fast
+
+    captured: dict = {}
+
+    class FakePopen:
+        def __init__(self, cmd, **kw):
+            captured["cmd"] = list(cmd)
+            captured["env"] = dict(kw.get("env") or {})
+            self.pid = 4242
+
+    monkeypatch.setenv("HTTPS_PROXY", "socks5h://127.0.0.1:1081")
+    monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:1081")
+    monkeypatch.setattr(run_fast, "_service_cwd", lambda: None)
+    monkeypatch.setattr(
+        "pesquisai.opencode_utils.keys_env_from_store", lambda *_: {}
+    )
+    monkeypatch.setattr(
+        "pesquisai.opencode_utils.service_missing_key_envs", lambda *_: []
+    )
+    monkeypatch.setattr("pesquisai.opencode_utils.find_opencode", lambda: "/bin/true")
+    monkeypatch.setattr(
+        "pesquisai.opencode_utils.build_env", lambda extra=None: {"PATH": "/usr/bin"}
+    )
+    monkeypatch.setattr(
+        _sp, "run",
+        lambda *a, **k: _sp.CompletedProcess(args=a[0] if a else [], returncode=0,
+                                            stdout="", stderr=""),
+    )
+    monkeypatch.setattr(_sp, "Popen", FakePopen)
+
+    ok = run_fast.ensure_service_project_dir(
+        "/tmp", timeout_s=0.05, netns_pid=777,
+        service_host="0.0.0.0", service_port=4567,
+    )
+
+    assert ok is False  # /bin/true não responde "service status"
+    cmd = captured["cmd"]
+    assert cmd[:5] == ["nsenter", "-t", "777", "-m", "-n"]
+    assert cmd[cmd.index("--hostname") + 1] == "0.0.0.0"
+    assert cmd[cmd.index("--port") + 1] == "4567"
+    assert "--service" in cmd
+    assert "ALL_PROXY" not in captured["env"]
+    assert "HTTPS_PROXY" not in captured["env"]
+
+
+def test_system_enable_publishes_opencode_service_port(monkeypatch):
+    """O modo total publica a porta do serviço no host (senão o CLI não o vê)."""
+    from pesquisai import launch_app as la
+    from pesquisai import run_fast, vpn
+
+    calls: dict = {}
+
+    monkeypatch.setattr(la, "find_opencode", lambda: "/bin/true")
+    monkeypatch.setattr(la, "_workspace_dir", lambda: "/tmp")
+    monkeypatch.setattr(la, "_opencode_service_endpoint", lambda: ("127.0.0.1", 4567))
+    monkeypatch.setattr(la, "_wait_service_on_host", lambda *a, **k: True)
+    monkeypatch.setattr(la.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(
+        la, "start_ttyd", lambda **kw: calls.setdefault("ttyd", kw)
+    )
+
+    def fake_ensure(*args, **kwargs):
+        calls["ensure"] = kwargs
+        return True
+
+    monkeypatch.setattr(run_fast, "ensure_service_project_dir", fake_ensure)
+    monkeypatch.setattr(vpn, "publish_port", lambda *a, **k: calls.setdefault("publish", a))
+    monkeypatch.setattr(vpn, "unpublish_port", lambda *a, **k: None)
+    monkeypatch.setattr(vpn, "set_system_mode", lambda *a, **k: None)
+
+    la._SYSTEM_MODE_NETNS_PID = None
+    la._SYSTEM_MODE_SERVICE_PORT = None
+    la._system_enable_steps("", 999)
+
+    assert calls["ensure"]["service_host"] == "0.0.0.0"
+    assert calls["ensure"]["service_port"] == 4567
+    assert calls["publish"] == (4567, 4567)
+    assert calls["ttyd"]["netns_pid"] == 999
+    assert la._SYSTEM_MODE_NETNS_PID == 999
+    assert la._SYSTEM_MODE_SERVICE_PORT == 4567
+
+    # restaura os globais para não vazar entre testes
+    la._SYSTEM_MODE_NETNS_PID = None
+    la._SYSTEM_MODE_SERVICE_PORT = None

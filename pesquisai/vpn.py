@@ -944,6 +944,8 @@ def _public_state() -> dict:
         "tun_ip": _STATE.get("tun_ip", ""),
         "routes": _STATE.get("routes", []),
         "dns": _STATE.get("dns", []),
+        "dns_internal": bool(_STATE.get("dns_internal", False)),
+        "dns_detail": _STATE.get("dns_detail", {}),
         "proxy": _STATE.get("proxy", ""),
         "host_port": _STATE.get("host_port", 0),
         "guest_port": _STATE.get("guest_port", 0),
@@ -1266,6 +1268,12 @@ def _log_contains(path: Path, needles: Iterable[str]) -> str:
 
 
 def _parse_pushed(text: str) -> tuple[list[str], list[str]]:
+    """Extrai rotas e DNS do log do OpenVPN.
+
+    O ``PUSH_REPLY`` pode vir fatiado em várias linhas e o ``dhcp-option
+    DNS`` também aparece na diretiva do perfil — por isso o DNS é varrido
+    no log inteiro, não apenas na linha do PUSH.
+    """
     routes: list[str] = []
     dns: list[str] = []
     for line in text.splitlines():
@@ -1273,11 +1281,105 @@ def _parse_pushed(text: str) -> tuple[list[str], list[str]]:
             continue
         if "route " in line:
             for chunk in re.findall(r"route\s+([0-9./]+\s+[0-9.]+(?:\s+\S+)?)", line):
-                routes.append(chunk.strip())
-        for server in re.findall(r"dhcp-option DNS\s+([0-9.]+)", line):
-            if server not in dns:
-                dns.append(server)
+                chunk = chunk.strip()
+                if chunk and chunk not in routes:
+                    routes.append(chunk)
+    for server in re.findall(r"dhcp-option\s+DNS6?\s+([0-9a-fA-F:.]+)", text):
+        server = server.strip()
+        if server and server not in dns:
+            dns.append(server)
     return routes, dns
+
+
+def _dns_probe(ns_pid: int, server: str, host: str, timeout: float = 4.0) -> list[str]:
+    """Consulta um DNS específico **dentro** do namespace."""
+    dig = _which("dig")
+    if dig:
+        proc = _ns(
+            [dig, "+short", "+time=2", "+tries=1", f"@{server}", host],
+            ns_pid, timeout=timeout + 2,
+        )
+        return [
+            line.strip() for line in (proc.stdout or "").splitlines()
+            if line.strip() and not line.startswith(";")
+        ]
+    proc = _ns(["getent", "hosts", host], ns_pid, timeout=timeout + 2)
+    ips = []
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split()
+        if parts:
+            ips.append(parts[0])
+    return ips
+
+
+def _discover_dns(ns_pid: int, pushed: Iterable[str]) -> dict:
+    """Descobre qual DNS resolve os nomes internos da UFV.
+
+    O perfil oficial não traz ``dhcp-option DNS`` e o servidor pode não
+    empurrar um. Nesse caso o único resolver que enxerga ``*.ufv.br``
+    interno é o da própria rede da UFV — testamos o gateway do túnel
+    (``10.255.0.1``) e o DNS do slirp, nessa ordem, e registramos o que
+    realmente respondeu.
+    """
+    candidates: list[str] = []
+    for server in list(pushed or []):
+        if server and server not in candidates:
+            candidates.append(server)
+    # 200.235.128.2 / .129.2 = ns1/ns2.cpd.ufv.br (delegação pública de
+    # ufv.br). De fora eles respondem só a visão externa; dentro da rede da
+    # UFV (pelo túnel) respondem a visão interna, onde sistemas.ufv.br existe.
+    for server in (
+        "10.255.0.1",
+        "200.235.128.2",
+        "200.235.129.2",
+        "10.0.2.3",
+        "1.1.1.1",
+    ):
+        if server not in candidates:
+            candidates.append(server)
+
+    detail: dict[str, dict] = {}
+    internal: list[str] = []
+    public: list[str] = []
+    for server in candidates:
+        internal_ips = _dns_probe(ns_pid, server, "sistemas.ufv.br")
+        public_ips = _dns_probe(ns_pid, server, "www.ufv.br")
+        detail[server] = {"internal": internal_ips[:3], "public": public_ips[:3]}
+        if internal_ips:
+            internal.append(server)
+        if public_ips:
+            public.append(server)
+
+    ordered = list(internal)
+    for server in public:
+        if server not in ordered:
+            ordered.append(server)
+    for server in candidates:
+        if server not in ordered and (
+            detail[server]["internal"] or detail[server]["public"]
+        ):
+            ordered.append(server)
+    return {
+        "servers": ordered,
+        "internal": internal,
+        "public": public,
+        "detail": detail,
+    }
+
+
+def _tun_counters(ns_pid: int) -> dict:
+    """Bytes que passaram pela interface ``tun0`` (prova de uso do túnel)."""
+    out = {"tx": 0, "rx": 0}
+    for key, stat in (("tx", "tx_bytes"), ("rx", "rx_bytes")):
+        proc = _ns(
+            ["cat", f"/sys/class/net/tun0/statistics/{stat}"],
+            ns_pid, timeout=5,
+        )
+        try:
+            out[key] = int((proc.stdout or "").strip())
+        except ValueError:
+            out[key] = 0
+    return out
 
 
 def _ns(args: list[str], ns_pid: int, timeout: float = 10) -> subprocess.CompletedProcess:
@@ -1601,18 +1703,26 @@ def _connect_netns(
 
     _wait_openvpn(log, timeout=75)
     text = _read(log)
-    routes, dns = _parse_pushed(text)
+    routes, pushed_dns = _parse_pushed(text)
+
+    _set_state(progress="Verificando o DNS da UFV…")
+    dns_probe = _discover_dns(ns_proc.pid, pushed_dns)
+    dns = list(dns_probe["servers"]) or list(pushed_dns)
+    # 10.0.2.3 resolve nomes públicos mesmo em túnel total; os DNS da UFV
+    # ficam como alternativa para a visão interna; 1.1.1.1 é o último
+    # recurso (pode ser bloqueado pela UFV).
+    for fallback in ("10.0.2.3", "200.235.128.2", "200.235.129.2", "1.1.1.1"):
+        if fallback not in dns:
+            dns.append(fallback)
 
     _set_state(progress="Lendo a interface do túnel…")
-    if dns:
-        try:
-            resolv.write_text(
-                "\n".join(f"nameserver {s}" for s in dns)
-                + "\nnameserver 10.0.2.3\nnameserver 1.1.1.1\n",
-                encoding="utf-8",
-            )
-        except OSError:
-            pass
+    try:
+        resolv.write_text(
+            "\n".join(f"nameserver {s}" for s in dns) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
     tun_ip = ""
     if _wait_for(lambda: bool(_tun_ip(ns_proc.pid)), timeout=10):
         tun_ip = _tun_ip(ns_proc.pid)
@@ -1669,6 +1779,8 @@ def _connect_netns(
         "netns", proxy=f"socks5h://127.0.0.1:{host_port}",
         host_port=host_port, guest_port=guest_port,
         full_tunnel=full_tunnel,
+        dns_internal=bool(dns_probe["internal"]),
+        dns_detail=dns_probe["detail"],
     )
 
 
@@ -1731,6 +1843,8 @@ def _finish_connect(
     host_port: int = 0,
     guest_port: int = 0,
     full_tunnel: bool = False,
+    dns_internal: bool = False,
+    dns_detail: dict | None = None,
 ) -> None:
     if remember:
         save_credentials(cpf, password, backup_dir)
@@ -1745,6 +1859,8 @@ def _finish_connect(
                 "tun_ip": tun_ip,
                 "routes": routes[:40],
                 "dns": dns[:6],
+                "dns_internal": bool(dns_internal),
+                "dns_detail": dns_detail or {},
                 "proxy": proxy,
                 "host_port": host_port,
                 "guest_port": guest_port,
@@ -1764,6 +1880,19 @@ def connect(
     backup_dir: str | None = None,
     full_tunnel: bool = False,
 ) -> dict:
+    """Conecta à VPN da UFV.
+
+    v0.7.11: o PADRÃO é **split tunnel** (``full_tunnel=False``) com o
+    serviço do OpenCode DENTRO do namespace: a rede da UFV
+    (``100.65.0.0/17``…, ``200.235.128.0/17``) sai por ``tun0`` e a internet
+    comum (LLM, GitHub, PyPI) continua pelo Colab via ``tap0``.
+
+    ``full_tunnel=True`` (``redirect-gateway def1``) manda TODO o tráfego
+    para a UFV — medido em 07/11/2026: a UFV **bloqueia a saída externa**
+    (OpenRouter, Google, OpenAI, GitHub e PyPI dão timeout; só hosts da UFV
+    respondem). Serve para modelos/serviços internos da UFV, não para LLM
+    em nuvem.
+    """
     """Inicia a conexão em segundo plano e devolve o estado imediatamente."""
     global _CONNECT_THREAD
 
@@ -1820,10 +1949,14 @@ def disconnect(backup_dir: str | None = None) -> dict:
                 "tun_ip": "",
                 "routes": [],
                 "dns": [],
+                "dns_internal": False,
+                "dns_detail": {},
                 "proxy": "",
                 "host_port": 0,
                 "guest_port": 0,
                 "forwards": [],
+                "full_tunnel": False,
+                "system_mode": False,
                 "cpf_masked": "",
             }
         )
@@ -1982,7 +2115,7 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
         tun = _STATE.get("tun_ip", "")
         routes = list(_STATE.get("routes") or [])
         dns = list(_STATE.get("dns") or [])
-        dns = list(_STATE.get("dns") or [])
+        dns_internal = bool(_STATE.get("dns_internal", False))
     use_ns = bool(mode == "netns" and ns_pid and _pid_alive(int(ns_pid)))
     if not proxy and not use_ns:
         return {
@@ -1997,9 +2130,14 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
             "tun_ip": tun,
             "routes": routes[:12],
             "dns": dns[:6],
+            "dns_internal": dns_internal,
             "path": "none",
             "internal": None,
             "public": None,
+            "tun_tx": 0,
+            "tun_rx": 0,
+            "tunnel_active": False,
+            "route_default": "",
         }
     clean = proxy.replace("socks5h://", "").replace("socks5://", "")
     if url:
@@ -2018,17 +2156,37 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
             "tun_ip": tun,
             "routes": routes[:12],
             "dns": dns[:6],
+            "dns_internal": dns_internal,
             "path": "netns" if use_ns else "proxy",
             "internal": only,
             "public": None,
             "url": url,
+            "tun_tx": 0,
+            "tun_rx": 0,
+            "tunnel_active": bool(only.get("ok")),
+            "route_default": "",
         }
 
     direct_ip, _ = _ip_via("", timeout=min(timeout, 12))
+    tun_tx = tun_rx = 0
+    tunnel_active = False
+    route_default = ""
     if use_ns:
+        before = _tun_counters(int(ns_pid))
+        public = _curl_in_ns(int(ns_pid), TEST_PUBLIC_URL, timeout)
+        after = _tun_counters(int(ns_pid))
+        tun_tx = max(0, after["tx"] - before["tx"])
+        tun_rx = max(0, after["rx"] - before["rx"])
+        # Bytes no tun0 durante o GET = o tráfego realmente passou pelo túnel.
+        # Keepalives do OpenVPN são ~100 B a cada 10 s; o GET rende KBs.
+        tunnel_active = bool(public.get("ok") and (tun_tx + tun_rx) >= 2048)
+        try:
+            route_proc = _ns(["ip", "route", "get", "1.1.1.1"], int(ns_pid), timeout=6)
+            route_default = " ".join((route_proc.stdout or "").split())
+        except Exception:  # noqa: BLE001
+            route_default = ""
         proxy_ip, ip_source = _ip_via_ns(int(ns_pid), timeout=min(timeout, 12))
         internal = _curl_in_ns(int(ns_pid), TEST_INTERNAL_URL, timeout)
-        public = _curl_in_ns(int(ns_pid), TEST_PUBLIC_URL, timeout)
         diag_internal = _ns_diag(int(ns_pid), "sistemas.ufv.br")
         diag_public = _ns_diag(int(ns_pid), "www.ufv.br")
         path = "netns"
@@ -2042,7 +2200,7 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
         path = "direct"
 
     differs = bool(proxy_ip and direct_ip and proxy_ip != direct_ip)
-    if differs or internal.get("ok"):
+    if differs or internal.get("ok") or tunnel_active:
         verdict = "vpn"
     elif proxy_ip or public.get("ok"):
         verdict = "proxy_only"
@@ -2050,7 +2208,9 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
         verdict = "no_proxy"
 
     return {
-        "ok": bool(proxy_ip or internal.get("ok") or public.get("ok")),
+        "ok": bool(
+            proxy_ip or internal.get("ok") or public.get("ok") or tunnel_active
+        ),
         "verdict": verdict,
         "proxy": proxy,
         "proxy_ip": proxy_ip,
@@ -2061,6 +2221,11 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
         "tun_ip": tun,
         "routes": routes[:12],
         "dns": dns[:6],
+        "dns_internal": dns_internal,
+        "tun_tx": tun_tx,
+        "tun_rx": tun_rx,
+        "tunnel_active": tunnel_active,
+        "route_default": route_default,
         "path": path,
         "internal": internal,
         "public": public,

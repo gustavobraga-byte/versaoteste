@@ -1464,15 +1464,20 @@ credenciais pessoais do portal `vpn.ufvnet.ufv.br` (**CPF + senha**).
 Se responder **“Não”**, a pergunta não volta; o botão **🛡 VPN** da barra
 superior reabre o painel quando você quiser.
 
-### Modo total (todo o UFVAI na VPN)
-Marque **“Usar a VPN em todo o UFVAI (terminal + OpenCode)”** antes de
-conectar. O UFVAI reinicia o terminal e o serviço do OpenCode **dentro** do
-namespace da VPN, com `redirect-gateway` (túnel total). O agente, as
-ferramentas e o terminal passam a sair pela UFV; o wrapper (8001) e o kernel
-do notebook continuam fora.
+### Modo total (todo o UFVAI na VPN) — PADRÃO = split + serviço no netns
+A opção **“Usar a VPN em todo o UFVAI (terminal + OpenCode)”** já vem
+**marcada**. Ao conectar, o UFVAI reinicia o terminal e o serviço do OpenCode
+**dentro** do namespace da VPN em **split tunnel**: só a rede da UFV sai por
+`tun0`; a internet comum (LLM, GitHub, PyPI) continua pelo Colab. O wrapper
+(8001) e o kernel do notebook continuam fora.
 
 > ⚠️ Isso reinicia o terminal/agente por alguns segundos. Para voltar,
 > clique em **Desconectar**.
+>
+> ☑️ **“Túnel total” (opcional, desmarcado):** manda TODO o tráfego pela UFV.
+> Medido em 07/11/2026, a UFV **bloqueia a saída externa** nesse modo
+> (OpenRouter, Google, OpenAI, GitHub e PyPI dão timeout) — só use para
+> modelos/serviços internos da UFV, sem LLM em nuvem.
 
 ### Modelo local da UFV
 Em **🛡 VPN → Detalhes técnicos → Modelo/serviço na rede da UFV**, informe o
@@ -1482,7 +1487,10 @@ OpenCode, use `http://127.0.0.1:11435/v1` como `baseURL` do provedor
 OpenAI-compatible.
 
 ### O que passa pela VPN
-Somente os processos que usam o **proxy local**:
+No **modo total (padrão = split)**, a rede da UFV sai por `tun0` e a
+internet comum (LLM, `pip`, `git`, `curl` público) continua pelo Colab.
+Para comandos fora do OpenCode (kernel do notebook ou wrapper), use o
+proxy local:
 
 ```bash
 curl --socks5-hostname 127.0.0.1:1081 https://sistemas.ufv.br/
@@ -1490,8 +1498,9 @@ curl --socks5-hostname 127.0.0.1:1081 https://sistemas.ufv.br/
 ALL_PROXY=socks5h://127.0.0.1:1081 seu-comando
 ```
 
-O restante do Colab continua na internet normal. **Não é túnel transparente**:
-o Colab não permite instalar rotas no contêiner (sem `CAP_NET_ADMIN`).
+O kernel do notebook e o wrapper continuam na internet normal do Colab — o
+contêiner raiz não pode ser roteado sem `CAP_NET_ADMIN`. No **split tunnel**
+(opção desmarcada), só a rede da UFV entra no túnel.
 
 ### Avisos importantes
 - **1 dispositivo por CPF:** conectar o Colab pode desconectar o seu computador.
