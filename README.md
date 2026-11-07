@@ -11,7 +11,7 @@
 [![Abrir no Colab](https://img.shields.io/badge/▶️_Começar_agora-Google_Colab-brightgreen?style=for-the-badge)](https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb)
 [![Apresentação](https://img.shields.io/badge/📊_Slides-ver_apresentação-C9A227?style=for-the-badge)](https://der.ufv.br/ufvai/#apresentacao)
 
-[![Versão](https://img.shields.io/badge/versão-0.7.10-orange.svg)]() [![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/) [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br) [![LGPD](https://img.shields.io/badge/LGPD-conforme-success.svg)](PRIVACY.md)
+[![Versão](https://img.shields.io/badge/versão-0.7.11-orange.svg)]() [![Licença MIT](https://img.shields.io/badge/licença-MIT-blue.svg)](LICENSE) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/) [![SisPPG/UFV](https://img.shields.io/badge/SisPPG-10356285004-blue.svg)](http://sisppg.ufv.br) [![LGPD](https://img.shields.io/badge/LGPD-conforme-success.svg)](PRIVACY.md)
 
 > Consulta dados oficiais do Brasil e literatura validada, cita cada fonte e declara honestamente quando não há evidência suficiente.
 
@@ -100,7 +100,7 @@ Funciona **100% offline** em Debian/Ubuntu com LLM local (Ollama). Ideal para si
 
 ```bash
 # amd64 (x86_64)
-wget https://github.com/gustavobraga-byte/PesquisAI/raw/main/debs/pesquisai_0.7.10-offline1_amd64.deb -O /tmp/pesquisai.deb && \
+wget https://github.com/gustavobraga-byte/PesquisAI/raw/main/debs/pesquisai_0.7.11-offline1_amd64.deb -O /tmp/pesquisai.deb && \
 sudo apt install /tmp/pesquisai.deb -y && rm /tmp/pesquisai.deb
 
 ufvai --doctor          # confere Python, ttyd, motor e portas
@@ -108,7 +108,7 @@ ufvai --engine-install  # instala o motor OpenCode 2.x (sem sudo)
 ufvai                   # abre a interface em http://localhost:8001
 ```
 
-> ℹ️ **`.deb` 0.7.10 (05/11/2026):** empacotado a partir da árvore **0.7.10** e validado
+> ℹ️ **`.deb` 0.7.11 (06/11/2026):** empacotado a partir da árvore **0.7.11** e validado
 > contra o **OpenCode 2.2.5** (motor V2). Há pacotes **amd64** e **arm64**; o ttyd vai
 > embutido e as dependências Python vêm do `apt` (sem `pip` no postinst). O motor
 > **não** é embutido (~240 MB) — instale com `ufvai --engine-install`.
@@ -159,7 +159,9 @@ O agente opera por *skills* — cada uma conecta a uma fonte ou capacidade.
 
 ## 🆕 Novidades
 
-**v0.7.10 — 🧭 Onboarding de primeiro uso (provedor + chave)** — sem chave, depois dos Termos o usuário escolhe **já tenho** ou **não tenho / não sei**; opções **Google Gemini (recomendado)**, **NVIDIA**, **OpenRouter** e **OpenCode Go (pago)** com tutorial, link e campo de colar; chave do Google → `GOOGLE_GENERATIVE_AI_API_KEY` e modelo padrão **Gemini 3.5 Flash**.
+**v0.7.11 — 🛡 VPN da UFV no Colab (OpenVPN em namespace isolado)** — o servidor do Colab passa a alcançar a rede da UFV pela VPN institucional sem `CAP_NET_ADMIN`: **OpenVPN dentro de user+net namespace** + `slirp4netns` + **proxy SOCKS5 local** (`socks5h://127.0.0.1:1081`). Na abertura, a tela **“Você é aluno(a) da UFV?”** leva ao painel de **CPF + senha** do portal `vpn.ufvnet.ufv.br`; a senha nunca vai para logs e, se “lembrar”, fica **cifrada no Drive**. Split tunnel (só a rede da UFV), aviso de **1 dispositivo por CPF** e teste de acesso interno (`sistemas.ufv.br`). **Modo total** opcional: com `redirect-gateway`, o serviço do OpenCode + terminal rodam dentro do namespace e todo o agente sai pela UFV; **encaminhador de porta** para um modelo local (Ollama/vLLM) da intranet (`127.0.0.1:11435` → `10.0.0.10:11434`). Guia: [`docs/VPN_UFV.md`](docs/VPN_UFV.md).
+
+**v0.7.10 — 🧭 Onboarding de primeiro uso (provedor + chave)** — sem chave, depois dos Termos o usuário escolhe **já tenho** ou **não tenho / não sei**; opções **Google Gemini (recomendado)**, **NVIDIA**, **OpenRouter** e **OpenCode Go (pago)** com tutorial, link e campo de colar; chave do Google → `GOOGLE_GENERATIVE_AI_API_KEY` e modelo padrão **Gemini Flash-Lite Latest · high**; plugin de **retry automático** em 429 (espera ~62 s).
 
 
 <details>
@@ -167,7 +169,8 @@ O agente opera por *skills* — cada uma conecta a uma fonte ou capacidade.
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
-| **0.7.10** | 05/11/2026 | 🧭 **Onboarding de primeiro uso** — depois dos Termos, o usuário sem chave escolhe **"já tenho provedor"** ou **"não tenho / não sei"**; as opções trazem **Google Gemini (recomendado, grátis)**, **NVIDIA**, **OpenRouter** e **OpenCode Go (pago)**, cada uma com tutorial, link e campo para colar a chave; chave do Google vira `GOOGLE_GENERATIVE_AI_API_KEY` e o padrão é o **Gemini 3.5 Flash** (`GET /api/onboarding`, `POST /api/onboarding/key`) |
+| **0.7.11** | 06/11/2026 | 🛡 **VPN da UFV no Colab** — OpenVPN em **namespace isolado** (`unshare -Urn` + `slirp4netns`) + **SOCKS5** em `127.0.0.1:1081`; tela inicial **“Você é aluno(a) da UFV?”** e painel **CPF/senha**; credenciais cifradas opcionais; split tunnel e aviso de 1 dispositivo por CPF (`GET /api/vpn`, `POST /api/vpn/*`) |
+| **0.7.10** | 05/11/2026 | 🧭 **Onboarding de primeiro uso** — depois dos Termos, o usuário sem chave escolhe **"já tenho provedor"** ou **"não tenho / não sei"**; as opções trazem **Google Gemini (recomendado, grátis)**, **NVIDIA**, **OpenRouter** e **OpenCode Go (pago)**, cada uma com tutorial, link e campo para colar a chave; chave do Google vira `GOOGLE_GENERATIVE_AI_API_KEY` e o padrão é o **Gemini Flash-Lite Latest · high** (`GET /api/onboarding`, `POST /api/onboarding/key`) |
 | **0.7.9** | 04/11/2026 | 🔑 **Chaves de API e free tier** — o modal de Provedores mostra **como obter chave gratuita** (OpenRouter `:free` e NVIDIA) quando não há nenhuma salva; **seletor de gratuitos** e **modelo padrão** (`/api/free_models`, `/api/default_model`); aviso de responsabilidade na abertura ([`docs/CHAVES_API.md`](docs/CHAVES_API.md) · [guia visual em HTML](docs/chaves-api-tutorial.html)) · 💾 **⚙ Autosave** com intervalo (1–60 min) e escopo (ativa / todas / escolhidas) |
 | **0.7.8** | 29/10/2026 | 🔑 **Chaves do Drive no serviço do motor (OpenCode v2.2)** — `ensure_service_project_dir()` injeta as chaves no `env` do `opencode serve` e no boot; **auto-cura** reinicia o serviço nascido sem chaves; salvar/remover chave reergue o serviço já atualizado; `scripts/diag_keys_v22.py` · ⌨️ **Ctrl+C copia / Ctrl+V cola** no terminal (ttyd + xterm.js), com arrasto→seleção sob *mouse reporting* |
 | **0.7.7** | 27/10/2026 | 🔒 **Drive Guard** — o agente não acessa mais “My Drive” fora de `My Drive/PesquisAI` (nem com `--auto`): regras `permissions` com `deny` **final** + hooks `permission.evaluate` e `tool.execute.before`; alias `MyDrive`, `..`, `file://`, `~` e comandos de shell resolvidos; falha fechada em referência ofuscada; auditoria em `~/.local/state/ufvai/drive-guard.log` |
@@ -237,7 +240,7 @@ Interface web `:8001` (Colab) com tela de Termos v2.2 (nome+e-mail+IP, opt-out) 
 
 ```
 BRAGA, Gustavo Bastos. UFVAI: agente de inteligência artificial para pesquisa
-científica. Versão 0.7.10. Viçosa: Universidade Federal de Viçosa, 2026.
+científica. Versão 0.7.11. Viçosa: Universidade Federal de Viçosa, 2026.
 Disponível em: https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/.
 Acesso em: DD mês. AAAA.
 
@@ -253,7 +256,7 @@ Verificar autenticidade em: http://sisppg.ufv.br
   title        = {{UFVAI}: Agente de Intelig{\^e}ncia Artificial
                   para Pesquisa Cient{\'\i}fica},
   year         = {2026},
-  version      = {0.7.10},
+  version      = {0.7.11},
   institution  = {Universidade Federal de Vi{\c{c}}osa (UFV)},
   url          = {https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/}
 }
@@ -326,6 +329,6 @@ Desenvolvido por **Gustavo Bastos Braga** — Universidade Federal de Viçosa (D
 
 <div align="center">
 
-Feito com 💙 para impulsionar a ciência brasileira · UFVAI v0.7.10 · SisPPG/UFV nº 10356285004
+Feito com 💙 para impulsionar a ciência brasileira · UFVAI v0.7.11 · SisPPG/UFV nº 10356285004
 
 </div>

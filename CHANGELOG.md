@@ -1,5 +1,80 @@
 # Changelog — PesquisAI
 
+## [0.7.11] — 2026-11-06 — 🛡 VPN da UFV no Colab (OpenVPN em namespace isolado)
+
+### 🎯 Pedido do autor
+- *"quero que o servidor do Colab conecte via internet via VPN da UFV"*.
+- Depois: *"vai abrir uma tela logo quando ele iniciar para escolher se ele é
+  aluno da UFV ou não. Se ele clicar em aluno da UFV, vai aparecer a interface
+  solicitando o CPF e a senha, que são as credenciais para entrar no VPN"*.
+- Tutorial indicado: <https://vpn.ufvnet.ufv.br/linux_ubuntu.html>.
+
+### 🔎 O que a UFV usa (fonte oficial)
+- **OpenVPN**, perfil público `https://vpn.ufvnet.ufv.br/configs/UFV-linux.ovpn`
+  (5.052 B), `remote vpn.ufvnet.ufv.br 1195`, `proto udp`, `dev tun`,
+  `auth-user-pass` (**CPF + senha**), `comp-lzo yes`.
+- **Split tunnel**: “usar esta conexão apenas para recursos nesta rede”.
+- **1 dispositivo por CPF**.
+
+### 🧱 O problema do Colab (e a solução)
+- Sem `/dev/net/tun` e sem `CAP_NET_ADMIN` (`CapEff=00000000a82c25fb`);
+  `ip tuntap add` → `Operation not permitted`.
+- `mknod /dev/net/tun` funciona (root + `MKNOD`).
+- **Solução:** OpenVPN dentro de **user+net namespace** (`unshare -Urn`) +
+  **`slirp4netns`** (NAT em espaço de usuário) + **proxy SOCKS5** (stdlib)
+  publicado em `127.0.0.1:1081` por `add_hostfwd`.
+- **Não é túnel transparente:** só o que usa o proxy entra na VPN — sem
+  `NET_ADMIN` no namespace raiz isso é impossível. O restante do Colab
+  continua na internet normal.
+
+### 🌐 Modo total e modelo local (OpenCode)
+- **Modo total:** com `redirect-gateway def1` e o serviço do OpenCode + ttyd
+  dentro do namespace (`unshare -Urnm`), o **agente, as ferramentas e o
+  terminal** passam a sair pela UFV. O wrapper (8001) e o kernel do notebook
+  continuam fora. Ativar/desativar reinicia o terminal/agente.
+- **Modelo local:** encaminhador TCP `127.0.0.1:<porta>` → serviço da
+  intranet (ex.: Ollama `10.0.0.10:11434`), com DNS da VPN. No OpenCode,
+  use `http://127.0.0.1:<porta>/v1` como `baseURL`.
+- **DNS próprio:** `/etc/resolv.conf` bind-montado no namespace (DNS da VPN
+  + públicos), para o OpenCode/terminal resolverem nomes internos.
+
+### 🖥️ Tela inicial e painel
+- Nova tela, depois de Termos/onboarding: **“Você é aluno(a) da UFV?”**
+  - **Sim** → painel com **CPF** e **senha da VPN**.
+  - **Não** → segue sem VPN; a escolha fica em `prefs.json` + `localStorage`
+    e não volta a perguntar (o botão 🛡 da topbar reabre quando quiser).
+- Painel: status ao vivo (desconectado/conectando/conectado/erro), avisos
+  (1 dispositivo por CPF, split tunnel, senha), **Conectar/Desconectar**,
+  **Testar acesso** (`https://sistemas.ufv.br/`), **baixar/colar** o `.ovpn`,
+  **esquecer** credenciais e detalhes técnicos (modo, TUN, rotas, DNS, log).
+
+### 🔐 Segurança
+- Senha **nunca** em linha de comando, log ou `state.json`: arquivo `auth`
+  `0600` em `~/.config/ufvai/vpn/run/`, apagado ao desconectar.
+- “Lembrar neste Drive” grava CPF/senha **cifrados** (Fernet) no
+  `keys_store.json`, com prefixo reservado `vpn_ufv_` — filtrado de
+  `/api/apikey`.
+- `_redact()` mascara CPF e `password=` em qualquer log.
+
+### 🔌 API e CLI
+- `GET /api/vpn` → status + capacidades + perfil + `should_ask`.
+- `POST /api/vpn/connect` `{cpf, password, remember, use_saved}`.
+- `POST /api/vpn/disconnect`, `/profile`, `/test`, `/forget`, `/answer`.
+- CLI: `python -m pesquisai.vpn status|connect|disconnect|profile|test`.
+
+### 🧪 Testes
+- `tests/test_v0711_vpn.py` — **21 testes offline** (perfil, máscara,
+  redaction, prefs, credenciais cifradas, SOCKS5 + relay local, capacidades).
+- **Prova de conceito no Colab:** UDP 1195 alcança o servidor, o TLS completa
+  e credenciais falsas retornam `AUTH_FAILED`; o caminho
+  `netns → slirp → SOCKS5 → 127.0.0.1:1081` devolveu **HTTP 200** para
+  `https://www.ufv.br/`. A conexão real depende das credenciais do usuário.
+
+### ⚠️ Limitações
+- 1 dispositivo por CPF: conectar o Colab pode desconectar o computador.
+- Credenciais vão para a VM do Google; “lembrar” é opcional e cifrado.
+- O uso deve respeitar as regras da UFV/DTI e da CAPES Periódicos.
+
 ## [0.7.10] — 2026-11-05 — 🧭 Onboarding de primeiro uso: provedor e chave
 
 ### 🚪 A tela que faltava
@@ -22,9 +97,31 @@
   clicar em **Copiar**, voltar para a janela e colar; a chave (`AIza…`) é salva como
   **`GOOGLE_GENERATIVE_AI_API_KEY`**.
 
+### ⏳ O motor espera a chave
+- **Sem chave, o `opencode` não sobe.** `needs_onboarding_now()` é avaliado no
+  boot: o serviço do motor e o ttyd ficam parados; só a interface web sobe para
+  receber o onboarding.
+- **Ao salvar a chave, reinício duro:** `_hard_restart_engine()` encerra o
+  terminal (ttyd + TUI), derruba o serviço (todas as sessões) e sobe tudo de novo
+  já com a chave e o modelo corretos.
+
+### 🔁 Retry automático em cota/429
+- Plugin `ufvai-retry` (hook `retry` do motor): **somente quando a mensagem é de
+  cota** (`quota`, `RESOURCE_EXHAUSTED`, `free_tier`, `per minute`) espera **~62 s**
+  — a janela de 1 min da cota gratuita do Google. Mensagens de sobrecarga (“high demand”, “overloaded”) esperam só **5 s**;
+  outros 429/503 seguem o retry padrão do motor.
+- Lê `retry in 23s`/`retryDelay` da própria mensagem quando existir; teto de 3 min;
+  desiste após 8 tentativas. Instalado no boot por `retry_plugin.ensure_retry_plugin()`.
+- **Fallback após 5 tentativas:** se o modelo principal (Flash-Lite Latest) não
+  passar, troca a sessão para `google/gemini-3.1-flash-lite` e repete a requisição
+  (uma troca por sessão a cada 30 min; `UFVAI_RETRY_SWITCH_AFTER`/`UFVAI_RETRY_FALLBACK`).
+
 ### 🎛️ Modelo padrão do Google
-- Com chave do Google, o modelo padrão passa a ser **`google/gemini-3.5-flash`** e
-  continua valendo nos próximos usos (aplicado no boot, em `load_keys_from_drive`).
+- Com chave do Google, o modelo padrão passa a ser **`google/gemini-flash-lite-latest`**
+  com variante **`high`** ("Gemini Flash-Lite Latest Google · high") e continua valendo
+  nos próximos usos (aplicado no boot, em `load_keys_from_drive`).
+- O `model` raiz não guarda variante (limite do V2); ela vai em
+  `agents.UFVAI.model = "google/gemini-flash-lite-latest#high"`.
 - Constante `GOOGLE_DEFAULT_MODEL` em `pesquisai/onboarding.py`; override por
   **`UFVAI_GOOGLE_MODEL`** e desligamento por **`UFVAI_GOOGLE_MODEL_LOCK=0`**.
 - Se o catálogo do motor estiver disponível, o id é conferido contra a lista real

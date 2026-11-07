@@ -369,7 +369,8 @@ def _service_cwd() -> Optional[str]:
 
 
 def ensure_service_project_dir(
-    project_dir: str, timeout_s: float = 20.0, backup_dir: Optional[str] = None
+    project_dir: str, timeout_s: float = 20.0, backup_dir: Optional[str] = None,
+    netns_pid: int | None = None,
 ) -> bool:
     """Garante que o serviço do OpenCode nasça com cwd E chaves do projeto.
 
@@ -464,9 +465,16 @@ def ensure_service_project_dir(
         logger.debug("ensure_service_project_dir: opencode indisponível (%s)", exc)
         return False
 
+    # v0.7.11: modo "todo o UFVAI na VPN" — o serviço nasce dentro do
+    # namespace (mount+net) da VPN; o TUI, no mesmo namespace, o alcança em
+    # 127.0.0.1 e todo o tráfego dele (LLM + ferramentas) sai pela UFV.
+    _prefix = (
+        ["nsenter", "-t", str(netns_pid), "-m", "-n"] if netns_pid else []
+    )
+
     try:
         subprocess.run(
-            [opencode_bin, "service", "stop"],
+            _prefix + [opencode_bin, "service", "stop"],
             capture_output=True, text=True, timeout=10,
         )
     except Exception as exc:  # noqa: BLE001 — serviço ausente é o caso normal
@@ -474,7 +482,7 @@ def ensure_service_project_dir(
 
     try:
         subprocess.Popen(
-            [opencode_bin, "serve", "--service"],
+            _prefix + [opencode_bin, "serve", "--service"],
             cwd=target,
             env=build_env(keys_env),
             stdout=subprocess.DEVNULL,
@@ -489,7 +497,7 @@ def ensure_service_project_dir(
     while time.monotonic() < deadline:
         try:
             status = subprocess.run(
-                [opencode_bin, "service", "status"],
+                _prefix + [opencode_bin, "service", "status"],
                 capture_output=True, text=True, timeout=3,
             )
             if (status.stdout or "").strip().startswith("http"):
@@ -1469,6 +1477,13 @@ def run() -> None:
 
     folder_path, drive_url = setup_drive()
     setup_dependencies()
+    # v0.7.11: remove restos de uma conexão VPN de um boot anterior (o
+    # namespace/OpenVPN/SOCKS não sobrevivem ao reinício do runtime).
+    try:
+        from . import vpn as _vpn
+        _vpn.cleanup_stale()
+    except Exception as _vpn_exc:  # noqa: BLE001
+        logger.debug("VPN: cleanup_stale falhou (%s)", _vpn_exc)
     # v0.7.7 (27/10/2026 — SEM bump): o serviço do motor nasce no PesquisAI,
     # não em /root — é dele que as sessões herdam o diretório de projeto.
     # v0.7.10: sem chave, o motor NÃO nasce — o onboarding espera a chave.

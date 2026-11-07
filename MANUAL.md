@@ -433,6 +433,7 @@ O UFVAI é uma **ferramenta de amplificação**. Ele tira de você o trabalho re
 9. [Declaração de Uso de IA](#9-declaração-de-uso-de-inteligência-artificial-ia)
 10. [Disclaimer](#10-disclaimer-do-ufvai--termos-de-uso-e-isenção-de-responsabilidade)
 11. [Memória Persistente](#11--memória-persistente-minha-memória--desde-a-v0518)
+11-A. [VPN da UFV](#11-a--vpn-da-ufv-desde-a-v0711)
 12. [Histórico de Versões](#12-histórico-de-versões)
 
 ---
@@ -571,7 +572,7 @@ As opções guiadas são:
 1. a chave é validada no formato, **cifrada** e gravada em `backups/keys_store.json`
    (Drive no Colab; `~/PesquisAI` no offline);
 2. a variável do provedor é injetada no processo e no **serviço do motor** (v0.7.8);
-3. com chave do **Google**, o modelo padrão passa a ser **`google/gemini-3.5-flash`** —
+3. com chave do **Google**, o modelo padrão passa a ser **`google/gemini-flash-lite-latest`** —
    e continua valendo nas próximas aberturas;
 4. o terminal reinicia e a tela de onboarding **não volta mais** (existe chave).
 
@@ -580,6 +581,27 @@ As opções guiadas são:
 >
 > **Trocar depois:** 🔌 Provedores, a qualquer momento. **Remover:** o mesmo modal
 > (a chave deixa de ser usada e o serviço é reerguido sem ela).
+
+#### Retry automático de cota (429)
+
+O plano gratuito do Google limita a cota **por minuto**. **Só quando a mensagem
+é de cota** (“You exceeded your current quota”, `RESOURCE_EXHAUSTED`,
+`free_tier`, `per minute`) o plugin **`ufvai-retry`** intercepta o hook `retry`
+do motor e espera a janela do provedor antes de tentar de novo. **Sobrecarga**
+(“high demand”, “overloaded”, “temporarily”) espera só **5 s**. Outros `429`/`503`
+seguem o retry padrão do motor:
+
+- padrão **~62 s** (1 minuto da cota gratuita), com teto de 3 min;
+- se a mensagem trouxer `retry in 23s` / `retryDelay`, usa esse valor + 3 s;
+- até **8 tentativas**; depois disso o erro é mostrado normalmente;
+- **fallback**: se as **5 primeiras** tentativas no modelo principal falharem,
+  a sessão troca para **`google/gemini-3.1-flash-lite`** e repete a requisição
+  (uma troca por sessão a cada 30 min).
+
+Nada é configurado à mão: o plugin é instalado no boot em
+`~/.config/opencode/plugins/ufvai-retry/` e registrado em `plugins` no
+`opencode.json`. Ajustes opcionais: `UFVAI_RETRY_DELAY_MS` e
+`UFVAI_RETRY_MAX_ATTEMPTS`.
 
 ### 1.6 A interface de trabalho
 
@@ -1426,13 +1448,76 @@ O UFVAI suporta **5 idiomas** (chinês adicionado na v0.6.0):
 
 Desde a v0.6.1, o **idioma do sistema é detectado automaticamente** na primeira execução (`$LANG`, `navigator.language`) e a preferência é persistida. Para alterar, use o seletor de idioma na interface ou defina `PESQUISAI_LANG=en_US`.
 
+## 11-A. 🛡 VPN da UFV (desde a v0.7.11)
+
+O UFVAI pode conectar o **servidor do Colab** à **VPN da UFV** para acessar
+sistemas e periódicos restritos. A conexão é **opt-in** e usa as suas
+credenciais pessoais do portal `vpn.ufvnet.ufv.br` (**CPF + senha**).
+
+### Como conectar
+1. Na abertura, responda **“Sim, sou aluno(a) da UFV”**.
+2. Informe **CPF** e **senha da VPN** no painel 🛡.
+3. Clique em **Conectar** e aguarde o status **Conectado à VPN da UFV**.
+4. Use **Testar acesso** para conferir `https://sistemas.ufv.br/`.
+
+Se responder **“Não”**, a pergunta não volta; o botão **🛡 VPN** da barra
+superior reabre o painel quando você quiser.
+
+### Modo total (todo o UFVAI na VPN)
+Marque **“Usar a VPN em todo o UFVAI (terminal + OpenCode)”** antes de
+conectar. O UFVAI reinicia o terminal e o serviço do OpenCode **dentro** do
+namespace da VPN, com `redirect-gateway` (túnel total). O agente, as
+ferramentas e o terminal passam a sair pela UFV; o wrapper (8001) e o kernel
+do notebook continuam fora.
+
+> ⚠️ Isso reinicia o terminal/agente por alguns segundos. Para voltar,
+> clique em **Desconectar**.
+
+### Modelo local da UFV
+Em **🛡 VPN → Detalhes técnicos → Modelo/serviço na rede da UFV**, informe o
+host interno (ex.: `10.0.0.10`), a porta (ex.: `11434`) e a porta local
+(ex.: `11435`). O UFVAI publica `127.0.0.1:11435` dentro do túnel; no
+OpenCode, use `http://127.0.0.1:11435/v1` como `baseURL` do provedor
+OpenAI-compatible.
+
+### O que passa pela VPN
+Somente os processos que usam o **proxy local**:
+
+```bash
+curl --socks5-hostname 127.0.0.1:1081 https://sistemas.ufv.br/
+# ou
+ALL_PROXY=socks5h://127.0.0.1:1081 seu-comando
+```
+
+O restante do Colab continua na internet normal. **Não é túnel transparente**:
+o Colab não permite instalar rotas no contêiner (sem `CAP_NET_ADMIN`).
+
+### Avisos importantes
+- **1 dispositivo por CPF:** conectar o Colab pode desconectar o seu computador.
+- A senha **não é gravada**, a menos que você marque **“Lembrar neste Drive”**
+  (aí fica cifrada no `keys_store.json`).
+- A conexão usa as credenciais **da VPN**, não a senha do e-mail/Portal UFV.
+- Respeite as regras da UFV/DTI e da CAPES Periódicos.
+
+### Problemas comuns
+- **CPF ou senha recusados** → confira a senha da VPN no portal.
+- **Tempo esgotado** → veja `~/.config/ufvai/vpn/openvpn.log` e tente de novo.
+- **Teste interno falha, público passa** → DNS interno não empurrado;
+  desconecte/reconecte.
+
+Guia completo (arquitetura, API, CLI, testes e diagnóstico):
+[`docs/VPN_UFV.md`](docs/VPN_UFV.md).
+
+---
+
 ## 12. Histórico de Versões
 
 Resumo das versões da série 0.7.x (detalhes completos no `CHANGELOG.md` do repositório):
 
 | Versão | Data | Destaques |
 |--------|------|-----------|
-| **0.7.10** | 05/11/2026 | 🧭 **Onboarding de primeiro uso** — depois dos Termos, quem está sem chave escolhe **já tenho provedor** ou **não tenho / não sei**; opções **Google Gemini (recomendado)**, **NVIDIA**, **OpenRouter** e **OpenCode Go (pago)** com tutorial, link e campo de colar; chave do Google → `GOOGLE_GENERATIVE_AI_API_KEY` e modelo padrão **Gemini 3.5 Flash** |
+| **0.7.11** | 06/11/2026 | 🛡 **VPN da UFV no Colab** — OpenVPN em namespace isolado (`unshare -Urn` + `slirp4netns`) + SOCKS5 local; tela inicial **“Você é aluno(a) da UFV?”** e painel **CPF/senha**; credenciais cifradas opcionais; aviso de **1 dispositivo por CPF** ([`docs/VPN_UFV.md`](docs/VPN_UFV.md)) |
+| **0.7.10** | 05/11/2026 | 🧭 **Onboarding de primeiro uso** — depois dos Termos, quem está sem chave escolhe **já tenho provedor** ou **não tenho / não sei**; opções **Google Gemini (recomendado)**, **NVIDIA**, **OpenRouter** e **OpenCode Go (pago)** com tutorial, link e campo de colar; chave do Google → `GOOGLE_GENERATIVE_AI_API_KEY` e modelo padrão **Gemini Flash-Lite Latest · high** |
 | **0.7.9** | 04/11/2026 | 🔑 **Chaves de API e free tier para novos usuários** — o modal de Provedores mostra **como obter uma chave gratuita** (OpenRouter `:free`, NVIDIA) quando não há nenhuma salva; **seletor de modelos gratuitos** e **modelo padrão** (`/api/free_models`, `/api/default_model`); aviso de responsabilidade na abertura ([`docs/CHAVES_API.md`](docs/CHAVES_API.md)) · 💾 **⚙ Autosave** com intervalo de **1–60 min** e escopo (sessão ativa / todas / escolhidas) |
 | **0.7.8** | 29/10/2026 | 🔑 **Chaves do Drive no serviço do motor (OpenCode v2.2)** — as chaves são injetadas no `env` do `opencode serve` e no boot; **auto-cura** reinicia o serviço que nasceu sem elas; salvar/remover chave reergue o serviço atualizado · ⌨️ **Ctrl+C copia / Ctrl+V cola** no terminal (ttyd + xterm.js) |
 | **0.7.7** | 27/10/2026 | 🔒 **Drive Guard** — o agente não acessa mais “My Drive” fora de `My Drive/PesquisAI` (nem com `--auto`): regras `permissions` com `deny` **final** no `opencode.json` + hooks `permission.evaluate` e `tool.execute.before`; alias `MyDrive`, `..`, `file://`, `~` e comandos de shell resolvidos antes da decisão; referência ofuscada cai em **falha fechada**; auditoria em `~/.local/state/ufvai/drive-guard.log` · 🧪 35 verificações em Node + 20 testes Python |

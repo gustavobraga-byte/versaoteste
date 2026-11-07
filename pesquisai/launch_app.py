@@ -201,6 +201,8 @@ _RATE: dict[str, list[float]] = {}
 # v0.6.5: handle do ttyd atual — permite matar a ÁRVORE do terminal
 # (ttyd + bash + opencode) por grupo de processo, sem pkill -f global.
 _TTYD_PROC: "subprocess.Popen | None" = None
+# v0.7.11: PID do namespace quando o modo "todo o UFVAI na VPN" está ativo.
+_SYSTEM_MODE_NETNS_PID: "int | None" = None
 # v0.7.5 (correção 23/10/2026 — SEM bump): sessão que o terminal está
 # exibindo AGORA. Um reinício do ttyd (idioma/chave/keepalive) reabre esta
 # mesma sessão em vez de pré-criar outra — era o que fazia o UFVAI abrir
@@ -2245,7 +2247,7 @@ def _consume_greeting(session_id: str | None, lang: str) -> bool:
 
 
 def _build_ttyd_cmd(lang: str | None = None, session_id: str | None = None,
-                    seed_greeting: bool = True):
+                    seed_greeting: bool = True, netns_pid: int | None = None):
     """v0.6.5: constrói (args, env) do ttyd com saudação no idioma pedido.
 
     Extraído de start_ttyd para permitir retry determinístico em
@@ -2341,10 +2343,19 @@ def _build_ttyd_cmd(lang: str | None = None, session_id: str | None = None,
     # v0.4.2.5: construir args com --index (touch handlers)
     # v0.6.2: --writable restaurado (regressão v0.6.0 deixava o terminal read-only)
     base_args = ["ttyd", "-p", str(TERMINAL_PORT), "--writable", *_ttyd_shell_argv(bash_cmd)]
-    return _build_ttyd_args(base_args, env), env, full_lang
+    args = _build_ttyd_args(base_args, env)
+    if netns_pid:
+        # v0.7.11: ttyd + tmux + TUI dentro do namespace da VPN. O prefixo
+        # entra DEPOIS do _build_ttyd_args (que insere --index após "ttyd").
+        # O host publica a porta 8000 via slirp (publish_port) e o iframe
+        # continua apontando para localhost:8000.
+        args = ["nsenter", "-t", str(netns_pid), "-m", "-n"] + args
+    return args, env, full_lang
 
 
-def start_ttyd(lang: str | None = None):
+def start_ttyd(lang: str | None = None, netns_pid: int | None = None):
+    if netns_pid is None:
+        netns_pid = _SYSTEM_MODE_NETNS_PID
     """Inicia o ttyd com saudação no idioma solicitado.
 
     Args:
@@ -2363,7 +2374,7 @@ def start_ttyd(lang: str | None = None):
     print(f"\n{next_joke('economia')}")
     _ensure_ufvai_agent_before_spawn("start_ttyd")
     ttyd_args, env, full_lang = _build_ttyd_cmd(
-        lang, session_id=_current_ttyd_session)
+        lang, session_id=_current_ttyd_session, netns_pid=netns_pid)
     _spawn_ttyd(ttyd_args, env)
     print(f"🚀 Terminal iniciado (idioma: {full_lang}, touch: {'ON' if '--index' in ttyd_args else 'OFF'}).")
     # v0.7.5: espera ATIVA (curta) em vez de sleep fixo de 0,8 s. A UI já
@@ -2969,7 +2980,8 @@ def _start_opencode_service_with_keys(timeout_s: float = 20.0) -> bool:
     project = _workspace_dir()
     return bool(
         ensure_service_project_dir(
-            project, timeout_s=timeout_s, backup_dir=_keys_backup_dir()
+            project, timeout_s=timeout_s, backup_dir=_keys_backup_dir(),
+            netns_pid=_SYSTEM_MODE_NETNS_PID,
         )
     )
 
@@ -2993,6 +3005,15 @@ def _hard_restart_engine(reason: str = "key") -> None:
         _shutdown_stop_opencode_service()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Restart duro (%s): serviço não encerrou (%s)", reason, exc)
+    if _SYSTEM_MODE_NETNS_PID:
+        # o serviço do namespace não é visto pelo `service stop` do host
+        try:
+            subprocess.run(
+                ["pkill", "-f", "opencode serve --service"],
+                capture_output=True, timeout=8,
+            )
+        except Exception:  # noqa: BLE001
+            pass
     try:
         _start_opencode_service_with_keys()
     except Exception as exc:  # noqa: BLE001
@@ -3013,6 +3034,115 @@ def _apply_opencode_env_change_async() -> None:
         daemon=True,
         name="ufvai-apply-keys",
     ).start()
+
+
+def _port_accepts(port: int, timeout: float = 0.3) -> bool:
+    import socket as _socket
+    try:
+        with _socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _vpn_system_enable(backup_dir: str) -> dict:
+    """Move o serviço do OpenCode + ttyd para o namespace da VPN.
+
+    v0.7.11: é o modo "todo o UFVAI na VPN". O terminal e o agente passam a
+    sair pela UFV (o OpenVPN é conectado com redirect-gateway); o wrapper
+    (porta 8001) e o kernel do notebook continuam fora.
+    """
+    from . import vpn as _vpn
+
+    st = _vpn.status(backup_dir)
+    if st.get("state") != "connected":
+        raise _vpn.VPNError("Conecte a VPN da UFV antes de ativar o modo total.")
+    if not st.get("full_tunnel"):
+        raise _vpn.VPNError(
+            "O modo total exige túnel total (redirect-gateway). Desconecte, "
+            "marque 'Usar a VPN em todo o UFVAI' e conecte de novo."
+        )
+    if st.get("system_mode"):
+        return st
+    ns_pid = (st.get("pids") or {}).get("ns")
+    if not ns_pid:
+        raise _vpn.VPNError("O namespace da VPN não está ativo. Reconecte.")
+
+    try:
+        # 1. derruba o ttyd do host e espera a porta 8000 liberar
+        _stop_terminal()
+        for _ in range(25):
+            if not _port_accepts(TERMINAL_PORT):
+                break
+            time.sleep(0.2)
+
+        # 2. publica a porta 8000 do namespace no host (remove hostfwd antigo)
+        _vpn.unpublish_port(TERMINAL_PORT)
+        _vpn.publish_port(TERMINAL_PORT, TERMINAL_PORT)
+
+        # 3. para o serviço/tmux do host e sobe tudo no namespace
+        _system_enable_steps(backup_dir, int(ns_pid))
+    except Exception:
+        # rollback: volta o terminal/serviço para o host e desconecta
+        try:
+            _vpn_system_disable(backup_dir)
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+    return _vpn.status(backup_dir)
+
+
+def _system_enable_steps(backup_dir: str, ns_pid: int) -> None:
+    """Passos internos do modo total (separados para permitir rollback)."""
+    from . import vpn as _vpn
+    try:
+        opencode_bin = find_opencode()
+    except Exception:  # noqa: BLE001
+        opencode_bin = "opencode"
+    for cmd in (
+        [opencode_bin, "service", "stop"],
+        ["tmux", "-L", "ufvai", "kill-server"],
+    ):
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        except Exception:  # noqa: BLE001
+            pass
+    time.sleep(1.2)
+
+    # 4. sobe serviço + terminal DENTRO do namespace
+    from .run_fast import ensure_service_project_dir
+    ensure_service_project_dir(
+        _workspace_dir(), netns_pid=int(ns_pid), timeout_s=30
+    )
+    global _SYSTEM_MODE_NETNS_PID
+    _SYSTEM_MODE_NETNS_PID = int(ns_pid)
+    start_ttyd(netns_pid=int(ns_pid))
+    _vpn.set_system_mode(True)
+
+
+def _vpn_system_disable(backup_dir: str) -> dict:
+    """Volta o serviço + ttyd para o namespace do host e desconecta a VPN."""
+    from . import vpn as _vpn
+
+    global _SYSTEM_MODE_NETNS_PID
+    _SYSTEM_MODE_NETNS_PID = None
+    _stop_terminal()
+    try:
+        subprocess.run(
+            ["pkill", "-f", "opencode serve --service"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    _vpn.disconnect(backup_dir)
+    try:
+        from .run_fast import ensure_service_project_dir
+        ensure_service_project_dir(_workspace_dir())
+    except Exception:  # noqa: BLE001
+        pass
+    start_ttyd()
+    _vpn.set_system_mode(False)
+    return _vpn.status(backup_dir)
 
 
 def start_wrapper_server():
@@ -3545,10 +3675,18 @@ def start_wrapper_server():
                 self._json(200, _ob.onboarding_state(_store, _env))
                 return
 
+            if p == "/api/vpn":
+                # v0.7.11: estado da VPN da UFV (OpenVPN em namespace isolado)
+                from . import vpn as _vpn
+                self._json(200, _vpn.status(DRIVE_BACKUP_DIR))
+                return
+
             if p == "/api/apikey":
                 qs = parse_qs(urlparse(self.path).query)
                 provider = qs.get("provider", [""])[0].strip()
                 keys = load_encrypted_keys(DRIVE_BACKUP_DIR)
+                # v0.7.11: credenciais da VPN nunca aparecem na listagem
+                keys = {k: v for k, v in keys.items() if not k.startswith("vpn_ufv_")}
                 if provider:
                     val = keys.get(provider, "")
                     masked = (val[:4] + "…") if val else ""
@@ -4309,6 +4447,120 @@ def start_wrapper_server():
                     "masked": _ob.mask_key(key),
                     "model": _model,
                 })
+                return
+
+            # ════════════════════════════════════════════════════════
+            # v0.7.11 — VPN da UFV (OpenVPN)
+            # ════════════════════════════════════════════════════════
+            if p == "/api/vpn/connect":
+                from . import vpn as _vpn
+                try:
+                    _full = bool(body.get("full_tunnel", False))
+                    _cur = _vpn.status(DRIVE_BACKUP_DIR)
+                    if (_full and _cur.get("state") == "connected"
+                            and not _cur.get("full_tunnel")):
+                        # já conectado em split tunnel: reconecta em túnel total
+                        _vpn.disconnect(DRIVE_BACKUP_DIR)
+                    _st = _vpn.connect(
+                        cpf=str(body.get("cpf", "") or ""),
+                        password=str(body.get("password", "") or ""),
+                        remember=bool(body.get("remember", False)),
+                        use_saved=bool(body.get("use_saved", False)),
+                        backup_dir=DRIVE_BACKUP_DIR,
+                        full_tunnel=_full,
+                    )
+                    _tel_event("vpn_connect", {"mode": _st.get("mode", "")[:16]})
+                    self._json(200, _st)
+                except _vpn.VPNError as _exc:
+                    self._json(400, {"ok": False, "error": str(_exc)})
+                except Exception as _exc:  # noqa: BLE001
+                    logger.exception("falha ao conectar a VPN")
+                    self._json(500, {"ok": False, "error": f"Erro: {_exc}"})
+                return
+
+            if p == "/api/vpn/disconnect":
+                from . import vpn as _vpn
+                self._json(200, _vpn.disconnect(DRIVE_BACKUP_DIR))
+                return
+
+            if p == "/api/vpn/profile":
+                from . import vpn as _vpn
+                try:
+                    _content = str(body.get("content", "") or "")
+                    if _content.strip():
+                        _meta = _vpn.save_profile_text(_content)
+                    else:
+                        _meta = _vpn.fetch_profile(force=bool(body.get("force", False)))
+                    self._json(200, {"ok": True, "profile": _meta})
+                except Exception as _exc:  # noqa: BLE001
+                    self._json(400, {"ok": False, "error": str(_exc)})
+                return
+
+            if p == "/api/vpn/test":
+                from . import vpn as _vpn
+                _url = str(body.get("url", "") or "").strip()
+                _res = _vpn.test(url=_url) if _url else _vpn.test()
+                self._json(200, _res)
+                return
+
+            if p == "/api/vpn/system":
+                # v0.7.11: modo "todo o UFVAI na VPN" (terminal + OpenCode)
+                from . import vpn as _vpn
+                try:
+                    if bool(body.get("enabled", False)):
+                        _st = _vpn_system_enable(DRIVE_BACKUP_DIR)
+                    else:
+                        _st = _vpn_system_disable(DRIVE_BACKUP_DIR)
+                    self._json(200, _st)
+                except _vpn.VPNError as _exc:
+                    self._json(400, {"ok": False, "error": str(_exc)})
+                except Exception as _exc:  # noqa: BLE001
+                    logger.exception("falha no modo total da VPN")
+                    self._json(500, {"ok": False, "error": f"Erro: {_exc}"})
+                return
+
+            if p == "/api/vpn/forward":
+                # v0.7.11: publica um serviço da rede da UFV em 127.0.0.1
+                # (é o caminho para um modelo local Ollama/vLLM da intranet).
+                from . import vpn as _vpn
+                try:
+                    _fwd = _vpn.add_forward(
+                        host=str(body.get("host", "") or ""),
+                        port=int(body.get("port", 0) or 0),
+                        local_port=int(body.get("local_port", 0) or 0),
+                        backup_dir=DRIVE_BACKUP_DIR,
+                    )
+                    self._json(200, {
+                        "ok": True,
+                        "forward": _fwd,
+                        "status": _vpn.status(DRIVE_BACKUP_DIR),
+                    })
+                except _vpn.VPNError as _exc:
+                    self._json(400, {"ok": False, "error": str(_exc)})
+                except Exception as _exc:  # noqa: BLE001
+                    logger.exception("falha ao encaminhar porta da VPN")
+                    self._json(500, {"ok": False, "error": f"Erro: {_exc}"})
+                return
+
+            if p == "/api/vpn/unforward":
+                from . import vpn as _vpn
+                _ok = _vpn.remove_forward(str(body.get("id", "") or ""))
+                self._json(200, {
+                    "ok": bool(_ok),
+                    "status": _vpn.status(DRIVE_BACKUP_DIR),
+                })
+                return
+
+            if p == "/api/vpn/forget":
+                from . import vpn as _vpn
+                self._json(200, {"ok": _vpn.forget_credentials(DRIVE_BACKUP_DIR)})
+                return
+
+            if p == "/api/vpn/answer":
+                # v0.7.11: resposta da tela inicial ("ufv" / "no")
+                from . import vpn as _vpn
+                _vpn.mark_decision(str(body.get("choice", "no") or "no"))
+                self._json(200, _vpn.status(DRIVE_BACKUP_DIR))
                 return
 
             if p == "/api/apikey":
