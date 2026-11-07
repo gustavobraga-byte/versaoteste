@@ -1834,63 +1834,134 @@ def disconnect(backup_dir: str | None = None) -> dict:
 # Teste de acesso através do proxy
 # ═══════════════════════════════════════════════════════════════
 
-def _curl_through_proxy(proxy: str, url: str, timeout: int = 15) -> dict:
+def _curl_raw(
+    proxy: str, url: str, timeout: int = 15, want_body: bool = False
+) -> dict:
+    """GET via curl (opcionalmente por SOCKS5) devolvendo status e corpo."""
     curl = _which("curl")
     if not curl:
-        return {"ok": False, "error": "curl não encontrado", "url": url}
+        return {"ok": False, "error": "curl não encontrado", "url": url, "http": "", "body": ""}
+    cmd = [curl, "-sS", "--max-time", str(timeout), "-w", "\n%{http_code}"]
+    clean = (proxy or "").replace("socks5h://", "").replace("socks5://", "")
+    if clean:
+        cmd += ["--socks5-hostname", clean]
+    cmd.append(url)
     started = _now()
     try:
-        proc = subprocess.run(
-            [
-                curl, "-sS", "-o", "/dev/null",
-                "-w", "%{http_code} %{time_total}",
-                "--max-time", str(timeout),
-                "--socks5-hostname", proxy.replace("socks5h://", "").replace("socks5://", ""),
-                url,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=timeout + 5,
-        )
-        parts = (proc.stdout or "").split()
-        code = parts[0] if parts else ""
-        elapsed = float(parts[1]) if len(parts) > 1 else (_now() - started)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
+        out = proc.stdout or ""
+        body, _, code = out.rpartition("\n")
+        code = code.strip()
         return {
             "ok": proc.returncode == 0 and code not in ("", "000"),
             "url": url,
             "http": code,
-            "seconds": round(elapsed, 2),
+            "body": body if want_body else "",
+            "seconds": round(_now() - started, 2),
             "error": (proc.stderr or "").strip()[:300] if proc.returncode else "",
         }
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "url": url, "error": str(exc)}
+        return {"ok": False, "url": url, "http": "", "body": "", "error": str(exc)}
+
+
+def _curl_through_proxy(proxy: str, url: str, timeout: int = 15) -> dict:
+    return _curl_raw(proxy, url, timeout=timeout, want_body=False)
+
+
+def _ip_via(proxy: str, timeout: int = 10) -> tuple[str, str]:
+    """Descobre o IP público visto por um caminho (proxy vazio = direto)."""
+    for url in (
+        "https://api.ipify.org?format=json",
+        "https://icanhazip.com",
+        "https://ifconfig.me/ip",
+    ):
+        res = _curl_raw(proxy, url, timeout=timeout, want_body=True)
+        if not res.get("ok"):
+            continue
+        body = (res.get("body") or "").strip()
+        ip = ""
+        try:
+            data = json.loads(body)
+            ip = str(data.get("ip") or "")
+        except (ValueError, TypeError):
+            ip = body.split()[0] if body else ""
+        if ip:
+            return ip, url
+    return "", ""
 
 
 def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
-    """Testa o acesso interno (sistemas.ufv.br) e a internet pelo proxy.
+    """Testa se o tráfego está realmente saindo pela VPN.
 
-    Com ``url``, testa apenas essa URL (útil para conferir um sistema
-    específico da UFV).
+    A prova mais forte é comparar o **IP público direto** com o **IP público
+    visto pelo proxy**: se forem diferentes, o tráfego está passando pela UFV.
+    Em split tunnel o IP pode ser o mesmo (só a rede da UFV vai pelo túnel),
+    por isso também testamos um host interno e mostramos TUN/rotas.
     """
     with _LOCK:
         proxy = proxy or _STATE.get("proxy", "")
+        full = bool(_STATE.get("full_tunnel", False))
+        tun = _STATE.get("tun_ip", "")
+        routes = list(_STATE.get("routes") or [])
     if not proxy:
         return {
             "ok": False,
+            "verdict": "no_proxy",
             "error": "A VPN não está conectada (sem proxy ativo).",
+            "proxy": "",
+            "proxy_ip": "",
+            "direct_ip": "",
+            "exit_ip_differs": False,
+            "full_tunnel": full,
+            "tun_ip": tun,
+            "routes": routes[:12],
             "internal": None,
             "public": None,
         }
     clean = proxy.replace("socks5h://", "").replace("socks5://", "")
     if url:
         only = _curl_through_proxy(clean, url, timeout)
-        return {"ok": bool(only.get("ok")), "proxy": proxy, "url": url,
-                "internal": only, "public": None}
+        return {
+            "ok": bool(only.get("ok")),
+            "verdict": "vpn" if only.get("ok") else "proxy_only",
+            "proxy": proxy,
+            "proxy_ip": "",
+            "direct_ip": "",
+            "exit_ip_differs": False,
+            "full_tunnel": full,
+            "tun_ip": tun,
+            "routes": routes[:12],
+            "internal": only,
+            "public": None,
+            "url": url,
+        }
+
+    proxy_ip, ip_source = _ip_via(clean, timeout=min(timeout, 12))
+    direct_ip, _ = _ip_via("", timeout=min(timeout, 12))
+    differs = bool(proxy_ip and direct_ip and proxy_ip != direct_ip)
     internal = _curl_through_proxy(clean, TEST_INTERNAL_URL, timeout)
     public = _curl_through_proxy(clean, TEST_PUBLIC_URL, timeout)
+
+    if differs or internal.get("ok"):
+        verdict = "vpn"
+    elif proxy_ip or public.get("ok"):
+        # o proxy funciona, mas o IP de saída é o mesmo e o host interno
+        # falhou: ou é split tunnel (esperado), ou a VPN não está roteando.
+        verdict = "proxy_only"
+    else:
+        verdict = "no_proxy"
+
     return {
-        "ok": bool(internal.get("ok") or public.get("ok")),
+        "ok": bool(proxy_ip or internal.get("ok") or public.get("ok")),
+        "verdict": verdict,
         "proxy": proxy,
+        "proxy_ip": proxy_ip,
+        "direct_ip": direct_ip,
+        "exit_ip_differs": differs,
+        "ip_source": ip_source,
+        "full_tunnel": full,
+        "tun_ip": tun,
+        "routes": routes[:12],
         "internal": internal,
         "public": public,
     }

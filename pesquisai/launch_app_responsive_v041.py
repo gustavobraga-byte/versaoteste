@@ -5948,8 +5948,9 @@ def create_wrapper_html(
       var skip = false;
       try { skip = sessionStorage.getItem("ufvai_ob_skip") === "1"; } catch(e){}
       if (skip){ clearInterval(timer); return; }
+      var _as = $("autosave-overlay");
       if (visible($("terms-overlay")) || visible($("welcome-overlay")) ||
-          visible($("autosave-overlay"))) {
+          (_as && _as.classList.contains("open"))) {
         tries = 0;
         return;
       }
@@ -6293,7 +6294,9 @@ def create_wrapper_html(
       var answered = false;
       try { answered = !!localStorage.getItem("ufvai_vpn_answered"); } catch(e){}
       if (answered){ clearInterval(timer); return; }
-      if (visible($("terms-overlay")) || visible($("welcome-overlay")) || visible($("autosave-overlay"))){
+      var _as = $("autosave-overlay");
+      if (visible($("terms-overlay")) || visible($("welcome-overlay")) ||
+          (_as && _as.classList.contains("open"))){
         tries = 0;
         return;
       }
