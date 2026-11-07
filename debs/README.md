@@ -13,8 +13,8 @@ Pacote gerado a partir da árvore `UFVAI-v0.7.11/`. Substitui `0.7.10-offline1`.
 
 | Arquivo | Arquitetura | Tamanho | SHA-256 |
 |---|---|---|---|
-| `pesquisai_0.7.11-offline1_amd64.deb` | x86_64 | 1,3 MB | `9bb723f4b3b42a13fc04d6ca6b993b768da2acf27f72ca97d47ed41daea474df` |
-| `pesquisai_0.7.11-offline1_arm64.deb` | aarch64 | 1,2 MB | `84774294cede220ca0909a0c8c3bb2fe3cc1b41b888f229aebe023b444a84364` |
+| `pesquisai_0.7.11-offline1_amd64.deb` | x86_64 | 1,3 MB | `990772e8d430852c9e81d4241cacf663ad03bd279173bae917abffd3b3a78738` |
+| `pesquisai_0.7.11-offline1_arm64.deb` | aarch64 | 1,2 MB | `4c361d30fd5d5f9831f75918685b697199a44883aca0247b7da63da32bc05743` |
 
 > Checksums oficiais em [`SHA256SUMS`](SHA256SUMS). O **motor OpenCode não vai
 > embutido** (~240 MB): instale com `ufvai --engine-install` (sem `sudo`).

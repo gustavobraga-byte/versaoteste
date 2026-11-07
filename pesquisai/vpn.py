@@ -1868,6 +1868,78 @@ def _curl_through_proxy(proxy: str, url: str, timeout: int = 15) -> dict:
     return _curl_raw(proxy, url, timeout=timeout, want_body=False)
 
 
+def _curl_in_ns(
+    ns_pid: int, url: str, timeout: int = 15, want_body: bool = False
+) -> dict:
+    """GET **dentro** do namespace da VPN (é o caminho real do OpenCode).
+
+    Não depende do proxy SOCKS5: usa as rotas/DNS do próprio namespace. No
+    modo total, é a única forma honesta de saber se o túnel está roteando.
+    """
+    curl = _which("curl")
+    if not curl:
+        return {"ok": False, "error": "curl não encontrado", "url": url, "http": "", "body": ""}
+    cmd = [
+        "nsenter", "-t", str(ns_pid), "-m", "-n",
+        curl, "-sS", "--max-time", str(timeout), "-w", "\n%{http_code}",
+    ]
+    cmd.append(url)
+    started = _now()
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
+        out = proc.stdout or ""
+        body, _, code = out.rpartition("\n")
+        code = code.strip()
+        return {
+            "ok": proc.returncode == 0 and code not in ("", "000"),
+            "url": url,
+            "http": code,
+            "body": body if want_body else "",
+            "seconds": round(_now() - started, 2),
+            "error": (proc.stderr or "").strip()[:300] if proc.returncode else "",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "url": url, "http": "", "body": "", "error": str(exc)}
+
+
+def _ip_via_ns(ns_pid: int, timeout: int = 10) -> tuple[str, str]:
+    for url in (
+        "https://api.ipify.org?format=json",
+        "https://icanhazip.com",
+        "https://ifconfig.me/ip",
+    ):
+        res = _curl_in_ns(ns_pid, url, timeout=timeout, want_body=True)
+        if not res.get("ok"):
+            continue
+        body = (res.get("body") or "").strip()
+        ip = ""
+        try:
+            data = json.loads(body)
+            ip = str(data.get("ip") or "")
+        except (ValueError, TypeError):
+            ip = body.split()[0] if body else ""
+        if ip:
+            return ip, url
+    return "", ""
+
+
+def _ns_diag(ns_pid: int, host: str) -> dict:
+    """DNS + rota do host dentro do namespace (diagnóstico do teste)."""
+    out = {"host": host, "ip": "", "route": ""}
+    try:
+        p = _ns(["getent", "hosts", host], ns_pid, timeout=6)
+        line = (p.stdout or "").strip().splitlines()
+        if line:
+            parts = line[0].split()
+            out["ip"] = parts[0] if parts else ""
+        if out["ip"]:
+            r = _ns(["ip", "route", "get", out["ip"]], ns_pid, timeout=6)
+            out["route"] = (r.stdout or "").strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def _ip_via(proxy: str, timeout: int = 10) -> tuple[str, str]:
     """Descobre o IP público visto por um caminho (proxy vazio = direto)."""
     for url in (
@@ -1893,21 +1965,25 @@ def _ip_via(proxy: str, timeout: int = 10) -> tuple[str, str]:
 def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
     """Testa se o tráfego está realmente saindo pela VPN.
 
-    A prova mais forte é comparar o **IP público direto** com o **IP público
-    visto pelo proxy**: se forem diferentes, o tráfego está passando pela UFV.
-    Em split tunnel o IP pode ser o mesmo (só a rede da UFV vai pelo túnel),
-    por isso também testamos um host interno e mostramos TUN/rotas.
+    No modo ``netns`` o teste roda **dentro do namespace** (o mesmo caminho
+    do OpenCode/terminal), sem depender do proxy SOCKS5. No modo ``direct``
+    usa o host. A prova mais forte é comparar o **IP público direto** com o
+    **IP público do túnel**: se forem diferentes, o tráfego passa pela UFV.
     """
     with _LOCK:
         proxy = proxy or _STATE.get("proxy", "")
+        mode = _STATE.get("mode", "")
+        ns_pid = (_STATE.get("pids") or {}).get("ns")
         full = bool(_STATE.get("full_tunnel", False))
         tun = _STATE.get("tun_ip", "")
         routes = list(_STATE.get("routes") or [])
-    if not proxy:
+        dns = list(_STATE.get("dns") or [])
+    use_ns = bool(mode == "netns" and ns_pid and _pid_alive(int(ns_pid)))
+    if not proxy and not use_ns:
         return {
             "ok": False,
             "verdict": "no_proxy",
-            "error": "A VPN não está conectada (sem proxy ativo).",
+            "error": "A VPN não está conectada (sem proxy/namespace ativo).",
             "proxy": "",
             "proxy_ip": "",
             "direct_ip": "",
@@ -1915,12 +1991,17 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
             "full_tunnel": full,
             "tun_ip": tun,
             "routes": routes[:12],
+            "dns": dns[:6],
+            "path": "none",
             "internal": None,
             "public": None,
         }
     clean = proxy.replace("socks5h://", "").replace("socks5://", "")
     if url:
-        only = _curl_through_proxy(clean, url, timeout)
+        only = (
+            _curl_in_ns(int(ns_pid), url, timeout) if use_ns
+            else _curl_through_proxy(clean, url, timeout)
+        )
         return {
             "ok": bool(only.get("ok")),
             "verdict": "vpn" if only.get("ok") else "proxy_only",
@@ -1931,22 +2012,34 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
             "full_tunnel": full,
             "tun_ip": tun,
             "routes": routes[:12],
+            "dns": dns[:6],
+            "path": "netns" if use_ns else "proxy",
             "internal": only,
             "public": None,
             "url": url,
         }
 
-    proxy_ip, ip_source = _ip_via(clean, timeout=min(timeout, 12))
     direct_ip, _ = _ip_via("", timeout=min(timeout, 12))
-    differs = bool(proxy_ip and direct_ip and proxy_ip != direct_ip)
-    internal = _curl_through_proxy(clean, TEST_INTERNAL_URL, timeout)
-    public = _curl_through_proxy(clean, TEST_PUBLIC_URL, timeout)
+    if use_ns:
+        proxy_ip, ip_source = _ip_via_ns(int(ns_pid), timeout=min(timeout, 12))
+        internal = _curl_in_ns(int(ns_pid), TEST_INTERNAL_URL, timeout)
+        public = _curl_in_ns(int(ns_pid), TEST_PUBLIC_URL, timeout)
+        diag_internal = _ns_diag(int(ns_pid), "sistemas.ufv.br")
+        diag_public = _ns_diag(int(ns_pid), "www.ufv.br")
+        path = "netns"
+    else:
+        # modo direto: o host já está roteado pela VPN (split ou total)
+        proxy_ip, ip_source = _ip_via("", timeout=min(timeout, 12))
+        internal = _curl_raw("", TEST_INTERNAL_URL, timeout)
+        public = _curl_raw("", TEST_PUBLIC_URL, timeout)
+        diag_internal = {"host": "sistemas.ufv.br", "ip": "", "route": ""}
+        diag_public = {"host": "www.ufv.br", "ip": "", "route": ""}
+        path = "direct"
 
+    differs = bool(proxy_ip and direct_ip and proxy_ip != direct_ip)
     if differs or internal.get("ok"):
         verdict = "vpn"
     elif proxy_ip or public.get("ok"):
-        # o proxy funciona, mas o IP de saída é o mesmo e o host interno
-        # falhou: ou é split tunnel (esperado), ou a VPN não está roteando.
         verdict = "proxy_only"
     else:
         verdict = "no_proxy"
@@ -1962,8 +2055,12 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
         "full_tunnel": full,
         "tun_ip": tun,
         "routes": routes[:12],
+        "dns": dns[:6],
+        "path": path,
         "internal": internal,
         "public": public,
+        "diag_internal": diag_internal,
+        "diag_public": diag_public,
     }
 
 
