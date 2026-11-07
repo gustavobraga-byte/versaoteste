@@ -282,3 +282,10 @@ def test_add_forward_requires_connection():
 
 def test_remove_unknown_forward():
     assert vpn.remove_forward("nao-existe") is False
+
+def test_test_without_proxy_is_no_proxy():
+    res = vpn.test(proxy="")
+    assert res["ok"] is False
+    assert res["verdict"] == "no_proxy"
+    assert res["proxy_ip"] == ""
+    assert res["direct_ip"] == ""

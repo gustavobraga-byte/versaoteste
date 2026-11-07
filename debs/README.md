@@ -13,8 +13,8 @@ Pacote gerado a partir da árvore `UFVAI-v0.7.11/`. Substitui `0.7.10-offline1`.
 
 | Arquivo | Arquitetura | Tamanho | SHA-256 |
 |---|---|---|---|
-| `pesquisai_0.7.11-offline1_amd64.deb` | x86_64 | 1,3 MB | `4fba5d1acfc2374ffa2343f3eeacd07837c00a9ed91661f625fa5ec6aedf25e8` |
-| `pesquisai_0.7.11-offline1_arm64.deb` | aarch64 | 1,2 MB | `ef1be56f606830dd9e459aadffb9eb95299ce54bce852684babdaa7fe07d0e1a` |
+| `pesquisai_0.7.11-offline1_amd64.deb` | x86_64 | 1,3 MB | `e75884eb31e0c718ab39c954cd86134ddf0f7223d6edafedcf8089bdf91a83d4` |
+| `pesquisai_0.7.11-offline1_arm64.deb` | aarch64 | 1,2 MB | `2418a5d88e5bf82ac55bd49e9482dcc88dc57513ed76a3e83c8cf766c9ef2795` |
 
 > Checksums oficiais em [`SHA256SUMS`](SHA256SUMS). O **motor OpenCode não vai
 > embutido** (~240 MB): instale com `ufvai --engine-install` (sem `sudo`).
@@ -103,7 +103,7 @@ Dados do usuário (nunca removidos): `~/PesquisAI/{vault,outputs,backups,logs,se
 - **Conteúdo:** `pesquisai/vpn.py`, `docs/VPN_UFV.md`, `VERSION` e o
   tutorial HTML presentes no pacote.
 - **Testes da versão:** `pytest -o addopts="" tests/test_v0711_vpn.py -q`
-  → **21 passed**.
+  → **22 passed**.
 - **Checksums:** `SHA256SUMS` regravado com os dois pacotes desta revisão.
 
 > A suíte completa **não** foi executada neste runtime (o ambiente reinicia sob

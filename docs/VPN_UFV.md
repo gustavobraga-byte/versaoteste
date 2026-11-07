@@ -38,8 +38,8 @@
 
 ## 3. Como usar (interface)
 
-1. Abra o UFVAI. Depois dos Termos/onboarding, aparece a tela
-   **“Você é aluno(a) da UFV?”**.
+1. Abra o UFVAI. **Depois dos Termos** (nome/e-mail + aceite) e **antes** do
+   onboarding do provedor, aparece a tela **“Você é aluno(a) da UFV?”**.
 2. Clique em **“Sim, sou aluno(a) da UFV”**.
 3. No painel **VPN da UFV**, informe:
    - **CPF** (o campo formata automaticamente);
@@ -235,7 +235,7 @@ No painel, abra **Detalhes técnicos** para ver modo, TUN, rotas, DNS e as
 python -m pytest tests/test_v0711_vpn.py -q -o addopts=""
 ```
 
-21 testes offline: parsing/validação do perfil, máscara de CPF, redaction,
+22 testes offline: parsing/validação do perfil, máscara de CPF, redaction,
 decisão da tela inicial, credenciais cifradas, handshake SOCKS5 + relay local,
 capacidades e formato do status.
 

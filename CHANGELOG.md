@@ -38,6 +38,15 @@
 - **DNS próprio:** `/etc/resolv.conf` bind-montado no namespace (DNS da VPN
   + públicos), para o OpenCode/terminal resolverem nomes internos.
 
+### 🎛️ Google no seletor de gratuitos + “Outro provedor”
+- **Google Gemini** entra em **🎛️ Modelo gratuito padrão** (junto de NVIDIA e
+  OpenRouter); `is_free_model` e `merge_default_model` aceitam `google/*`.
+- **“Outro provedor”** no onboarding: lista curada com **OpenAI, Anthropic,
+  Groq, Mistral, DeepSeek, Together, Fireworks, xAI e Cohere**, cada um com
+  link oficial e campo para a própria chave (variável padrão do provedor).
+- O onboarding agora vem **depois** da pergunta da VPN, que vem **depois dos
+  Termos** — a ordem é Termos → VPN → provedor/chave.
+
 ### 🖥️ Tela inicial e painel
 - Nova tela, depois de Termos/onboarding: **“Você é aluno(a) da UFV?”**
   - **Sim** → painel com **CPF** e **senha da VPN**.
@@ -63,7 +72,7 @@
 - CLI: `python -m pesquisai.vpn status|connect|disconnect|profile|test`.
 
 ### 🧪 Testes
-- `tests/test_v0711_vpn.py` — **21 testes offline** (perfil, máscara,
+- `tests/test_v0711_vpn.py` — **22 testes offline** (perfil, máscara,
   redaction, prefs, credenciais cifradas, SOCKS5 + relay local, capacidades).
 - **Prova de conceito no Colab:** UDP 1195 alcança o servidor, o TLS completa
   e credenciais falsas retornam `AUTH_FAILED`; o caminho

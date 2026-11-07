@@ -1455,7 +1455,8 @@ sistemas e periódicos restritos. A conexão é **opt-in** e usa as suas
 credenciais pessoais do portal `vpn.ufvnet.ufv.br` (**CPF + senha**).
 
 ### Como conectar
-1. Na abertura, responda **“Sim, sou aluno(a) da UFV”**.
+1. Logo **depois dos Termos** (nome/e-mail + aceite), responda
+   **“Sim, sou aluno(a) da UFV”** — antes da tela de provedor/chave.
 2. Informe **CPF** e **senha da VPN** no painel 🛡.
 3. Clique em **Conectar** e aguarde o status **Conectado à VPN da UFV**.
 4. Use **Testar acesso** para conferir `https://sistemas.ufv.br/`.

@@ -5265,7 +5265,7 @@ def start_wrapper_server():
                 from .opencode_config import load_json_config, write_json_atomic
                 _model_id = str(body.get("model", "") or "").strip()
                 if not _fm.is_free_model(_model_id):
-                    self._json(400, {"ok": False, "error": "Escolha um modelo gratuito (OpenRouter :free ou NVIDIA)."})
+                    self._json(400, {"ok": False, "error": "Escolha um modelo gratuito (Google, OpenRouter :free ou NVIDIA)."})
                     return
                 _cfg_path = os.path.expanduser("~/.config/opencode/opencode.json")
                 try:

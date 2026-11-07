@@ -1486,6 +1486,7 @@ def create_wrapper_html(
           <div style="font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:6px;">🆓 Comece grátis — obtenha uma chave gratuita</div>
           <p style="font-size:11px;color:var(--ink-muted);line-height:1.5;margin-bottom:10px;">As chaves de API são <b>de sua responsabilidade</b> e não têm qualquer vínculo com esta plataforma (UFVAI). Os limites gratuitos são definidos por cada provedor.</p>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+            <a class="prov-link" href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener">Chave Google (grátis)</a>
             <a class="prov-link" href="https://openrouter.ai/keys" target="_blank" rel="noopener">Chave OpenRouter (grátis)</a>
             <a class="prov-link" href="https://build.nvidia.com/" target="_blank" rel="noopener">Chave NVIDIA (grátis)</a>
             <a class="prov-link" href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/docs/CHAVES_API.md" target="_blank" rel="noopener">📘 Instruções passo a passo</a>
@@ -1500,7 +1501,7 @@ def create_wrapper_html(
           <div style="font-size:11.5px;font-weight:600;color:var(--ink);margin-bottom:8px;">🎛️ Modelo gratuito padrão</div>
           <div style="display:flex;gap:6px;margin-bottom:8px;">
             <select id="free-prov" onchange="loadFreeModels()" style="background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink);font-size:11.5px;padding:6px 8px;">
-              <option value="openrouter">OpenRouter</option><option value="nvidia">NVIDIA</option></select>
+              <option value="google">Google Gemini</option><option value="nvidia">NVIDIA</option><option value="openrouter">OpenRouter</option></select>
             <select id="free-model" style="flex:1;min-width:0;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:var(--radius);color:var(--ink);font-size:11.5px;padding:6px 8px;"></select>
           </div>
           <button onclick="setDefaultModel()" style="padding:6px 12px;font-size:11.5px;background:var(--accent-dim);border:1px solid rgba(var(--accent-rgb),.3);border-radius:var(--radius);color:var(--accent);cursor:pointer;">Definir como padrão</button>
@@ -5353,6 +5354,13 @@ def create_wrapper_html(
     padding: 12px 20px 16px; font-size: 10.5px; color: var(--ink-muted);
   }
   .vpn-foot a { color: var(--accent); text-decoration: none; }
+  .vpn-test-result {
+    margin: 0 20px 12px; padding: 9px 11px; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--line);
+    font-family: var(--font-mono); font-size: 10.5px; line-height: 1.55;
+    white-space: pre-wrap; color: var(--ink-muted); display: none;
+  }
+  .vpn-test-result.show { display: block; }
   .vpn-fwd {
     margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line);
   }
@@ -5433,6 +5441,12 @@ def create_wrapper_html(
     cursor:pointer;padding:0 0 12px;font-family:inherit;}
   #onboard-overlay .ob-back:hover{color:#b29149}
   #onboard-overlay .ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  #onboard-overlay .ob-other{margin:4px 0 12px}
+  #onboard-overlay .ob-other summary{cursor:pointer;font-size:11.5px;color:#9a9790;padding:8px 2px;list-style:none}
+  #onboard-overlay .ob-other summary::-webkit-details-marker{display:none}
+  #onboard-overlay .ob-other summary:hover{color:#b29149}
+  #onboard-overlay .ob-other summary::before{content:"▸ ";color:#b29149}
+  #onboard-overlay .ob-other[open] summary::before{content:"▾ "}
   #onboard-overlay .ob-prov{position:relative;text-align:left;background:rgba(255,255,255,.03);
     border:1px solid rgba(255,255,255,.09);border-radius:11px;padding:14px;cursor:pointer;
     color:inherit;font-family:inherit;transition:border-color .15s,background .15s,transform .15s;}
@@ -5622,6 +5636,7 @@ def create_wrapper_html(
         <button type="button" id="vpn-disconnect-btn" class="vpn-danger" onclick="vpnDisconnect()" style="display:none" data-i18n="vpn.disconnect">Desconectar</button>
         <button type="button" class="vpn-ghost" id="vpn-test-btn" onclick="vpnTest(this)" data-i18n="vpn.test">Testar acesso</button>
       </div>
+      <div id="vpn-test-result" class="vpn-test-result" role="status" aria-live="polite"></div>
     </div>
 
     <details class="vpn-adv">
@@ -5694,6 +5709,10 @@ def create_wrapper_html(
       <p class="ob-sub">Escolha um provedor. Em todos, você cria a chave no site do provedor e cola aqui —
         leva cerca de 1 minuto.</p>
       <div class="ob-grid" id="ob-grid"></div>
+      <details class="ob-other" id="ob-other-details" style="display:none">
+        <summary>Outro provedor (OpenAI, Anthropic, Groq, Mistral…)</summary>
+        <div class="ob-grid" id="ob-grid-others" style="margin-top:10px"></div>
+      </details>
       <p class="ob-note">🔒 A chave é gravada <b>cifrada</b> em <code>backups/</code> no seu Drive.
         As chaves são de sua responsabilidade e não têm vínculo com a plataforma UFVAI.</p>
     </div>
@@ -5739,23 +5758,32 @@ def create_wrapper_html(
   }
 
   // ── cards de provedor (passo 1) ──────────────────────────────
-  function renderProviders(){
-    var grid = $("ob-grid");
-    if (!grid || !DATA) return;
-    var html = "";
-    (DATA.providers || []).forEach(function(p){
-      var cls = "ob-prov" + (p.recommended ? " rec" : "");
-      var badge = p.recommended ? '<span class="p-badge rec">recomendado</span>'
-                : (p.paid ? '<span class="p-badge paid">pago</span>'
-                          : '<span class="p-badge free">grátis</span>');
-      html += '<button class="' + cls + '" data-prov="' + p.id + '">' + badge +
-              '<span class="p-name">' + p.label + '</span>' +
-              '<span class="p-tag">' + p.tagline + '</span></button>';
-    });
-    grid.innerHTML = html;
-    [].forEach.call(grid.querySelectorAll("[data-prov]"), function(btn){
+  function provCard(p){
+    var cls = "ob-prov" + (p.recommended ? " rec" : "");
+    var badge = p.other ? '<span class="p-badge free">lista</span>'
+              : p.recommended ? '<span class="p-badge rec">recomendado</span>'
+              : (p.paid ? '<span class="p-badge paid">pago</span>'
+                        : '<span class="p-badge free">grátis</span>');
+    return '<button class="' + cls + '" data-prov="' + p.id + '">' + badge +
+           '<span class="p-name">' + p.label + '</span>' +
+           '<span class="p-tag">' + p.tagline + '</span></button>';
+  }
+  function bindCards(container){
+    [].forEach.call(container.querySelectorAll("[data-prov]"), function(btn){
       btn.addEventListener("click", function(){ pick(btn.getAttribute("data-prov")); });
     });
+  }
+  function renderProviders(){
+    if (!DATA) return;
+    var all = DATA.providers || [];
+    var main = all.filter(function(p){ return !p.other; });
+    var others = all.filter(function(p){ return p.other; });
+    var grid = $("ob-grid");
+    if (grid){ grid.innerHTML = main.map(provCard).join(""); bindCards(grid); }
+    var og = $("ob-grid-others");
+    if (og){ og.innerHTML = others.map(provCard).join(""); bindCards(og); }
+    var det = $("ob-other-details");
+    if (det) det.style.display = others.length ? "block" : "none";
   }
 
   // ── "print" da tela de cada provedor (reprodução declarada) ──
@@ -5811,6 +5839,12 @@ def create_wrapper_html(
       steps = '<li>Crie a conta em <b>openrouter.ai</b>.</li>' +
               '<li>Abra <b>openrouter.ai/keys</b> e clique em <b>Create Key</b>.</li>' +
               '<li>Copie a chave (<b>sk-or-</b>) — ela aparece uma única vez — e cole abaixo.</li>';
+    } else if (p.other) {
+      steps = '<li>Crie a conta e a chave em <b>' + (p.url_label || p.label) + '</b>.</li>' +
+              '<li>Copie a chave e cole no campo abaixo.</li>';
+      extra = p.env
+        ? '<p class="ob-note">A chave será salva como <b>' + p.env + '</b> e o modelo você escolhe depois em 🎛️.</p>'
+        : '';
     } else {
       steps = '<li>O <b>OpenCode Go</b> é a opção <b>paga</b> do ecossistema (assinatura à parte).</li>' +
               '<li>Assine em <b>opencode.ai/go</b> e copie a chave do painel.</li>' +
@@ -5914,10 +5948,17 @@ def create_wrapper_html(
       var skip = false;
       try { skip = sessionStorage.getItem("ufvai_ob_skip") === "1"; } catch(e){}
       if (skip){ clearInterval(timer); return; }
-      if (visible($("terms-overlay")) || visible($("welcome-overlay"))) {
-        if (tries > 480) clearInterval(timer);   // ~4 min de tolerância
+      if (visible($("terms-overlay")) || visible($("welcome-overlay")) ||
+          visible($("autosave-overlay"))) {
+        tries = 0;
         return;
       }
+      // v0.7.11: a pergunta "é aluno da UFV?" vem ANTES do provedor/chave.
+      // Espera o fetch da VPN decidir (unknown) e a resposta do usuário.
+      var vpnState = window.UFVAI_VPN_STATE || "unknown";
+      if (vpnState === "unknown" && tries < 20) return;  // ~10 s
+      if (vpnState === "asking") return;
+      if (visible($("vpn-overlay"))) return;             // painel aberto
       clearInterval(timer);
       OV.style.display = "flex";
       showStep("ob-step0");
@@ -5961,6 +6002,7 @@ def create_wrapper_html(
   if (!ASK || !OV) return;
 
   var poll = null, last = {}, busy = false, _toastT = null, pendingSystem = false;
+  window.UFVAI_VPN_STATE = "unknown";
 
   function $(id){ return document.getElementById(id); }
   function show(el, on){ if (el) el.style.display = on ? "flex" : "none"; }
@@ -6098,6 +6140,7 @@ def create_wrapper_html(
 
   window.vpnAnswer = function(choice){
     try { localStorage.setItem("ufvai_vpn_answered", choice); } catch(e){}
+    window.UFVAI_VPN_STATE = "done";
     show(ASK, false);
     fetch("/api/vpn/answer", {
       method: "POST",
@@ -6163,13 +6206,23 @@ def create_wrapper_html(
       if (btn){ btn.disabled = false; btn.textContent = tr("vpn.test", "Testar acesso"); }
       var inner = (d && d.internal) || {};
       var pub = (d && d.public) || {};
-      if (inner.ok){
-        toast(tr("vpn.ok_test", "Acesso interno OK") + " · HTTP " + (inner.http || "") + " · " + (inner.seconds || "") + "s", "success");
-      } else if (pub.ok){
-        toast(tr("vpn.public_only", "VPN ativa, mas o acesso interno falhou") + " · HTTP " + (pub.http || ""), "warn");
+      var res = $("vpn-test-result");
+      var lines = [];
+      if (d && d.error) lines.push("⚠️ " + d.error);
+      lines.push("IP direto: " + ((d && d.direct_ip) || "—"));
+      lines.push("IP pela VPN: " + ((d && d.proxy_ip) || "—") + ((d && d.exit_ip_differs) ? "  [diferente]" : "  [igual]"));
+      lines.push("www.ufv.br: " + (pub.http || "falhou"));
+      lines.push("sistemas.ufv.br: " + (inner.http || "falhou"));
+      lines.push("TUN: " + ((d && d.tun_ip) || "—") + " · modo: " + ((d && d.full_tunnel) ? "total" : "split"));
+      if (inner.error) lines.push("interno: " + inner.error);
+      if (res){ res.textContent = lines.join("\\n"); res.classList.add("show"); }
+
+      if (d && d.verdict === "vpn"){
+        toast(tr("vpn.verdict_vpn", "VPN confirmada — o tráfego está saindo pela UFV."), "success");
+      } else if (d && d.verdict === "proxy_only"){
+        toast(tr("vpn.verdict_proxy_only", "Proxy ativo, mas o IP de saída é o mesmo — split tunnel ou VPN não está roteando."), "warn");
       } else {
-        var why = inner.error || pub.error || (d && d.error) || "";
-        toast(tr("vpn.fail_test", "Acesso interno falhou") + (why ? ": " + why : ""), "error");
+        toast(tr("vpn.verdict_no_proxy", "O proxy não respondeu — a VPN pode não estar conectada."), "error");
       }
     }).catch(function(){
       if (btn){ btn.disabled = false; btn.textContent = tr("vpn.test", "Testar acesso"); }
@@ -6240,8 +6293,8 @@ def create_wrapper_html(
       var answered = false;
       try { answered = !!localStorage.getItem("ufvai_vpn_answered"); } catch(e){}
       if (answered){ clearInterval(timer); return; }
-      if (visible($("terms-overlay")) || visible($("welcome-overlay")) || visible($("onboard-overlay"))){
-        if (tries > 600) clearInterval(timer);   // ~6 min de tolerância
+      if (visible($("terms-overlay")) || visible($("welcome-overlay")) || visible($("autosave-overlay"))){
+        tries = 0;
         return;
       }
       clearInterval(timer);
@@ -6249,8 +6302,13 @@ def create_wrapper_html(
         .then(function(r){ return r.json(); })
         .then(function(st){
           render(st);
-          if (st && st.should_ask) show(ASK, true);
-        }).catch(function(){});
+          if (st && st.should_ask){
+            window.UFVAI_VPN_STATE = "asking";
+            show(ASK, true);
+          } else {
+            window.UFVAI_VPN_STATE = "skip";
+          }
+        }).catch(function(){ window.UFVAI_VPN_STATE = "skip"; });
     }, 600);
   }
 
@@ -6258,8 +6316,13 @@ def create_wrapper_html(
     .then(function(r){ return r.json(); })
     .then(function(st){
       render(st);
-      if (st && st.should_ask) arm();
-    }).catch(function(){});
+      if (st && st.should_ask){
+        window.UFVAI_VPN_STATE = "unknown";
+        arm();
+      } else {
+        window.UFVAI_VPN_STATE = "skip";
+      }
+    }).catch(function(){ window.UFVAI_VPN_STATE = "skip"; });
 })();
 </script>
 
@@ -6758,6 +6821,9 @@ def create_wrapper_html(
             "vpn.system_on": "Modo total ativado. Recarregando…",
             "vpn.system_badge": "todo o UFVAI na VPN",
             "vpn.system_off": "Modo total desativado.",
+            "vpn.verdict_vpn": "VPN confirmada — o tráfego está saindo pela UFV.",
+            "vpn.verdict_proxy_only": "Proxy ativo, mas o IP de saída é o mesmo — split tunnel ou VPN não está roteando.",
+            "vpn.verdict_no_proxy": "O proxy não respondeu — a VPN pode não estar conectada.",
             "vpn.disconnected_toast": "VPN desconectada.",
             "vpn.forgotten": "Credenciais apagadas.",
             "vpn.guide": "Instruções oficiais da UFV",
@@ -6959,6 +7025,9 @@ def create_wrapper_html(
             "vpn.system_on": "Full mode enabled. Reloading…",
             "vpn.system_badge": "whole UFVAI on the VPN",
             "vpn.system_off": "Full mode disabled.",
+            "vpn.verdict_vpn": "VPN confirmed — traffic is exiting through UFV.",
+            "vpn.verdict_proxy_only": "Proxy is up, but the exit IP is the same — split tunnel or the VPN is not routing.",
+            "vpn.verdict_no_proxy": "The proxy did not respond — the VPN may not be connected.",
             "vpn.disconnected_toast": "VPN disconnected.",
             "vpn.forgotten": "Credentials deleted.",
             "vpn.guide": "Official UFV instructions",
@@ -7160,6 +7229,9 @@ def create_wrapper_html(
             "vpn.system_on": "Modo total activado. Recargando…",
             "vpn.system_badge": "todo el UFVAI en la VPN",
             "vpn.system_off": "Modo total desactivado.",
+            "vpn.verdict_vpn": "VPN confirmada — el tráfico sale por la UFV.",
+            "vpn.verdict_proxy_only": "El proxy está activo, pero la IP de salida es la misma — split tunnel o la VPN no está enrutando.",
+            "vpn.verdict_no_proxy": "El proxy no respondió — la VPN puede no estar conectada.",
             "vpn.disconnected_toast": "VPN desconectada.",
             "vpn.forgotten": "Credenciales eliminadas.",
             "vpn.guide": "Instrucciones oficiales de la UFV",
@@ -7361,6 +7433,9 @@ def create_wrapper_html(
             "vpn.system_on": "Mode total activé. Rechargement…",
             "vpn.system_badge": "tout l'UFVAI sur le VPN",
             "vpn.system_off": "Mode total désactivé.",
+            "vpn.verdict_vpn": "VPN confirmé — le trafic sort par l'UFV.",
+            "vpn.verdict_proxy_only": "Le proxy fonctionne, mais l'IP de sortie est le même — split tunnel ou le VPN ne route pas.",
+            "vpn.verdict_no_proxy": "Le proxy n'a pas répondu — le VPN n'est peut-être pas connecté.",
             "vpn.disconnected_toast": "VPN déconnecté.",
             "vpn.forgotten": "Identifiants supprimés.",
             "vpn.guide": "Instructions officielles de l'UFV",
@@ -7557,6 +7632,9 @@ def create_wrapper_html(
             "vpn.system_on": "全局模式已启用，正在重新加载…",
             "vpn.system_badge": "整个 UFVAI 走 VPN",
             "vpn.system_off": "全局模式已停用。",
+            "vpn.verdict_vpn": "VPN 已确认 — 流量正通过 UFV 出口。",
+            "vpn.verdict_proxy_only": "代理正常，但出口 IP 相同 — 可能是拆分隧道或 VPN 未路由。",
+            "vpn.verdict_no_proxy": "代理无响应 — VPN 可能未连接。",
             "vpn.disconnected_toast": "VPN 已断开。",
             "vpn.forgotten": "凭据已删除。",
             "vpn.guide": "UFV 官方说明",
