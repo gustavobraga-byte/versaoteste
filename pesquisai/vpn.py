@@ -650,7 +650,7 @@ def _resolve_for_proxy(host: str, dns_servers: Iterable[str]) -> list[tuple[int,
     públicos são tentados diretamente via UDP, que o slirp encaminha.
     """
     servers = [s for s in (dns_servers or []) if s]
-    for fallback in ("1.1.1.1", "8.8.8.8"):
+    for fallback in ("10.0.2.3", "1.1.1.1", "8.8.8.8"):
         if fallback not in servers:
             servers.append(fallback)
     for server in servers:
@@ -1514,8 +1514,12 @@ def _connect_netns(
     # (e qualquer processo do namespace) herdaria o resolver do Colab, que
     # não existe lá dentro — e nomes internos da UFV não resolveriam.
     resolv = state_dir() / "resolv.conf"
-    if not resolv.exists():
-        resolv.write_text("nameserver 1.1.1.1\nnameserver 8.8.8.8\n", encoding="utf-8")
+    # 10.0.2.3 = DNS do slirp4netns (sai por tap0, NÃO entra no túnel).
+    # Resolve nomes públicos mesmo em túnel total; o DNS da VPN, quando
+    # empurrado, entra na frente para resolver os nomes internos.
+    resolv.write_text(
+        "nameserver 10.0.2.3\nnameserver 1.1.1.1\n", encoding="utf-8"
+    )
     ns_proc = subprocess.Popen(
         [
             "unshare", "-Urnm", "sh", "-c",
@@ -1604,7 +1608,7 @@ def _connect_netns(
         try:
             resolv.write_text(
                 "\n".join(f"nameserver {s}" for s in dns)
-                + "\nnameserver 1.1.1.1\n",
+                + "\nnameserver 10.0.2.3\nnameserver 1.1.1.1\n",
                 encoding="utf-8",
             )
         except OSError:
@@ -1977,6 +1981,7 @@ def test(proxy: str = "", timeout: int = 15, url: str = "") -> dict:
         full = bool(_STATE.get("full_tunnel", False))
         tun = _STATE.get("tun_ip", "")
         routes = list(_STATE.get("routes") or [])
+        dns = list(_STATE.get("dns") or [])
         dns = list(_STATE.get("dns") or [])
     use_ns = bool(mode == "netns" and ns_pid and _pid_alive(int(ns_pid)))
     if not proxy and not use_ns:

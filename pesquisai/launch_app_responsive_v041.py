@@ -6215,6 +6215,7 @@ def create_wrapper_html(
       lines.push("www.ufv.br: " + (pub.http || "falhou"));
       lines.push("sistemas.ufv.br: " + (inner.http || "falhou"));
       lines.push("TUN: " + ((d && d.tun_ip) || "—") + " · modo: " + ((d && d.full_tunnel) ? "total" : "split") + " · caminho: " + ((d && d.path) || "—"));
+      lines.push("DNS: " + (((d && d.dns) || []).join(", ") || "— (slirp 10.0.2.3)"));
       if (d && d.dns && d.dns.length) lines.push("DNS da VPN: " + d.dns.join(", "));
       if (d && d.diag_internal && d.diag_internal.ip) lines.push("sistemas.ufv.br → " + d.diag_internal.ip + (d.diag_internal.route ? " · " + d.diag_internal.route : ""));
       if (d && d.diag_public && d.diag_public.ip) lines.push("www.ufv.br → " + d.diag_public.ip + (d.diag_public.route ? " · " + d.diag_public.route : ""));

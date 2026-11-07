@@ -216,6 +216,8 @@ principal e as rotas valem para o sistema. Nesse caso o SOCKS5 é opcional.
 | “Não foi possível criar o namespace” | `unshare` indisponível | `sudo apt-get install -y util-linux` |
 | Teste interno falha, público passa | DNS interno não empurrado | Desconecte/reconecte; veja `dns` nos detalhes técnicos |
 | “A conexão caiu” | Processo do OpenVPN morreu | Clique em **Conectar** de novo |
+| Teste mostra `www.ufv.br: 000` e “Resolving timed out” | O DNS do namespace não resolve | A 0.7.11 usa **10.0.2.3** (DNS do slirp) para nomes públicos; `sistemas.ufv.br` exige o DNS empurrado pela VPN (veja `DNS` nos detalhes e `dhcp-option DNS` no log) |
+| `IP pela VPN: —` / `www.ufv.br: 000` | Proxy sem DNS ou VPN sem rota | Confira `TUN`, `DNS` e o log; em túnel total, 1.1.1.1 pode ser bloqueado — o fallback 10.0.2.3 resolve públicos |
 
 Logs:
 
