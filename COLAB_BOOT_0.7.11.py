@@ -1,10 +1,9 @@
 # ═══════════════════════════════════════════════════════════════════════
-# UFVAI 0.7.11-web — BOOT LOCAL (usa a árvore do Drive, sem git clone)
+# UFVAI 0.7.11-web — BOOT LOCAL (própria pasta: clone do repositório ou Drive)
 # ═══════════════════════════════════════════════════════════════════════
-# Use esta célula NO LUGAR da célula antiga que fazia `git clone` do
-# repositório. Ela copia **esta pasta** (a que contém este arquivo:
-# `UFVAI-v0.7.11-web/`) para /tmp/pesquisai e inicia o UFVAI com a
-# interface web do OpenCode na janela principal.
+# Rode esta célula na MESMA pasta deste arquivo (clone do repositório ou
+# `UFVAI-v0.7.11-web/` do Drive). Ela copia **essa pasta** para
+# /tmp/pesquisai e inicia o UFVAI com a interface web do OpenCode.
 #
 # ⚠️ IMPORTANTE: rode depois de um **Runtime → Restart session** (ou
 # "Desconectar e excluir ambiente"). Sem reiniciar, o wrapper antigo

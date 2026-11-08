@@ -1,0 +1,25 @@
+Correção do repositório versaoteste — UI web em vez do ttyd
+
+PROBLEMA
+- O badge "Começar agora" do README apontava para o repositório antigo
+  (gustavobraga-byte/PesquisAI). Quem clicava rodava a 0.7.10, que não tem
+  ocweb.py, e via o ttyd.
+- Mesmo abrindo o notebook certo, se /tmp/pesquisai já existisse (clone de
+  outra versão/origem), o `git pull` mantinha o código antigo.
+
+O QUE SUBSTITUIR NO REPOSITÓRIO (mesmos caminhos)
+- README.md                     (links/badge/clone para versaoteste)
+- PesquisAI.ipynb               (clone à prova de árvore velha + checagem da 8001)
+- COLAB_BOOT_0.7.11.ipynb       (agora roda o .py da própria pasta)
+- COLAB_BOOT_0.7.11.py          (resolve a árvore pela pasta do arquivo)
+- debs/*.deb + SHA256SUMS       (o README aponta para o deb web2)
+
+COMO TESTAR (ambiente novo)
+1. Runtime → Reiniciar sessão.
+2. Abrir:
+   https://colab.research.google.com/github/gustavobraga-byte/versaoteste/blob/main/PesquisAI.ipynb
+3. Rodar a célula. A janela da porta 8001 deve abrir com o app web.
+   Conferir: https://<host>/proxy/8002/__ufvai_ready  → {"ready": true}
+
+Se a porta 8001 já estiver em uso, a célula para e pede o restart (a interface
+antiga é uma thread do kernel e não pode ser substituída sem reiniciar).
