@@ -12,7 +12,10 @@ O QUE SUBSTITUIR NO REPOSITÓRIO (mesmos caminhos)
 - PesquisAI.ipynb               (clone à prova de árvore velha + checagem da 8001)
 - COLAB_BOOT_0.7.11.ipynb       (agora roda o .py da própria pasta)
 - COLAB_BOOT_0.7.11.py          (resolve a árvore pela pasta do arquivo)
-- debs/*.deb + SHA256SUMS       (o README aponta para o deb web2)
+- pesquisai/ocweb.py            (boot.js/sessão + credenciais no fetch)
+- pesquisai/launch_app.py       (grava /tmp/ufvai-current-session)
+- pesquisai/constants.py        (CURRENT_SESSION_FILE)
+- debs/*.deb + SHA256SUMS       (web3)
 
 COMO TESTAR (ambiente novo)
 1. Runtime → Reiniciar sessão.

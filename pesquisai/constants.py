@@ -79,6 +79,8 @@ TERMINAL_PORT: int = 8000
 WRAPPER_PORT: int = 8001
 # v0.7.11-web: proxy da SPA do OpenCode (interface web no lugar do ttyd)
 OCWEB_PORT: int = 8002
+# v0.7.11-web3: sessão atual (a SPA abre direto nela)
+CURRENT_SESSION_FILE: str = "/tmp/ufvai-current-session"
 
 # ── Skills registradas ─────────────────────────────────────
 # Formato: (repo_url, nome_destino, requerida)

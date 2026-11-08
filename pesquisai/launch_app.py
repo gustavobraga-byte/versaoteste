@@ -27,7 +27,7 @@ except ImportError:
 
 from .constants import (
     TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, TUI_JSON, CLI_JSON,
-    OPENCODE_DB_PATH, OCWEB_PORT, logger,
+    OPENCODE_DB_PATH, OCWEB_PORT, CURRENT_SESSION_FILE, logger,
 )
 from .jokes import next_joke
 from .opencode_config import (
@@ -132,6 +132,19 @@ def _set_lang_only(lang: str, source: str = "browser") -> None:
     _sync_terminal_locale(lang)
 
 
+def _persist_current_session(session_id: str | None) -> None:
+    """Grava a sessão que a interface web deve abrir (lida por ocweb)."""
+    try:
+        sid = str(session_id or "").strip()
+        if sid:
+            with open(CURRENT_SESSION_FILE, "w", encoding="utf-8") as fh:
+                fh.write(sid)
+        elif os.path.exists(CURRENT_SESSION_FILE):
+            os.remove(CURRENT_SESSION_FILE)
+    except OSError:
+        pass
+
+
 def _remember_ttyd_session(session_id: str | None) -> None:
     """Registra a sessão que o terminal passou a exibir (restore/comando).
 
@@ -140,6 +153,7 @@ def _remember_ttyd_session(session_id: str | None) -> None:
     global _current_ttyd_session
     sid = str(session_id or "").strip()
     _current_ttyd_session = sid or None
+    _persist_current_session(sid)
     if sid:
         remember_preflight_session(sid)
 
@@ -2340,6 +2354,7 @@ def _build_ttyd_cmd(lang: str | None = None, session_id: str | None = None,
             else:
                 _mark_greeting_pending(str(session_id), full_lang)
         _current_ttyd_session = str(session_id)
+        _persist_current_session(str(session_id))
         bash_cmd = f"cd \"{project_dir}\" && {opencode_bin} --session \"{session_id}\" {_yolo} ; exec bash"
     else:
         _current_ttyd_session = None
@@ -6546,6 +6561,7 @@ def launch():
         
         boot.active("Encerrando sessões anteriores", 94)
         kill_previous()
+        _persist_current_session(None)
         boot.done(95)
         
         boot.active("Iniciando terminal interativo", 96)

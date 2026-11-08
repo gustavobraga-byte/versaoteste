@@ -29,6 +29,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .constants import CURRENT_SESSION_FILE
+
 OCWEB_PORT: int = 8002
 UPSTREAM_HOST: str = "127.0.0.1"
 
@@ -130,7 +132,7 @@ def _basic(password: str) -> str:
     return "Basic " + base64.b64encode(raw).decode("ascii")
 
 
-def _inject_html(data: bytes) -> bytes:
+def _inject_html(data: bytes, session_id: str = "") -> bytes:
     text = data.decode("utf-8", errors="replace")
     text = text.replace(
         "<title data-sm>OpenCode</title>",
@@ -139,8 +141,52 @@ def _inject_html(data: bytes) -> bytes:
     if "</head>" in text:
         text = text.replace("</head>", _THEME + "</head>", 1)
     if "</body>" in text:
-        text = text.replace("</body>", _BADGE + "</body>", 1)
+        text = text.replace("</body>", _BOOT_TAG + _BADGE + "</body>", 1)
     return text.encode("utf-8")
+
+
+
+_BOOT_JS = """(function(){
+  try{var f=window.fetch;window.fetch=function(u,o){o=o||{};if(o.credentials===undefined||o.credentials==="omit")o.credentials="same-origin";return f.call(this,u,o)}}catch(e){}
+  function b64(s){return btoa(unescape(encodeURIComponent(s))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}
+  function key(){var a=document.querySelector('a[href*="/server/"][href*="/session/"]');if(!a)return "";var m=(a.getAttribute("href")||"").match(/\\/server\\/([^\\/]+)\\/session\\//);return m?m[1]:""}
+  var n=0,t=setInterval(function(){
+    n++;
+    if(location.pathname!=="/"){clearInterval(t);return}
+    var k=key();if(!k&&n>=6)k=b64(location.origin);
+    if(!k){if(n>40)clearInterval(t);return}
+    clearInterval(t);
+    fetch("/__ufvai/session",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){
+      if(d&&d.sid)location.replace("/server/"+k+"/session/"+d.sid);
+    }).catch(function(){});
+  },700);
+})();"""
+
+_BOOT_TAG = '<script src="/__ufvai/boot.js"></script>'
+
+
+def current_session() -> str:
+    """Sessão que a interface deve abrir (gravada por launch_app)."""
+    try:
+        return Path(CURRENT_SESSION_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _session_exists(host: str, port: int, password: str, sid: str) -> bool:
+    if not sid:
+        return False
+    conn = http.client.HTTPConnection(host, port, timeout=3)
+    try:
+        conn.request("GET", f"/api/session/{sid}",
+                     headers={"Authorization": _basic(password)})
+        resp = conn.getresponse()
+        resp.read()
+        return resp.status == 200
+    except OSError:
+        return False
+    finally:
+        conn.close()
 
 
 # ── proxy HTTP/SSE/WebSocket ─────────────────────────────────
@@ -242,9 +288,38 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _boot_js(self) -> None:
+        body = _BOOT_JS.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _session_info(self) -> None:
+        host, port, password = service_info()
+        sid = current_session()
+        if not _session_exists(host, port, password, sid):
+            sid = ""
+        body = json.dumps({"sid": sid}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _handle(self, method: str) -> None:
-        if self.path.split("?", 1)[0] == "/__ufvai_ready":
+        rota = self.path.split("?", 1)[0]
+        if rota == "/__ufvai_ready":
             self._health()
+            return
+        if rota == "/__ufvai/boot.js":
+            self._boot_js()
+            return
+        if rota == "/__ufvai/session":
+            self._session_info()
             return
 
         if self.headers.get("Upgrade", "").lower() == "websocket":
@@ -313,7 +388,10 @@ class _Handler(BaseHTTPRequestHandler):
 
             data = resp.read()
             if ctype.startswith("text/html") and resp.status == 200:
-                data = _inject_html(data)
+                sid = current_session()
+                if not _session_exists(host, port, password, sid):
+                    sid = ""
+                data = _inject_html(data, sid)
 
             self.send_response(resp.status)
             for key, value in resp.getheaders():
