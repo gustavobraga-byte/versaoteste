@@ -218,7 +218,35 @@ class _Handler(BaseHTTPRequestHandler):
         finally:
             upstream.close()
 
+    def _health(self) -> None:
+        """``/__ufvai_ready`` — estado do proxy e do motor, com CORS.
+
+        Serve de health-check independente do wrapper (o boot pode consultar
+        direto a porta 8002) e evita depender de uma rota ``/api/*`` que o
+        motor possa reivindicar no futuro.
+        """
+        host, port, _ = service_info()
+        body = json.dumps(
+            {
+                "ready": bool(port) and ready(self.server.server_address[1], timeout=0.25),
+                "proxy": "ufvai-ocweb",
+                "upstream": f"http://{host}:{port}" if port else "",
+                "pid": os.getpid(),
+            }
+        ).encode("utf-8")
+        self.send_response(200 if port else 503)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _handle(self, method: str) -> None:
+        if self.path.split("?", 1)[0] == "/__ufvai_ready":
+            self._health()
+            return
+
         if self.headers.get("Upgrade", "").lower() == "websocket":
             host, port, password = self._upstream()
             self._websocket(host, port, password)

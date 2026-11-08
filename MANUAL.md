@@ -1527,6 +1527,10 @@ terminal `ttyd`. O proxy `pesquisai/ocweb.py` (porta **8002**) lê o
 `service.json`, injeta o **Basic auth** e repassa `/_assets`, `/api/*` e o SSE
 `/api/event`; o navegador nunca recebe a senha.
 
+> **Revisão `web2`:** a célula `COLAB_BOOT_0.7.11.py` agora copia a própria
+> pasta (antes copiava `UFVAI-v0.7.11`, sem a UI web) e aborta com aviso se a
+> porta 8001 já estiver ocupada por uma sessão antiga.
+
 O tema do UFVAI é aplicado por CSS sobre os tokens `--v2-*` (navy/dourado/
 creme, claro e escuro), com barra superior e badge **UFV·AI**. O `ttyd`
 continua ativo em segundo plano como fallback. Guia completo:

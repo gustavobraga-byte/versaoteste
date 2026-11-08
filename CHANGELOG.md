@@ -37,6 +37,19 @@
 - Validação HTTP real: HTML 200 com tema injetado, `/_assets` 200 (915 KB),
   `/api/session` 200 e `/api/event` em streaming.
 
+### 🩹 Correção (revisão `web2`)
+
+- **Causa do “continua abrindo o ttyd”:** `COLAB_BOOT_0.7.11.py` copiava a
+  árvore fixa `UFVAI-v0.7.11` (sem a UI web) para `/tmp/pesquisai`, mesmo
+  quando a célula era executada dentro de `UFVAI-v0.7.11-web/`.
+- A célula agora resolve a origem pela própria pasta (ou pela pasta atual que
+  contenha `pesquisai/ocweb.py`) e **aborta com instrução clara** quando a
+  porta 8001 já está ocupada por uma sessão antiga — antes o bind falhava
+  dentro de uma thread e o wrapper antigo continuava servindo.
+- `ocweb` ganhou `GET /__ufvai_ready` (JSON + CORS): health-check do proxy e
+  do motor, útil para diagnóstico e para o boot.
+- Testes: 16 (inclui health-check e a checagem da célula de boot).
+
 ### ⚠️ Limitações
 - A UI é a do OpenCode (não uma tela própria): a customização é visual.
 - Sem navegador real neste ambiente; validação por HTTP + testes.

@@ -138,3 +138,29 @@ Cobrem: leitura do `service.json`, Basic auth, injeção de tema/badge/título,
   `GET /api/ocweb_ready`
 - `pesquisai/launch_app_responsive_v041.py` — `create_wrapper_html(..., web_mode=True)`
 - `tests/test_v0711_ocweb.py`
+
+---
+
+## 9. Diagnóstico: “continua abrindo o ttyd”
+
+Se a janela principal ainda mostra o terminal, verifique nesta ordem:
+
+1. **Célula de boot errada (causa mais comum até a revisão `web2`).**
+   A célula copiava sempre `UFVAI-v0.7.11/` para `/tmp/pesquisai`, mesmo
+   aberta dentro de `UFVAI-v0.7.11-web/`. A versão corrigida resolve a
+   origem pela pasta do próprio arquivo (ou pela pasta atual que contenha
+   `pesquisai/ocweb.py`).
+2. **Sessão sem restart.** O servidor antigo continua na porta 8001 e o bind
+   novo falha dentro de uma thread (sem erro visível). A célula corrigida
+   detecta a porta ocupada e manda reiniciar o runtime.
+3. **Confirmação rápida:**
+
+   ```bash
+   curl -s http://127.0.0.1:8002/__ufvai_ready        # {"ready": true, ...}
+   curl -s http://127.0.0.1:8001/ | grep -o 'data-terminal-url="[^"]*"'
+   # deve conter 8002, não 8000
+   ```
+
+4. Se `data-terminal-url` ainda apontar para 8000, o HTML em
+   `/tmp/pesquisai-wrapper/index.html` é antigo: rode o boot de novo após
+   **Runtime → Restart session**.
