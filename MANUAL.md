@@ -1520,6 +1520,18 @@ Guia completo (arquitetura, API, CLI, testes e diagnóstico):
 
 ---
 
+## 11-B. 🖥️ Interface web do OpenCode (v0.7.11-web)
+
+Variante da 0.7.11: a janela principal mostra a **SPA do OpenCode** em vez do
+terminal `ttyd`. O proxy `pesquisai/ocweb.py` (porta **8002**) lê o
+`service.json`, injeta o **Basic auth** e repassa `/_assets`, `/api/*` e o SSE
+`/api/event`; o navegador nunca recebe a senha.
+
+O tema do UFVAI é aplicado por CSS sobre os tokens `--v2-*` (navy/dourado/
+creme, claro e escuro), com barra superior e badge **UFV·AI**. O `ttyd`
+continua ativo em segundo plano como fallback. Guia completo:
+[`docs/OPENCODE_WEB.md`](docs/OPENCODE_WEB.md).
+
 ## 12. Histórico de Versões
 
 Resumo das versões da série 0.7.x (detalhes completos no `CHANGELOG.md` do repositório):

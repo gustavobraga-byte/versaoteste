@@ -247,8 +247,9 @@ Homepage: https://github.com/gustavobraga-byte/PesquisAI
 Description: UFVAI - agente de pesquisa científica offline (engine PesquisAI)
  UFVAI é um agente de pesquisa científica com foco em dados
  brasileiros (IBGE, DataSUS, agroBR), normas UFV/ABNT e integridade
- científica. A interface web sobe em http://localhost:8001 e o
- terminal integrado na porta 8000.
+ científica. A interface sobe em http://localhost:8001 e exibe a
+ interface web do OpenCode (proxy local na porta 8002); o terminal
+ ttyd continua na porta 8000 como reserva.
  .
  Versão offline: os dados ficam em ~/PesquisAI/ (vault Obsidian,
  outputs, backups, logs). Nada é sincronizado com a nuvem.

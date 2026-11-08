@@ -77,6 +77,8 @@ LEGACY_THEME_FILES: tuple[str, ...] = ("pesquisai-light.json",)
 # ── Portas ─────────────────────────────────────────────────
 TERMINAL_PORT: int = 8000
 WRAPPER_PORT: int = 8001
+# v0.7.11-web: proxy da SPA do OpenCode (interface web no lugar do ttyd)
+OCWEB_PORT: int = 8002
 
 # ── Skills registradas ─────────────────────────────────────
 # Formato: (repo_url, nome_destino, requerida)

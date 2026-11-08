@@ -537,6 +537,7 @@ def create_wrapper_html(
     drive_url: str,
     session_token: str | None = None,
     boot_id: str | None = None,
+    web_mode: bool = False,
 ) -> str:
     """Cria a versão v0.4.1 do wrapper HTML do PesquisAI.
 
@@ -4417,7 +4418,7 @@ def create_wrapper_html(
       maxMs = maxMs || 30000;
       while (Date.now() - t0 < maxMs) {
         try {
-          const r = await fetch(BASE + "/api/ttyd_ready", { cache: "no-store" });
+          const r = await fetch(BASE + "{__READY_URL__}", { cache: "no-store" });
           if (r.ok) {
             const d = await r.json();
             if (d.ready) { if (d.pid) _ttydPid = d.pid; return true; }
@@ -4454,7 +4455,7 @@ def create_wrapper_html(
       if (!_ttydWatch) {
         _ttydWatch = setInterval(async () => {
           try {
-            const r = await fetch(BASE + "/api/ttyd_ready", { cache: "no-store" });
+            const r = await fetch(BASE + "{__READY_URL__}", { cache: "no-store" });
             if (!r.ok) return;
             const d = await r.json();
             if (!d.ready || !d.pid) return;
@@ -6647,6 +6648,7 @@ def create_wrapper_html(
 
     # Substitui placeholders do template (feito DEPOIS da f-string)
     html = html.replace("{__TERMINAL_URL__}", terminal_url)
+    html = html.replace("{__READY_URL__}", "/api/ocweb_ready" if web_mode else "/api/ttyd_ready")
     html = html.replace("{__DRIVE_URL__}", drive_url)
     html = html.replace("{__VERSION__}", VERSION)
     # v0.6.8: garantir que qualquer variante do placeholder seja substituída

@@ -1,5 +1,81 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web] — 2026-11-08 — 🖥️ Interface web do OpenCode no lugar do ttyd
+
+### 🎯 Pedido
+- *"fazer uma versão 0.7.11 usando a versão web do opencode no lugar de mostrar
+  o ttyd na janela. Personalize essa visão com os detalhes do ufvai (cores,
+  etc.)"*.
+
+### 🧱 Implementação
+- **`pesquisai/ocweb.py`** (novo): proxy HTTP/1.1 em `0.0.0.0:8002` que
+  publica a SPA do OpenCode (loopback + Basic auth) com:
+  - **Basic auth injetada** a partir do `service.json` (o navegador nunca vê a
+    senha);
+  - repasse de `/_assets`, `/icons`, `/api/*` e **SSE** (`/api/event`) em
+    chunks;
+  - **túnel WebSocket** para o PTY (quando usado);
+  - injeção de **tema UFVAI** (`--v2-*`: navy/dourado/creme, claro e escuro),
+    barra degradê, badge **UFV·AI** e título “UFVAI · OpenCode”;
+  - página 503 amigável (auto-refresh 3 s) enquanto o motor não sobe.
+- **`launch_app.py`**: inicia o proxy no boot, aponta o iframe para
+  `proxyPort(8002)` e expõe `GET /api/ocweb_ready` (proxy + upstream).
+- **`launch_app_responsive_v041.py`**: `create_wrapper_html(..., web_mode=True)`
+  troca o polling do splash de `/api/ttyd_ready` para `/api/ocweb_ready`.
+- **`constants.py`**: `OCWEB_PORT = 8002`.
+- O `ttyd` continua sendo iniciado como **fallback** (não aparece na janela).
+
+### 🎨 Tema
+- Tokens `--v2-*` sobrescritos em claro/escuro; tipografia do sistema; barra
+  superior navy→dourado; badge fixo; título da aba.
+- O botão de tema do próprio OpenCode continua controlando claro/escuro.
+
+### 🧪 Testes
+- `tests/test_v0711_ocweb.py` — **9 testes** (service.json, Basic auth,
+  injeção de tema/badge/título, `ready()` sem serviço, status e o HTML do
+  wrapper em `web_mode`).
+- Validação HTTP real: HTML 200 com tema injetado, `/_assets` 200 (915 KB),
+  `/api/session` 200 e `/api/event` em streaming.
+
+### ⚠️ Limitações
+- A UI é a do OpenCode (não uma tela própria): a customização é visual.
+- Sem navegador real neste ambiente; validação por HTTP + testes.
+- O `ttyd` segue rodando em segundo plano como fallback.
+
+## [0.7.12] — 2026-11-08 — 🪟 Windows (.exe + Menu Iniciar) e ações no menu do Linux
+
+### 🎯 Pedido do autor
+- *"confira a versão offline do ufvai. Ela deve ter um botão no menu iniciar que inicia ela. Também crie uma versão compatível com windows exe com iniciador no menu iniciar."*
+
+### 🔎 Conferência do .deb (modo offline)
+- O pacote **já instalava** o atalho: `build-deb.sh` copia `packaging/ufvai.desktop`
+  para `/usr/share/applications/` e os ícones em
+  `/usr/share/icons/hicolor/{scalable,256x256,64x64}/apps/` — confirmado com
+  `dpkg-deb -c` sobre `pesquisai_0.7.11-offline1_amd64.deb`.
+- **Lacuna corrigida:** com `Terminal=false` o clique no menu não dava retorno
+  visível. Agora `Exec=ufvai --gui` — inicia, garante que o navegador abra e
+  avisa pela área de notificação (`notify-send`, quando existe).
+- Novas **ações** no atalho: `Abrir`, `Ver estado`, `Diagnóstico` e `Encerrar`.
+
+### 🪟 Windows
+- Pipeline completo em `packaging/windows/`: `ufvai_win.py` (entrypoint),
+  `ufvai.spec` (PyInstaller, onefile `--windowed`), `installer.iss` (Inno Setup
+  com atalho `{autoprograms}` no **Menu Iniciar**), `build_exe.ps1`/`build_exe.bat`,
+  `requirements-windows.txt` e `.github/workflows/build-windows.yml`.
+- ⚠️ **Limitação:** este runtime é Linux e o PyInstaller **não** compila de forma
+  cruzada para Windows. O `.exe` é gerado executando o build em uma máquina
+  Windows ou pelo workflow do GitHub Actions (que publica o artefato).
+
+### 🔧 Compatibilidade de código
+- `launch_app.py`: `os.getuid()` → `getattr(os, "getuid", lambda: 0)()`.
+- `launch_app.py`: `signal.SIGKILL` → `getattr(signal, "SIGKILL", signal.SIGTERM)`.
+- `assets/ufvai.ico` gerado a partir de `ufvai-256.png` (16→256 px).
+
+### 🧪 Testes
+- `tests/test_v0712_menu_iniciar.py` — **14 passed** (entry válido, ações com
+  `Exec`, sintaxe bash do launcher, instalador com `{autoprograms}`, `.ico`
+  válido, workflow e os dois guards de Windows).
+
 ## [0.7.11] — 2026-11-06 — 🛡 VPN da UFV no Colab (OpenVPN em namespace isolado)
 
 ### 🎯 Pedido do autor

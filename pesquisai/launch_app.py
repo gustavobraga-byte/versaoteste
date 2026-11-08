@@ -27,7 +27,7 @@ except ImportError:
 
 from .constants import (
     TERMINAL_PORT, WRAPPER_PORT, WRAPPER_DIR, VERSION, TUI_JSON, CLI_JSON,
-    OPENCODE_DB_PATH, logger,
+    OPENCODE_DB_PATH, OCWEB_PORT, logger,
 )
 from .jokes import next_joke
 from .opencode_config import (
@@ -1530,7 +1530,9 @@ def _prepare_ttyd_touch_index(env: dict) -> str | None:
         candidates.append(os.path.join(_pesquisai_tmp, "ttyd_touch.html"))
     except Exception:
         pass
-    candidates.append(os.path.join(_tf.gettempdir(), f"ttyd_touch_{os.getuid()}.html"))
+    # v0.7.12: Windows não tem os.getuid() (era AttributeError fora do try).
+    _uid = getattr(os, "getuid", lambda: 0)()
+    candidates.append(os.path.join(_tf.gettempdir(), f"ttyd_touch_{_uid}.html"))
     candidates.append("/tmp/ttyd_touch.html")
     index_path = None
     for _cand in candidates:
@@ -3611,6 +3613,19 @@ def start_wrapper_server():
                     # reinício do servidor e recarregar o iframe sozinho.
                     "pid": getattr(_TTYD_PROC, "pid", None) if ready else None,
                 })
+                return
+
+            if p == "/api/ocweb_ready":
+                # v0.7.11-web: o splash da UI espera este endpoint (proxy 8002)
+                try:
+                    from . import ocweb
+                    _st = ocweb.status()
+                    _ready = bool(_st.get("running")) and ocweb.ready(
+                        OCWEB_PORT, timeout=0.25
+                    )
+                except Exception:
+                    _st, _ready = {}, False
+                self._json(200, {"ready": bool(_ready), "port": OCWEB_PORT, **_st})
                 return
 
             if p == "/api/autosave":
@@ -6328,9 +6343,11 @@ def _shutdown_kill_keepalive() -> bool:
                     os.kill(pid, 0)
                 except OSError:
                     return True
-            os.kill(pid, signal.SIGKILL)
+            # v0.7.12: no Windows o signal.SIGKILL não existe (os.kill só
+            # aceita SIGTERM) — o ValueError aqui derrubava o shutdown.
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
             return True
-        except OSError:
+        except (OSError, ValueError, AttributeError):
             pass
 
     # Fallback: marcador na cmdline (PID file ausente/inválido)
@@ -6541,16 +6558,27 @@ def launch():
         boot.done(97)
         
         if IN_COLAB and output:
-            terminal_url = output.eval_js(f"google.colab.kernel.proxyPort({TERMINAL_PORT})")
+            terminal_url = output.eval_js(f"google.colab.kernel.proxyPort({OCWEB_PORT})")
             banner_url = output.eval_js(f"google.colab.kernel.proxyPort({WRAPPER_PORT})")
         else:
-            terminal_url = f"http://localhost:{TERMINAL_PORT}"
+            terminal_url = f"http://localhost:{OCWEB_PORT}"
             banner_url = f"http://localhost:{WRAPPER_PORT}"
-        
+
+        # v0.7.11-web: a janela principal mostra a SPA do OpenCode (não o ttyd).
+        # O proxy em 8002 injeta Basic auth + tema UFVAI e repassa SSE/assets.
+        try:
+            from . import ocweb
+            if not ocweb.start(OCWEB_PORT):
+                logger.warning("ocweb: porta %s indisponível; a interface web não subiu", OCWEB_PORT)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ocweb: falha ao iniciar o proxy (%s)", exc)
+
         boot.active("Preparando a interface web", 98)
         global _SESSION_TOKEN
         _SESSION_TOKEN = secrets.token_urlsafe(32)
-        create_wrapper_html(terminal_url, _drive_url, session_token=_SESSION_TOKEN)
+        create_wrapper_html(
+            terminal_url, _drive_url, session_token=_SESSION_TOKEN, web_mode=True
+        )
         start_wrapper_server()
         try:
             _tel_event("app_started", {"version": VERSION, "lang": _current_lang, "colab": bool(IN_COLAB)})
