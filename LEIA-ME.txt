@@ -1,28 +1,25 @@
-Correção do repositório versaoteste — UI web em vez do ttyd
+Correção do repositório versaoteste — UI web + alternador de console
 
-PROBLEMA
-- O badge "Começar agora" do README apontava para o repositório antigo
-  (gustavobraga-byte/PesquisAI). Quem clicava rodava a 0.7.10, que não tem
-  ocweb.py, e via o ttyd.
-- Mesmo abrindo o notebook certo, se /tmp/pesquisai já existisse (clone de
-  outra versão/origem), o `git pull` mantinha o código antigo.
+SUBSTITUIR NO REPOSITÓRIO (mesmos caminhos)
+- README.md                       (badge/links → versaoteste)
+- PesquisAI.ipynb                 (clone validado + checagem da 8001)
+- COLAB_BOOT_0.7.11.ipynb/.py     (opcional; roda o .py da pasta)
+- pesquisai/ocweb.py              (boot.js/sessão + credenciais no fetch)
+- pesquisai/launch_app.py         (grava /tmp/ufvai-current-session; ttyd_url)
+- pesquisai/constants.py          (CURRENT_SESSION_FILE)
+- pesquisai/launch_app_responsive_v041.py (alternador terminal ↔ web)
+- debs/*.deb + SHA256SUMS         (web4)
 
-O QUE SUBSTITUIR NO REPOSITÓRIO (mesmos caminhos)
-- README.md                     (links/badge/clone para versaoteste)
-- PesquisAI.ipynb               (clone à prova de árvore velha + checagem da 8001)
-- COLAB_BOOT_0.7.11.ipynb       (agora roda o .py da própria pasta)
-- COLAB_BOOT_0.7.11.py          (resolve a árvore pela pasta do arquivo)
-- pesquisai/ocweb.py            (boot.js/sessão + credenciais no fetch)
-- pesquisai/launch_app.py       (grava /tmp/ufvai-current-session)
-- pesquisai/constants.py        (CURRENT_SESSION_FILE)
-- debs/*.deb + SHA256SUMS       (web3)
+O QUE MUDOU
+1. Sessão do projeto: ao abrir, a SPA vai para /server/<chave>/session/<id>
+   e mostra a saudação de /content/drive/My Drive/PesquisAI.
+2. "Can't reach this server": fetch com credentials same-origin.
+3. Botão de histórico virou alternador: web (8002) ↔ terminal (8000).
+   A escolha fica em localStorage("ufvai.console").
 
-COMO TESTAR (ambiente novo)
+TESTE
 1. Runtime → Reiniciar sessão.
 2. Abrir:
    https://colab.research.google.com/github/gustavobraga-byte/versaoteste/blob/main/PesquisAI.ipynb
-3. Rodar a célula. A janela da porta 8001 deve abrir com o app web.
-   Conferir: https://<host>/proxy/8002/__ufvai_ready  → {"ready": true}
-
-Se a porta 8001 já estiver em uso, a célula para e pede o restart (a interface
-antiga é uma thread do kernel e não pode ser substituída sem reiniciar).
+3. Rodar a célula; abrir a porta 8001.
+4. Conferir: .../proxy/8002/__ufvai_ready → {"ready": true}

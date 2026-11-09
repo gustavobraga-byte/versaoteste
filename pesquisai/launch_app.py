@@ -6575,9 +6575,11 @@ def launch():
         
         if IN_COLAB and output:
             terminal_url = output.eval_js(f"google.colab.kernel.proxyPort({OCWEB_PORT})")
+            ttyd_url = output.eval_js(f"google.colab.kernel.proxyPort({TERMINAL_PORT})")
             banner_url = output.eval_js(f"google.colab.kernel.proxyPort({WRAPPER_PORT})")
         else:
             terminal_url = f"http://localhost:{OCWEB_PORT}"
+            ttyd_url = f"http://localhost:{TERMINAL_PORT}"
             banner_url = f"http://localhost:{WRAPPER_PORT}"
 
         # v0.7.11-web: a janela principal mostra a SPA do OpenCode (não o ttyd).
@@ -6593,7 +6595,8 @@ def launch():
         global _SESSION_TOKEN
         _SESSION_TOKEN = secrets.token_urlsafe(32)
         create_wrapper_html(
-            terminal_url, _drive_url, session_token=_SESSION_TOKEN, web_mode=True
+            terminal_url, _drive_url, session_token=_SESSION_TOKEN,
+            web_mode=True, ttyd_url=ttyd_url,
         )
         start_wrapper_server()
         try:

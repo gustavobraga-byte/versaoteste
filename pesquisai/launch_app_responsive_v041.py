@@ -538,6 +538,7 @@ def create_wrapper_html(
     session_token: str | None = None,
     boot_id: str | None = None,
     web_mode: bool = False,
+    ttyd_url: str | None = None,
 ) -> str:
     """Cria a versão v0.4.1 do wrapper HTML do PesquisAI.
 
@@ -1197,8 +1198,8 @@ def create_wrapper_html(
       <button class="tb-icon" onclick="openManual()" title="Manual do UFVAI" data-i18n-title="manual.title">
         <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
       </button>
-      <button class="tb-icon" onclick="openSessions()" title="Histórico de Sessões" data-i18n-title="sessions.title">
-        <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+      <button class="tb-icon" onclick="toggleConsole()" id="console-toggle" title="Alternar terminal / OpenCode web" data-i18n-title="console.toggle">
+        <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/><path d="M7 9l2 2-2 2M12 13h4"/></svg>
       </button>
       <button class="tb-icon" onclick="openShortcuts()" title="Atalhos de Teclado" data-i18n-title="shortcuts.title">
         <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
@@ -1279,7 +1280,7 @@ def create_wrapper_html(
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
     <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openManual(); toggleMobileMenu();">📘 <span data-i18n="manual.title">Manual do UFVAI</span></button>
-    <button class="modal-close" onclick="openSessions(); toggleMobileMenu();">📜 <span data-i18n="sessions.title">Histórico de Sessões</span></button>
+    <button class="modal-close" onclick="toggleConsole(); toggleMobileMenu();">🖥️ <span data-i18n="console.toggle">Alternar terminal / OpenCode web</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
     <button class="modal-close" onclick="openVpn(); toggleMobileMenu();">🛡 <span data-i18n="vpn.title">VPN da UFV</span></button>
@@ -2829,8 +2830,7 @@ def create_wrapper_html(
       const theme = document.documentElement.getAttribute("data-theme") || "pesquisai";
       // v0.6.5: fonte da verdade agora é data-terminal-url (src pode ser
       // about:blank enquanto o splash aguarda /api/ttyd_ready).
-      let origSrc = "";
-      try { origSrc = (fr.dataset && fr.dataset.terminalUrl) || ""; } catch (e) {}
+      let origSrc = _frameUrl(_console);
       if (!origSrc && fr.src && fr.src.indexOf("about:") !== 0) origSrc = fr.src;
       origSrc = (origSrc || "{__TERMINAL_URL__}").split("?")[0];
       if (!origSrc || origSrc === "about:blank") return;
@@ -4373,6 +4373,27 @@ def create_wrapper_html(
     const TERMINAL_URL = (document.getElementById("terminal-frame") || {}).dataset
       ? (document.getElementById("terminal-frame").dataset.terminalUrl || "")
       : "";
+    const WEB_URL = TERMINAL_URL;
+    const TTYD_URL = (function () {
+      var u = "{__TTYD_URL__}";
+      if (u) return u;
+      var o = location.origin || "";
+      if (o.indexOf("://8001-") > 0) return o.replace("://8001-", "://8000-") + "/";
+      if (/:8001$/.test(o)) return o.replace(":8001", ":8000") + "/";
+      return "";
+    })();
+    let _console = localStorage.getItem("ufvai.console") || "web";
+    function _frameUrl(mode) { return mode === "ttyd" && TTYD_URL ? TTYD_URL : WEB_URL; }
+    function applyConsole(mode) {
+      const fr = document.getElementById("terminal-frame");
+      if (!fr) return;
+      _console = (mode === "ttyd" && TTYD_URL) ? "ttyd" : "web";
+      try { localStorage.setItem("ufvai.console", _console); } catch (e) {}
+      const b = document.getElementById("console-toggle");
+      if (b) { b.dataset.mode = _console; b.setAttribute("aria-label", _console); }
+      fr.src = _frameUrl(_console);
+    }
+    function toggleConsole() { applyConsole(_console === "web" ? "ttyd" : "web"); }
 
     function _bootEls() {
       return {
@@ -4451,7 +4472,7 @@ def create_wrapper_html(
       }
       let loaded = false;
       el.frame.onload = () => { loaded = true; hideBootSplash(); };
-      el.frame.src = TERMINAL_URL;
+      el.frame.src = _frameUrl(_console);
       if (!_ttydWatch) {
         _ttydWatch = setInterval(async () => {
           try {
@@ -4465,7 +4486,7 @@ def create_wrapper_html(
             const f = document.getElementById("terminal-frame");
             if (f) {
               try { f.contentWindow.location.reload(); }
-              catch (e) { f.src = TERMINAL_URL; }
+              catch (e) { f.src = _frameUrl(_console); }
             }
           } catch (e) {}
         }, 20000);
@@ -6648,6 +6669,7 @@ def create_wrapper_html(
 
     # Substitui placeholders do template (feito DEPOIS da f-string)
     html = html.replace("{__TERMINAL_URL__}", terminal_url)
+    html = html.replace("{__TTYD_URL__}", ttyd_url or "")
     html = html.replace("{__READY_URL__}", "/api/ocweb_ready" if web_mode else "/api/ttyd_ready")
     html = html.replace("{__DRIVE_URL__}", drive_url)
     html = html.replace("{__VERSION__}", VERSION)
@@ -6736,6 +6758,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Excluir chave de",
             "providers.deleted": "excluído",
             "sessions.refresh": "↻ Atualizar",
+            "console.toggle": "Alternar terminal / OpenCode web",
             "sessions.title": "Histórico de Sessões",
             "sessions.search_placeholder": "🔍 Buscar por id ou conteúdo…",
             "shortcuts.title": "Atalhos de Teclado",
@@ -6942,6 +6965,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Delete key for",
             "providers.deleted": "deleted",
             "sessions.refresh": "↻ Refresh",
+            "console.toggle": "Toggle terminal / OpenCode web",
             "sessions.title": "Session History",
             "sessions.search_placeholder": "🔍 Search by id or content…",
             "shortcuts.title": "Keyboard Shortcuts",
@@ -7148,6 +7172,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Eliminar clave de",
             "providers.deleted": "eliminado",
             "sessions.refresh": "↻ Actualizar",
+            "console.toggle": "Alternar terminal / web de OpenCode",
             "sessions.title": "Historial de Sesiones",
             "sessions.search_placeholder": "🔍 Buscar por id o contenido…",
             "shortcuts.title": "Atajos de Teclado",
@@ -7354,6 +7379,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Supprimer la clé de",
             "providers.deleted": "supprimé",
             "sessions.refresh": "↻ Actualiser",
+            "console.toggle": "Basculer terminal / web OpenCode",
             "sessions.title": "Historique des sessions",
             "sessions.search_placeholder": "🔍 Rechercher par id ou contenu…",
             "shortcuts.title": "Raccourcis clavier",
@@ -7560,6 +7586,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "删除以下提供商的密钥：",
             "providers.deleted": "已删除",
             "sessions.refresh": "↻ 刷新",
+            "console.toggle": "切换终端 / OpenCode 网页",
             "sessions.title": "会话历史",
             "sessions.search_placeholder": "🔍 按 ID 或内容搜索…",
             "shortcuts.title": "键盘快捷键",
