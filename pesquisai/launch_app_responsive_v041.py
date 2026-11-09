@@ -2684,7 +2684,7 @@ def create_wrapper_html(
       { id:"bedrock", name:"AWS Bedrock", env:"AWS_ACCESS_KEY_ID", hint:"AKIA…" },
       { id:"azure", name:"Azure OpenAI", env:"AZURE_OPENAI_API_KEY", hint:"…" },
       { id:"deepseek", name:"DeepSeek", env:"DEEPSEEK_API_KEY", hint:"sk-…" },
-      { id:"google", name:"Google Gemini", env:"GOOGLE_GENERATIVE_AI_API_KEY", hint:"AIza…", recommended:true },
+      { id:"google", name:"Google Gemini", env:"GOOGLE_GENERATIVE_AI_API_KEY", hint:"Cole a chave do Google", recommended:true },
       { id:"groq", name:"Groq", env:"GROQ_API_KEY", hint:"gsk_…" },
       { id:"mistral", name:"Mistral", env:"MISTRAL_API_KEY", hint:"…" },
       { id:"nvidia", name:"Nvidia NIM", env:"NVIDIA_API_KEY", hint:"nvapi-…" },
@@ -5884,7 +5884,7 @@ def create_wrapper_html(
       steps = '<li>Abra a página <b>Chaves de API</b> do Google AI Studio (botão abaixo).</li>' +
               '<li>Clique em <b>Criar chave de API</b> (canto superior direito) e confirme.</li>' +
               '<li>Na linha da chave, clique no <b>ícone de copiar</b>, volte para esta janela e cole no campo.</li>';
-      extra = '<p class="ob-note">A chave começa com <b>AIza</b>. Ao salvar, o modelo padrão vira o ' +
+      extra = '<p class="ob-note">Ao salvar, o modelo padrão vira o ' +
               '<b>Gemini Flash-Lite Latest</b> com esforço <b>high</b> — e continua nos próximos usos.</p>';
     } else if (provider === "nvidia"){
       steps = '<li>Entre em <b>build.nvidia.com</b> com sua conta NVIDIA.</li>' +
@@ -5906,7 +5906,7 @@ def create_wrapper_html(
               '<li>Cole a chave abaixo. O UFVAI não intermedeia pagamento nem cobra por isso.</li>';
     }
     var label = provider === "opencode_go" ? "Abrir opencode.ai/go" : "Abrir " + p.url_label;
-    var ph = provider === "google" ? "AIza…" : (provider === "nvidia" ? "nvapi-…" : "sk-…");
+    var ph = provider === "google" ? "Cole a chave do Google" : (provider === "nvidia" ? "nvapi-…" : "sk-…");
     return '<p class="ob-sub">' + (p.paid ? 'Esta opção é paga. ' : 'Grátis. ') +
         'Crie a chave no site do provedor e cole aqui — o UFVAI guarda cifrado.</p>' +
       '<ol class="ob-steps">' + steps + '</ol>' +

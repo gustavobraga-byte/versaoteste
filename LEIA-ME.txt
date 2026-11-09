@@ -1,34 +1,31 @@
-Correção do repositório versaoteste — sync em tempo real (web8)
+Correção do repositório versaoteste — chave Google, .deb e sync (web9)
 
 SUBSTITUIR NO REPOSITÓRIO (mesmos caminhos)
 - README.md                       (badge/links → versaoteste)
 - PesquisAI.ipynb                 (clone validado + checagem da 8001)
 - COLAB_BOOT_0.7.11.ipynb/.py     (opcional; roda o .py da pasta)
-- pesquisai/ocweb.py              (handshake/cache/sessão ativa/tema/título)
-- pesquisai/launch_app.py         (restore model, órfãs, warmup)
+- pesquisai/ocweb.py              (handshake, cache, sessão ativa, tema)
+- pesquisai/launch_app.py         (engine guard, ttyd PATH, restore model)
 - pesquisai/constants.py          (CURRENT_SESSION_FILE + ACTIVE_SESSION_FILE)
 - pesquisai/launch_app_responsive_v041.py (alternador + tema web)
-- debs/*.deb + SHA256SUMS         (web8)
+- pesquisai/onboarding.py         (chave Google sem prefixo obrigatório)
+- pesquisai/run_fast.py           (boot fail-open + ufvai-engine)
+- debs/*.deb + SHA256SUMS         (web9)
 
-O QUE MUDOU NESTA REVISÃO (web8)
-1. A SPA só dispara provider.sync/model.sync após server.connected. O proxy
-   fecha a 1ª conexão SSE de cada page load (1 s); a reconexão entrega o
-   handshake real quando o listener já existe.
-2. /api/model e /api/provider são pré-buscados no boot e servidos do cache
-   (X-UFVAI-Cache: hit, gzip). Evita o timeout de 15 s do sync.
-3. session.execution.started grava /tmp/ufvai-active-session; a web segue a
-   sessão em execução do terminal em tempo real (janela de 30 s), sem trocar
-   se você está digitando ou "Working".
-4. Mantidas: tema claro/escuro na web, título UFVAI, fallback do catálogo,
-   fila 128, /interrupt em órfãs, sessão do projeto.
+O QUE MUDOU (web9)
+1. Chave do Google NÃO precisa começar com "AIza" — prefixo é heurística;
+   a validação real é no provedor.
+2. Boot do .deb é fail-open: falha em Drive/deps/skills/vault não impede a
+   interface de subir.
+3. Sem o motor OpenCode 2.x, o terminal é pulado e a página 503 orienta
+   "ufvai --engine-install"; o app tenta ufvai-engine antes do curl|bash.
+4. .deb depende de unzip/xz-utils e põe /opt/pesquisai/bin no PATH do ttyd.
+5. Mantidas as correções de sync: reconexão SSE (handshake), cache de
+   modelos/provedores, sessão ativa em tempo real, tema e título UFVAI.
 
 TESTE
-1. Runtime → Reiniciar sessão.
-2. Abrir:
-   https://colab.research.google.com/github/gustavobraga-byte/versaoteste/blob/main/PesquisAI.ipynb
-3. Rodar a célula; abrir a porta 8001.
-4. Conferir: .../proxy/8002/__ufvai/ready   → {"ready": true}
-             .../proxy/8002/__ufvai/catalog → {"ready": true, "scoped_models": >0}
-             .../proxy/8002/__ufvai/diag    → contagens scoped/global
-5. Abrir uma sessão e conferir o seletor de modelos SEM abrir Configurações.
-6. Mandar uma mensagem no terminal e ver a web acompanhar.
+1. Runtime → Reiniciar sessão (Colab) ou `ufvai` (offline).
+2. Abrir a porta 8001.
+3. Conferir .../proxy/8002/__ufvai/catalog e .../diag.
+4. Colar a chave do Google (qualquer formato) e salvar.
+5. Se o terminal não abrir no .deb: `ufvai --engine-install` e `ufvai --doctor`.

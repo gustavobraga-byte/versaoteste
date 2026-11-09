@@ -612,6 +612,12 @@ def _write_theme(theme_name: str) -> None:
 def install_ttyd() -> None:
     # v0.6.9-5: se ttyd já está bundle no .deb, não tenta apt (evita falha offline)
     import shutil as _shutil
+    # v0.7.11-web9: o .deb instala o ttyd em /opt/pesquisai/bin. Se o app for
+    # iniciado fora do launcher (systemd/atalho), o PATH pode não tê-lo.
+    _bundled_bin = "/opt/pesquisai/bin"
+    if os.path.isfile(os.path.join(_bundled_bin, "ttyd")):
+        if _bundled_bin not in os.environ.get("PATH", "").split(":"):
+            os.environ["PATH"] = _bundled_bin + ":" + os.environ.get("PATH", "")
     if _shutil.which("ttyd") or os.path.isfile("/usr/local/bin/ttyd"):
         print("✅ ttyd já instalado — pulando.")
         return
@@ -6701,6 +6707,16 @@ def launch():
     try:
         boot.active("Localizando o núcleo opencode", 82)
         resolve_opencode()
+        try:
+            from .opencode_utils import opencode_major as _opencode_major
+            _engine_ok = _opencode_major() is not None
+        except Exception:  # noqa: BLE001
+            _engine_ok = False
+        if not _engine_ok:
+            logger.error(
+                "Motor OpenCode 2.x ausente — instale com 'ufvai --engine-install'. "
+                "A interface sobe sem terminal até o motor existir."
+            )
         boot.done(85)
         
         # ═══ CARREGAR CHAVES ANTES DE INICIAR O TERMINAL ═══
@@ -6761,20 +6777,23 @@ def launch():
             # v0.7.10: primeiro uso sem chave — o motor só nasce depois que
             # o usuário escolher o provedor e colar a chave no onboarding.
             logger.info("Onboarding pendente: terminal não iniciado (sem chave).")
-        else:
+        elif _engine_ok:
             start_ttyd()
+        else:
+            logger.info("Terminal não iniciado: motor OpenCode ausente.")
         boot.done(97)
 
         # v0.7.11-web5: o motor pode subir com uma execução órfã (runtime
         # anterior morto no meio da resposta). Sem isso a SPA fica em
         # "Trabalhando" e as mensagens novas nunca saem de "pending".
-        try:
-            boot.active("Sincronizando provedores e modelos", 97)
-            _recover_stale_sessions()
-            _warm_engine_catalog()
-            _normalize_session_titles()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Sincronização inicial do motor falhou: %s", exc)
+        if _engine_ok:
+            try:
+                boot.active("Sincronizando provedores e modelos", 97)
+                _recover_stale_sessions()
+                _warm_engine_catalog()
+                _normalize_session_titles()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Sincronização inicial do motor falhou: %s", exc)
         boot.done(98)
         
         if IN_COLAB and output:

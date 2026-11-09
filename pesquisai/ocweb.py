@@ -880,7 +880,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "<h2 style=\"margin:0 0 8px\">UFV<b>AI</b> · OpenCode</h2>"
                 "<p>O motor do OpenCode ainda não está disponível.</p>"
                 "<small>Esta página recarrega sozinha a cada 3 s. "
-                "Se persistir, conclua o onboarding da chave de API.</small>"
+                "Se persistir, instale o motor com <b>ufvai --engine-install</b> "
+                "(ou conclua o onboarding da chave).</small>"
                 "</div></body></html>"
             ).encode("utf-8")
             self.send_response(503)

@@ -615,11 +615,17 @@ def _install_opencode_if_missing() -> bool:
         logger.info("Sem rede — pulando instalação do opencode (já ausente, segue sem)")
         return False
 
-    for cmd in [
+    _installers = []
+    # No .deb, o instalador versionado/validado é mais confiável que o
+    # `curl | bash` (baixa para /tmp, confere o binário e não mexe no PATH).
+    if os.path.exists("/usr/bin/ufvai-engine"):
+        _installers.append("/usr/bin/ufvai-engine")
+    _installers += [
         f"curl -fsSL {OPENCODE_INSTALL_V2} | bash",
         # fallback: pacote npm oficial do CLI V2 (@opencode/cli)
         "npm install -g @opencode/cli",
-    ]:
+    ]
+    for cmd in _installers:
         r = _run(cmd, check=False)
         # OpenCode V2: o cache do binário pode apontar para o V1 antigo
         reset_opencode_cache()
@@ -1185,7 +1191,11 @@ def _setup_theme_and_agent() -> None:
 def setup_dependencies() -> None:
     """Instala todas as dependências (OpenCode, sistema, Python, tema)."""
     progress(2, 4, "Instalando OpenCode, dependências de sistema e tema...")
-    _install_opencode_if_missing()
+    if not _install_opencode_if_missing():
+        logger.error(
+            "Motor OpenCode 2.x não instalado — a interface sobe, mas o "
+            "terminal só funciona após 'ufvai --engine-install'."
+        )
     _install_system_deps()
     _install_python_deps()
     _setup_theme_and_agent()
@@ -1535,8 +1545,22 @@ def run() -> None:
     # o painel de boot da logomarca (display "ufvai_boot_panel") já comunica
     # marca, versão e progresso desde o primeiro segundo do carregamento.
 
-    folder_path, drive_url = setup_drive()
-    setup_dependencies()
+    # v0.7.11-web9: boot fail-open — uma dependência ausente num computador
+    # novo não pode impedir a interface de subir.
+    try:
+        folder_path, drive_url = setup_drive()
+    except Exception as _drive_exc:  # noqa: BLE001
+        logger.exception("setup_drive falhou (%s); usando ~/PesquisAI", _drive_exc)
+        folder_path = os.path.join(os.path.expanduser("~"), "PesquisAI")
+        drive_url = "https://drive.google.com/drive/my-drive"
+        try:
+            os.makedirs(folder_path, exist_ok=True)
+        except OSError:
+            pass
+    try:
+        setup_dependencies()
+    except Exception as _deps_exc:  # noqa: BLE001
+        logger.exception("setup_dependencies falhou (%s) — seguindo", _deps_exc)
     # v0.7.11: remove restos de uma conexão VPN de um boot anterior (o
     # namespace/OpenVPN/SOCKS não sobrevivem ao reinício do runtime).
     try:
@@ -1555,10 +1579,19 @@ def run() -> None:
     if _skip_engine:
         logger.info("Onboarding pendente: serviço do motor não iniciado (sem chave).")
     else:
-        ensure_service_project_dir(folder_path)
-    setup_skills()
-    setup_custom_skills()  # v0.6.18: skills personalizadas do usuário
-    setup_obsidian_vault()
+        try:
+            ensure_service_project_dir(folder_path)
+        except Exception as _svc_exc:  # noqa: BLE001
+            logger.exception("ensure_service_project_dir falhou (%s)", _svc_exc)
+    for _nome, _fn in (
+        ("setup_skills", setup_skills),
+        ("setup_custom_skills", setup_custom_skills),
+        ("setup_obsidian_vault", setup_obsidian_vault),
+    ):
+        try:
+            _fn()
+        except Exception as _step_exc:  # noqa: BLE001
+            logger.exception("%s falhou (%s) — seguindo", _nome, _step_exc)
     banner_url = setup_launch(folder_path, drive_url)
 
     # v0.6.9-5: desliga tela de carregamento após wrapper subir (carência 6s)

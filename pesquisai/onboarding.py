@@ -250,10 +250,10 @@ def validate_key_format(provider_id: str, key: str) -> tuple[bool, str]:
         return False, "Cole a chave para continuar."
     if len(k) < 20:
         return False, "A chave parece incompleta (menos de 20 caracteres)."
-    prefixes = tuple(prov.get("prefixes") or ())
-    if provider_id != "opencode_go" and prefixes and not k.startswith(prefixes):
-        shown = " ou ".join(f"“{p}”" for p in prefixes)
-        return False, f"A chave de {prov['label']} deve começar com {shown}."
+    # v0.7.11-web9: prefixos são apenas heurística de reconhecimento.
+    # Provedores emitem chaves com formatos variados (o Google, por exemplo,
+    # não começa necessariamente com "AIza"); a validação real é feita pelo
+    # próprio provedor na primeira chamada. Não bloqueamos pelo prefixo.
     return True, ""
 
 
