@@ -60,6 +60,7 @@ def test_inject_html_adds_theme_badge_and_title():
     assert "UFVAI · OpenCode" in out
     assert "ufvai-ocweb-theme" in out
     assert "ufvai-oc-badge" in out
+    assert '<script src="/__ufvai/boot.js"></script>' in out
     assert out.index("ufvai-ocweb-theme") < out.index("</head>")
 
 
@@ -87,6 +88,84 @@ def test_wrapper_web_mode_uses_ocweb_ready():
     assert "/api/ocweb_ready" in html
     assert "{__READY_URL__}" not in html
     assert "http://localhost:8002" in html
+
+
+def test_wrapper_toggle_terminal_web():
+    html = create_wrapper_html(
+        "https://8002-x/", "https://drive.google.com/x",
+        web_mode=True, ttyd_url="https://8000-x/",
+    )
+    assert 'id="console-toggle"' in html
+    assert "toggleConsole()" in html
+    assert "https://8000-x/" in html
+    assert '"console.toggle"' in html
+    assert "Alternar terminal / versão web" in html
+    assert "ufvai-theme" in html
+    assert "theme.web_applied" in html
+
+
+def test_proxy_has_large_accept_backlog():
+    assert ocweb._Server.request_queue_size >= 64
+
+
+def test_sse_event_persists_current_session(monkeypatch, tmp_path):
+    target = tmp_path / "current-session"
+    monkeypatch.setattr(ocweb, "CURRENT_SESSION_FILE", str(target))
+    raw = (
+        b'data: {"type":"session.execution.started",'
+        b'"data":{"sessionID":"ses_teste123"}}\n\n'
+    )
+    ocweb._sync_session_from_event(raw)
+    assert target.read_text(encoding="utf-8") == "ses_teste123"
+
+
+def test_boot_js_waits_for_catalog():
+    assert "/__ufvai/catalog" in ocweb._BOOT_JS
+    assert "fallback=1" in ocweb._BOOT_JS
+
+
+def test_boot_js_syncs_theme():
+    assert "ufvai-theme" in ocweb._BOOT_JS
+    assert "opencode-color-scheme" in ocweb._BOOT_JS
+
+
+def test_catalog_response_falls_back_when_empty(monkeypatch):
+    monkeypatch.setattr(
+        ocweb, "_global_rows",
+        lambda kind, ttl=30.0: [{"id": "global"}] if kind == "model" else [{"id": "prov"}],
+    )
+    data, status = ocweb._catalog_response("model", b'{"data": []}', 200)
+    assert status == 200
+    assert json.loads(data)["data"] == [{"id": "global"}]
+
+    data, status = ocweb._catalog_response("provider", b"<html>erro</html>", 500)
+    assert status == 200
+    assert json.loads(data)["data"] == [{"id": "prov"}]
+
+
+def test_catalog_response_preserves_non_empty(monkeypatch):
+    monkeypatch.setattr(ocweb, "_global_rows", lambda kind, ttl=30.0: [{"id": "global"}])
+    raw = b'{"data": [{"id": "real"}]}'
+    data, status = ocweb._catalog_response("model", raw, 200)
+    assert status == 200
+    assert json.loads(data)["data"] == [{"id": "real"}]
+
+
+def test_brand_new_session_title(monkeypatch):
+    raw = json.dumps({"data": {"id": "ses_x", "title": None}}).encode()
+    out, sid = ocweb._brand_new_session(raw)
+    assert sid == "ses_x"
+    assert json.loads(out)["data"]["title"] == "UFVAI"
+
+    raw = json.dumps({"data": {"id": "ses_y", "title": "opencode"}}).encode()
+    out, sid = ocweb._brand_new_session(raw)
+    assert sid == "ses_y"
+    assert json.loads(out)["data"]["title"] == "UFVAI"
+
+    raw = json.dumps({"data": {"id": "ses_z", "title": "Minha pesquisa"}}).encode()
+    out, sid = ocweb._brand_new_session(raw)
+    assert sid == ""
+    assert json.loads(out)["data"]["title"] == "Minha pesquisa"
 
 
 def test_wrapper_default_keeps_ttyd_ready():
@@ -123,6 +202,11 @@ def test_health_endpoint_reports_ready(monkeypatch, tmp_path):
             assert body["ready"] is True
             assert body["proxy"] == "ufvai-ocweb"
             assert response.headers.get("Access-Control-Allow-Origin") == "*"
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/__ufvai/session", timeout=5) as r:
+            assert "sid" in json.loads(r.read())
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/__ufvai/boot.js", timeout=5) as r:
+            assert b"/server/" in r.read()
     finally:
         ocweb.stop()
         upstream.close()

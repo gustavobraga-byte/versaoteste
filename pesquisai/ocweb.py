@@ -31,7 +31,7 @@ import time
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from .constants import CURRENT_SESSION_FILE
 
@@ -152,6 +152,15 @@ def _inject_html(data: bytes, session_id: str = "") -> bytes:
 
 _BOOT_JS = """(function(){
   try{var f=window.fetch;window.fetch=function(u,o){o=o||{};if(o.credentials===undefined||o.credentials==="omit")o.credentials="same-origin";return f.call(this,u,o)}}catch(e){}
+  function ufvaiTheme(t){
+    t=(t==="light")?"light":"dark";
+    try{localStorage.setItem("opencode-color-scheme",t);
+      window.dispatchEvent(new StorageEvent("storage",{key:"opencode-color-scheme",newValue:t,storageArea:localStorage}));
+    }catch(e){}
+    try{document.documentElement.setAttribute("data-color-scheme",t);document.documentElement.style.colorScheme=t;}catch(e){}
+  }
+  try{var _qt=new URLSearchParams(location.search).get("theme");if(_qt)ufvaiTheme(_qt.indexOf("light")>=0?"light":"dark");}catch(e){}
+  window.addEventListener("message",function(e){var d=e.data||{};if(d&&d.type==="ufvai-theme")ufvaiTheme(d.theme);});
   function b64(s){return btoa(unescape(encodeURIComponent(s))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}
   function key(){var a=document.querySelector('a[href*="/server/"][href*="/session/"]');if(!a)return "";var m=(a.getAttribute("href")||"").match(/\\/server\\/([^\\/]+)\\/session\\//);return m?m[1]:""}
   function catalog(cb){fetch("/__ufvai/catalog",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){cb(d||{ready:true})}).catch(function(){cb({ready:true})})}
@@ -245,6 +254,68 @@ def _api_json(path: str, timeout: float = 5.0):
 
 _CATALOG_CACHE: dict = {"ts": 0.0, "data": {"ready": False, "models": 0, "providers": 0}}
 _CATALOG_LOCK = threading.Lock()
+_GLOBAL_ROWS: dict = {"ts": 0.0, "model": None, "provider": None}
+_GLOBAL_LOCK = threading.Lock()
+
+
+def _global_rows(kind: str, ttl: float = 30.0):
+    """Lista global (sem ``location``) de modelos/provedores, com cache.
+
+    A SPA consulta ``/api/model?location[directory]=...``. Em alguns
+    ambientes o recorte do projeto volta vazio (config local), embora o
+    catálogo global esteja cheio. Guardamos o global para o fallback.
+    """
+    if kind not in ("model", "provider"):
+        return None
+    now = time.time()
+    with _GLOBAL_LOCK:
+        cached = _GLOBAL_ROWS.get(kind)
+        if cached is not None and now - float(_GLOBAL_ROWS["ts"]) < ttl:
+            return cached
+    payload = _api_json(f"/api/{kind}", timeout=15.0)
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return None
+    with _GLOBAL_LOCK:
+        _GLOBAL_ROWS[kind] = rows
+        _GLOBAL_ROWS["ts"] = now
+    return rows
+
+
+def _catalog_response(kind: str, raw: bytes, status: int) -> tuple[bytes, int]:
+    """Garante uma lista válida de modelos/provedores para a SPA.
+
+    Se o recorte do projeto vier vazio, inválido ou com erro, devolve o
+    catálogo global (a SPA não tem fallback próprio e deixaria o seletor e a
+    lista de provedores em branco).
+    """
+    global_rows = None
+    if status != 200:
+        global_rows = _global_rows(kind)
+        if global_rows:
+            return json.dumps({"data": global_rows}).encode("utf-8"), 200
+        return raw, status
+    try:
+        payload = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        global_rows = _global_rows(kind)
+        if global_rows:
+            return json.dumps({"data": global_rows}).encode("utf-8"), 200
+        return raw, status
+    if not isinstance(payload, dict):
+        return raw, status
+    rows = payload.get("data")
+    if isinstance(rows, list) and rows:
+        return raw, status
+    global_rows = _global_rows(kind, ttl=15.0)
+    if not global_rows:
+        return raw, status
+    payload["data"] = global_rows
+    try:
+        return json.dumps(payload, ensure_ascii=False).encode("utf-8"), status
+    except ValueError:
+        return raw, status
+
 
 
 def catalog(force: bool = False, ttl: float = 5.0) -> dict:
@@ -259,14 +330,29 @@ def catalog(force: bool = False, ttl: float = 5.0) -> dict:
     with _CATALOG_LOCK:
         if not force and now - float(_CATALOG_CACHE["ts"]) < ttl:
             return dict(_CATALOG_CACHE["data"])
-    models = _api_json("/api/model")
-    providers = _api_json("/api/provider")
+    project = _api_json("/api/project")
+    prows = project if isinstance(project, list) else (
+        project.get("data") if isinstance(project, dict) else None
+    )
+    directory = ""
+    if isinstance(prows, list) and prows and isinstance(prows[0], dict):
+        directory = str(prows[0].get("canonical") or prows[0].get("worktree") or "")
+    query = "?location%5Bdirectory%5D=" + quote(directory, safe="") if directory else ""
+    models = _api_json(f"/api/model{query}", timeout=12) if query else None
+    scoped_count = len((models.get("data") if isinstance(models, dict) else None) or [])
+    if not models or not scoped_count:
+        models = _api_json("/api/model", timeout=12)
+    providers = _api_json(f"/api/provider{query}", timeout=8) if query else None
+    if not providers:
+        providers = _api_json("/api/provider", timeout=8)
     rows = models.get("data") if isinstance(models, dict) else None
     provs = providers.get("data") if isinstance(providers, dict) else None
     data = {
         "ready": bool(rows),
         "models": len(rows or []),
+        "scoped_models": scoped_count,
         "providers": len(provs or []),
+        "project": directory,
         "upstream": f"http://{service_info()[0]}:{service_info()[1]}",
     }
     with _CATALOG_LOCK:
@@ -312,6 +398,73 @@ def _remember_session(sid: str) -> None:
         pass
 
 
+def _rename_session(sid: str, title: str = "UFVAI") -> bool:
+    """Renomeia a sessão no motor (título exibido pela SPA)."""
+    sid = str(sid or "").strip()
+    if not sid:
+        return False
+    host, port, password = service_info()
+    if not port:
+        return False
+    body = json.dumps({"title": title}).encode("utf-8")
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request(
+            "PATCH",
+            f"/api/session/{sid}",
+            body=body,
+            headers={
+                "Authorization": _basic(password),
+                "Content-Type": "application/json",
+            },
+        )
+        resp = conn.getresponse()
+        resp.read()
+        return resp.status < 300
+    except OSError:
+        return False
+    finally:
+        conn.close()
+
+
+def _rename_new_session_soon(sid: str, delay: float = 1.2) -> None:
+    """Confere o título de uma sessão recém-criada (inclusive pela TUI)."""
+    time.sleep(delay)
+    info = _api_json(f"/api/session/{sid}")
+    data = info.get("data") if isinstance(info, dict) else None
+    if not isinstance(data, dict):
+        return
+    title = str(data.get("title") or "").strip()
+    if not title or title.lower() == "opencode":
+        _rename_session(sid)
+
+
+def _brand_new_session(raw: bytes) -> tuple[bytes, str]:
+    """Troca título nulo/``opencode`` por ``UFVAI`` no POST /api/session.
+
+    Devolve o corpo (possivelmente reescrito) e o id da sessão criada.
+    """
+    try:
+        payload = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return raw, ""
+    if not isinstance(payload, dict):
+        return raw, ""
+    info = payload.get("data")
+    if not isinstance(info, dict):
+        return raw, ""
+    sid = str(info.get("id") or "")
+    title = str(info.get("title") or "").strip()
+    if sid and (not title or title.lower() == "opencode"):
+        info["title"] = "UFVAI"
+        try:
+            return json.dumps(payload, ensure_ascii=False).encode("utf-8"), sid
+        except ValueError:
+            return raw, sid
+    return raw, ""
+
+
+
 def _sync_session_from_event(chunk: bytes) -> None:
     """Persiste a sessão ativa vista no SSE (terminal ↔ web).
 
@@ -345,6 +498,10 @@ def _sync_session_from_event(chunk: bytes) -> None:
             sid = data["session"].get("id")
         if sid:
             _remember_session(str(sid))
+            if payload.get("type") == "session.created":
+                threading.Thread(
+                    target=_rename_new_session_soon, args=(str(sid),), daemon=True
+                ).start()
 
 
 
@@ -466,6 +623,41 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _diag(self) -> None:
+        """Diagnóstico de provedores/modelos (escopo do projeto × global)."""
+        project = _api_json("/api/project")
+        rows = project if isinstance(project, list) else (
+            project.get("data") if isinstance(project, dict) else None
+        )
+        directory = ""
+        if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+            directory = str(rows[0].get("canonical") or rows[0].get("worktree") or "")
+        query = "?location%5Bdirectory%5D=" + quote(directory, safe="") if directory else ""
+        model_scoped = _api_json(f"/api/model{query}", timeout=12)
+        provider_scoped = _api_json(f"/api/provider{query}", timeout=8)
+        model_global = _api_json("/api/model", timeout=12)
+        provider_global = _api_json("/api/provider", timeout=8)
+
+        def _count(payload):
+            data = payload.get("data") if isinstance(payload, dict) else None
+            return len(data) if isinstance(data, list) else -1
+
+        body = json.dumps({
+            "proxy": "ufvai-ocweb",
+            "upstream": f"http://{service_info()[0]}:{service_info()[1]}",
+            "project": directory,
+            "model": {"scoped": _count(model_scoped), "global": _count(model_global)},
+            "provider": {"scoped": _count(provider_scoped), "global": _count(provider_global)},
+            "fallback": _count(model_scoped) in (0,) or _count(provider_scoped) in (0,),
+        }).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _session_info(self) -> None:
         host, port, password = service_info()
         sid = current_session()
@@ -502,6 +694,9 @@ class _Handler(BaseHTTPRequestHandler):
         if rota == "/__ufvai/catalog":
             self._catalog_info()
             return
+        if rota == "/__ufvai/diag":
+            self._diag()
+            return
 
         if self.headers.get("Upgrade", "").lower() == "websocket":
             host, port, password = self._upstream()
@@ -537,6 +732,17 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         body = self._read_body()
+        rota_api = self.path.split("?", 1)[0]
+        if method == "POST" and rota_api == "/api/session" and body:
+            try:
+                req = json.loads(body.decode("utf-8", "replace"))
+            except ValueError:
+                req = None
+            if isinstance(req, dict):
+                titulo = str(req.get("title") or "").strip()
+                if not titulo or titulo.lower() == "opencode":
+                    req["title"] = "UFVAI"
+                    body = json.dumps(req, ensure_ascii=False).encode("utf-8")
         headers = self._forward_headers(password)
         conn = http.client.HTTPConnection(host, port, timeout=600)
         try:
@@ -610,13 +816,35 @@ class _Handler(BaseHTTPRequestHandler):
                         data = zlib.decompress(data, -zlib.MAX_WBITS)
                     except zlib.error:
                         pass
+            created_sid = ""
+            status_out = resp.status
+            if method in ("GET", "HEAD") and rota_api in ("/api/model", "/api/provider"):
+                data, status_out = _catalog_response(
+                    rota_api.rsplit("/", 1)[-1], data, resp.status
+                )
+            if method == "POST" and rota_api == "/api/session" and resp.status == 200:
+                data, created_sid = _brand_new_session(data)
             if ctype.startswith("text/html") and resp.status == 200:
                 sid = current_session()
                 if not _session_exists(host, port, password, sid):
                     sid = ""
                 data = _inject_html(data, sid)
 
-            self.send_response(resp.status)
+            # v0.7.11-web7: /api/model pode passar de 1 MB. Compactar reduz
+            # o risco de o proxy do Colab truncar/estourar timeout.
+            gzip_out = False
+            if (
+                rota_api in ("/api/model", "/api/provider")
+                and len(data) > 262144
+                and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+            ):
+                try:
+                    data = gzip.compress(data, 6)
+                    gzip_out = True
+                except OSError:
+                    gzip_out = False
+
+            self.send_response(status_out)
             for key, value in resp.getheaders():
                 if key.lower() in _BLOCKED_HEADERS:
                     continue
@@ -625,10 +853,17 @@ class _Handler(BaseHTTPRequestHandler):
             # /api/model vazio (motor subindo) ficaria "grudado" no reload.
             if self.path.startswith("/api/") or self.path.startswith("/__ufvai/"):
                 self.send_header("Cache-Control", "no-store")
+            if gzip_out:
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             if method != "HEAD":
                 self.wfile.write(data)
+            if created_sid:
+                threading.Thread(
+                    target=_rename_session, args=(created_sid,), daemon=True
+                ).start()
         except (BrokenPipeError, ConnectionResetError):
             pass
         except OSError:

@@ -164,3 +164,74 @@ Se a janela principal ainda mostra o terminal, verifique nesta ordem:
 4. Se `data-terminal-url` ainda apontar para 8000, o HTML em
    `/tmp/pesquisai-wrapper/index.html` é antigo: rode o boot de novo após
    **Runtime → Restart session**.
+
+---
+
+## 10. Abrir na sessão do projeto (revisão `web3`)
+
+O UFVAI grava a sessão em uso em `/tmp/ufvai-current-session` (assim que o
+terminal/engine a cria). O proxy expõe:
+
+| Rota | Uso |
+|---|---|
+| `GET /__ufvai/boot.js` | script (mesma origem, permitido pelo CSP) que instala o `fetch` com credenciais e, na home, navega para a sessão |
+| `GET /__ufvai/session` | `{"sid": "ses_…"}` — vazio se a sessão não existir mais |
+
+A rota interna da SPA é `/server/<chave>/session/<id>`, com
+`chave = base64url(origem)` (a home também expõe a chave nos links; o script
+prefere o link e só cai no base64 se necessário).
+
+Consequência: ao abrir a interface, a conversa do projeto
+(`/content/drive/My Drive/PesquisAI`) já aparece com a saudação — sem clique.
+O `ttyd` e a SPA usam o **mesmo serviço**, então o que é criado no terminal
+aparece no web (e vice-versa).
+
+---
+
+## 11. Sincronização e catálogo (revisão `web5`)
+
+| Rota | Uso |
+|---|---|
+| `GET /__ufvai/catalog` | `{ready, models, providers}` — o `boot.js` espera `ready` antes de abrir a sessão |
+| `GET /__ufvai/session?fallback=1` | sessão persistida; se não existir, a ativa/mais recente |
+
+- O relay de `/api/event` grava a sessão vista em `/tmp/ufvai-current-session`
+  (`session.created`, `session.viewed`, `session.execution.started`,
+  `session.model.selected`). O terminal e a SPA compartilham o mesmo motor, e
+  o próximo reload abre a mesma conversa.
+- `/api/*` sai com `Cache-Control: no-store`: respostas vazias de um motor
+  ainda subindo não ficam presas no cache.
+- O servidor usa `request_queue_size = 128`; o valor padrão (5) recusava parte
+  do pico de ~20 requisições da SPA (“Can't reach this server”).
+- No boot, `launch_app` interrompe sessões órfãs (`busy > idle` há 15 min) e
+  aquece `/api/provider` + `/api/model` antes de liberar a interface.
+
+---
+
+## 12. Tema e nome da sessão (revisão `web6`)
+
+- **Tema**: o wrapper e o iframe são origens diferentes; a troca vai por
+  `postMessage({type:"ufvai-theme", theme:"light"|"dark"})`. O `boot.js`
+  aplica em `documentElement[data-color-scheme]`, grava
+  `localStorage["opencode-color-scheme"]` e dispara `StorageEvent` (a SPA
+  ouve essa chave). O `?theme=` cobre o primeiro carregamento. Em modo web o
+  iframe não é recarregado ao trocar o tema.
+- **Nome**: a SPA usa o título da sessão; sem título, mostra `opencode`.
+  O proxy reescreve títulos nulos/`opencode` para `UFVAI` no
+  `POST /api/session` e no evento `session.created`; o boot normaliza as
+  sessões antigas. Títulos escolhidos pelo usuário são preservados.
+
+---
+
+## 13. Fallback do catálogo (revisão `web7`)
+
+A SPA não busca `/api/model` e `/api/provider` “crus”: ela guarda o resultado
+por `location[directory]`. Se o recorte do projeto vier `[]`, `null`, inválido
+ou com erro, `provider.list`/`model.list` ficam indefinidos e o seletor e a
+lista de provedores desaparecem.
+
+O proxy agora:
+- devolve o catálogo **global** quando o escopo do projeto está vazio/inválido;
+- cacheia o global por ~15–30 s;
+- expõe `GET /__ufvai/diag` com `project`, contagens `scoped/global` e
+  `fallback` (abrir `.../proxy/8002/__ufvai/diag`).

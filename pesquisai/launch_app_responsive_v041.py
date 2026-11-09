@@ -4265,7 +4265,12 @@ def create_wrapper_html(
             "info");
 
           const fr = document.getElementById("terminal-frame");
-          if (fr) {
+          if (fr && _console === "web") {
+            // v0.7.11-web6: a SPA não usa ?theme=; o tema vai por postMessage
+            // (o boot.js aplica em data-color-scheme + localStorage).
+            _postThemeToFrame();
+            toast("✅ " + (dict["theme.web_applied"] || "Tema aplicado na versão web"), "ok");
+          } else if (fr) {
             const origSrc = fr.src.split("?")[0];
             fr.src = "about:blank";
             setTimeout(() => {
@@ -4332,6 +4337,7 @@ def create_wrapper_html(
         root.style.setProperty("--ov-dim", "rgba(4,7,11,.8)");
         document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#141c24");
       }
+      _postThemeToFrame();
     }
 
     // Carrega tema inicial: 1) script anti-flash no <head> 2) cookie 3) GET /api/theme
@@ -4383,7 +4389,29 @@ def create_wrapper_html(
       return "";
     })();
     let _console = localStorage.getItem("ufvai.console") || "web";
-    function _frameUrl(mode) { return mode === "ttyd" && TTYD_URL ? TTYD_URL : WEB_URL; }
+    function _currentTheme() {
+      return (document.documentElement.getAttribute("data-theme") === "pesquisai-light")
+        ? "light" : "dark";
+    }
+    function _postThemeToFrame() {
+      const fr = document.getElementById("terminal-frame");
+      if (!fr || !fr.contentWindow) return;
+      try {
+        fr.contentWindow.postMessage({ type: "ufvai-theme", theme: _currentTheme() }, "*");
+      } catch (e) {}
+    }
+    (function _bindThemeSync() {
+      const fr = document.getElementById("terminal-frame");
+      if (!fr) return;
+      fr.addEventListener("load", function () {
+        setTimeout(_postThemeToFrame, 60);
+      });
+    })();
+    function _frameUrl(mode) {
+      if (mode === "ttyd" && TTYD_URL) return TTYD_URL;
+      const sep = WEB_URL.indexOf("?") < 0 ? "?" : "&";
+      return WEB_URL + sep + "theme=" + _currentTheme();
+    }
     function applyConsole(mode) {
       const fr = document.getElementById("terminal-frame");
       if (!fr) return;
@@ -6768,6 +6796,7 @@ def create_wrapper_html(
             "shortcuts.history_prev": "Histórico anterior", "shortcuts.history_next": "Histórico seguinte",
             "theme.toggle": "Alternar tema", "theme.light": "Tema claro (UI + terminal)",
             "theme.dark": "Tema escuro (UI + terminal)",
+            "theme.web_applied": "Tema aplicado na versão web",
             "theme.terminal_reloaded": "Terminal recarregado com novo tema",
             # v0.6.5 — Splash de carregamento do terminal
             "boot.starting": "Iniciando terminal…",
@@ -6975,6 +7004,7 @@ def create_wrapper_html(
             "shortcuts.history_prev": "Previous history", "shortcuts.history_next": "Next history",
             "theme.toggle": "Toggle theme", "theme.light": "Light theme (UI + terminal)",
             "theme.dark": "Dark theme (UI + terminal)",
+            "theme.web_applied": "Theme applied to the web version",
             "theme.terminal_reloaded": "Terminal reloaded with new theme",
             # v0.6.5 — Terminal boot splash
             "boot.starting": "Starting the terminal…",
@@ -7182,6 +7212,7 @@ def create_wrapper_html(
             "shortcuts.history_prev": "Historial anterior", "shortcuts.history_next": "Historial siguiente",
             "theme.toggle": "Alternar tema", "theme.light": "Tema claro (UI + terminal)",
             "theme.dark": "Tema oscuro (UI + terminal)",
+            "theme.web_applied": "Tema aplicado a la versión web",
             "theme.terminal_reloaded": "Terminal recargado con nuevo tema",
             # v0.6.5 — Splash de arranque del terminal
             "boot.starting": "Iniciando el terminal…",
@@ -7389,6 +7420,7 @@ def create_wrapper_html(
             "shortcuts.history_prev": "Historique précédent", "shortcuts.history_next": "Historique suivant",
             "theme.toggle": "Basculer le thème", "theme.light": "Thème clair (UI + terminal)",
             "theme.dark": "Thème sombre (UI + terminal)",
+            "theme.web_applied": "Thème appliqué à la version web",
             "theme.terminal_reloaded": "Terminal rechargé avec le nouveau thème",
             # v0.6.5 — Écran de démarrage du terminal
             "boot.starting": "Démarrage du terminal…",
@@ -7596,6 +7628,7 @@ def create_wrapper_html(
             "shortcuts.history_prev": "上一条历史", "shortcuts.history_next": "下一条历史",
             "theme.toggle": "切换主题", "theme.light": "浅色主题（界面+终端）",
             "theme.dark": "深色主题（界面+终端）",
+            "theme.web_applied": "主题已应用到网页版",
             "theme.terminal_reloaded": "终端已应用新主题并重新加载",
             # v0.6.5 — 终端启动画面
             "boot.starting": "正在启动终端…",

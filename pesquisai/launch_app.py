@@ -294,6 +294,25 @@ def _ensure_session_model_available(session_id: str) -> str:
     return f"{ref['providerID']}/{ref['modelID']}"
 
 
+def _normalize_session_titles(title: str = "UFVAI") -> int:
+    """Dá nome de marca às sessões sem título (a SPA mostrava "opencode")."""
+    listing = _engine_api("GET", "/api/session?limit=100&order=desc")
+    rows = listing.get("data") if isinstance(listing, dict) else None
+    renamed = 0
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("id") or "")
+        current = str(row.get("title") or "").strip()
+        if not sid or (current and current.lower() != "opencode"):
+            continue
+        if _engine_api("PATCH", f"/api/session/{sid}", {"title": title}) is not None:
+            renamed += 1
+    if renamed:
+        logger.info("Sessões sem título renomeadas para %s: %s", title, renamed)
+    return renamed
+
+
 def _remember_ttyd_session(session_id: str | None) -> None:
     """Registra a sessão que o terminal passou a exibir (restore/comando).
 
@@ -6753,6 +6772,7 @@ def launch():
             boot.active("Sincronizando provedores e modelos", 97)
             _recover_stale_sessions()
             _warm_engine_catalog()
+            _normalize_session_titles()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Sincronização inicial do motor falhou: %s", exc)
         boot.done(98)

@@ -50,6 +50,73 @@
   do motor, útil para diagnóstico e para o boot.
 - Testes: 16 (inclui health-check e a checagem da célula de boot).
 
+### 🩹 Correção (revisão `web3`)
+
+- **“Can't reach this server”** no proxy do Colab: o `fetch` da SPA passou a
+  enviar credenciais (`same-origin`), necessárias para o cookie do proxy.
+- **Abre direto na sessão do projeto**: `launch_app` grava a sessão atual em
+  `/tmp/ufvai-current-session`; o proxy serve `/__ufvai/boot.js` +
+  `/__ufvai/session` e, na home, navega para
+  `/server/<chave>/session/<id>` — a mensagem de saudação aparece sem clique.
+- O script é **externo** (`script-src 'self'`), porque o CSP da SPA bloqueia
+  script inline.
+- Validação com Chromium headless (Playwright): home → redireciona para a
+  sessão e renderiza “Olá! (Dica: …)”.
+
+### 🧯 Correção (revisão `web7`)
+
+- **Provedores/modelos em branco**: a SPA consulta
+  `/api/model?location[directory]=<projeto>` e `/api/provider?...`. Se o
+  recorte do projeto vier vazio, inválido ou com erro, o proxy agora devolve
+  o **catálogo global** (`/api/model` e `/api/provider` sem `location`) — a
+  SPA não tem fallback próprio e deixava seletor e lista de provedores vazios.
+- `GET /__ufvai/catalog` passou a verificar o **escopo do projeto**
+  (`scoped_models` + `project`), não só o global.
+- Novo `GET /__ufvai/diag`: mostra `project`, `model.scoped/global`,
+  `provider.scoped/global` e se o fallback está ativo. Útil para diagnosticar
+  o ambiente do Colab sem abrir o console.
+- 25 testes.
+
+### 🎨 Correção (revisão `web6`)
+
+- **Tema claro/escuro chega à versão web**: o wrapper envia
+  `postMessage({type:"ufvai-theme"})` ao iframe (e no evento `load`); o
+  `boot.js` aplica em `data-color-scheme`, `localStorage` e dispara um
+  `StorageEvent` para a SPA atualizar o próprio estado. O `?theme=` também
+  é lido no primeiro load. Em modo web o iframe **não** é mais recarregado a
+  cada troca (sem tela em branco).
+- **Nova sessão com nome UFVAI**: títulos nulos ou `opencode` viram `UFVAI`
+  na criação (`POST /api/session`), no restore e no boot; sessões criadas
+  pela TUI são corrigidas pelo evento `session.created` do SSE. Títulos
+  definidos pelo usuário são preservados.
+- 23 testes (inclui tema, catálogo e normalização de título).
+
+### 🩹 Correção (revisão `web5`)
+
+- **Alternador com rótulo claro**: o botão da topbar e o item do menu ☰ agora
+  dizem **“Alternar terminal / versão web”** (5 idiomas).
+- **Fila do proxy**: `request_queue_size` passou de 5 para 128. A SPA dispara
+  ~20 requisições ao abrir a sessão; o backlog padrão recusava conexões e a
+  tela caía em “Can't reach this server”. 40 requisições paralelas agora
+  respondem em ~0,3 s.
+- **Catálogo antes da SPA**: novo `GET /__ufvai/catalog` (modelos/provedores)
+  e o `boot.js` espera o catálogo ficar pronto antes de abrir a sessão. Numa
+  sessão aberta direto, se o catálogo ficou pronto depois do load, a página
+  recarrega **uma vez** — corrige a lista de modelos em branco no reload.
+- **`Cache-Control: no-store`** em `/api/*`: um `/api/model` vazio (motor
+  subindo) não fica mais preso no cache do navegador.
+- **Sessão terminal ↔ web**: o relay SSE grava a sessão dos eventos
+  `session.created`/`session.viewed`/`session.execution.started` em
+  `/tmp/ufvai-current-session`; `/__ufvai/session?fallback=1` usa a sessão
+  ativa/mais recente quando não há sessão persistida. Criar/trocar de conversa
+  no terminal passa a abrir a mesma conversa no web.
+- **Execuções órfãs**: no boot, sessões com `busy > idle` há mais de 15 min
+  recebem `POST /interrupt` — evita “Trabalhando” eterno e mensagens presas em
+  “pending” depois de um runtime interrompido.
+- **Motor aquecido**: `/api/provider` e `/api/model` são consultados antes de
+  a interface abrir, reduzindo a corrida do primeiro carregamento.
+- **Retry de upstream** e descompressão defensiva (gzip/deflate) no proxy.
+
 ### ⚠️ Limitações
 - A UI é a do OpenCode (não uma tela própria): a customização é visual.
 - Sem navegador real neste ambiente; validação por HTTP + testes.
