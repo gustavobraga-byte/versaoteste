@@ -81,6 +81,8 @@ WRAPPER_PORT: int = 8001
 OCWEB_PORT: int = 8002
 # v0.7.11-web3: sessão atual (a SPA abre direto nela)
 CURRENT_SESSION_FILE: str = "/tmp/ufvai-current-session"
+# v0.7.11-web8: sessão em execução ativa (terminal → web em tempo real)
+ACTIVE_SESSION_FILE: str = "/tmp/ufvai-active-session"
 
 # ── Skills registradas ─────────────────────────────────────
 # Formato: (repo_url, nome_destino, requerida)

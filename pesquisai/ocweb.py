@@ -33,7 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from .constants import CURRENT_SESSION_FILE
+from .constants import ACTIVE_SESSION_FILE, CURRENT_SESSION_FILE
 
 OCWEB_PORT: int = 8002
 UPSTREAM_HOST: str = "127.0.0.1"
@@ -171,6 +171,21 @@ _BOOT_JS = """(function(){
       setTimeout(function(){whenReady(cb,t-1)},600);
     });
   }
+  // v0.7.11-web8: segue a sessão ativa do terminal em tempo real.
+  function syncSession(){
+    if(!/^\\/server\\/[^\\/]+\\/session\\//.test(location.pathname))return;
+    var p=location.pathname.split("/");
+    var k=p[2],sid=p[4];
+    if(!k||!sid)return;
+    var ed=document.querySelector('[contenteditable="true"][aria-label="Prompt"]');
+    if(ed&&(ed.textContent||"").trim())return;
+    var body=document.body.innerText||"";
+    if(/\\b(Working|Trabalhando)\\b/.test(body))return;
+    fetch("/__ufvai/session?fallback=1",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){
+      if(d&&d.active&&d.active!==sid&&d.active_age_ms<30000)location.replace("/server/"+k+"/session/"+d.active);
+    }).catch(function(){});
+  }
+  setInterval(syncSession,2500);
   // Sessão: espera o catálogo de provedores/modelos antes de navegar.
   var n=0,t=setInterval(function(){
     n++;
@@ -250,6 +265,85 @@ def _api_json(path: str, timeout: float = 5.0):
         return None
     finally:
         conn.close()
+
+
+# v0.7.11-web8: fecha a 1ª conexão SSE uma vez para forçar um handshake
+# real depois que o listener da SPA já está registrado.
+_CLOSE_FIRST_SSE = float(os.environ.get("UFVAI_TEST_CLOSE_FIRST_SSE", "1.0") or 0)
+_CLOSE_ONCE_LOCK = threading.Lock()
+_CLOSE_ONCE_DONE = False
+_RESP_CACHE: dict = {}
+_RESP_LOCK = threading.Lock()
+
+
+def _cache_key(path: str) -> str:
+    """Chave estável por endpoint + diretório (``+`` e ``%20`` são iguais)."""
+    parsed = urlparse(path)
+    directory = parse_qs(parsed.query).get("location[directory]", [""])[0]
+    return f"{parsed.path}|{directory}"
+
+
+def _cache_get(key: str, port: int, ttl: float = 180.0):
+    now = time.time()
+    with _RESP_LOCK:
+        item = _RESP_CACHE.get(key)
+        if not item:
+            return None
+        ts, cached_port, data, ctype = item
+        if cached_port != port or now - ts > ttl:
+            return None
+        return data, ctype
+
+
+def _cache_put(key: str, port: int, data: bytes, ctype: str = "application/json") -> None:
+    with _RESP_LOCK:
+        if len(_RESP_CACHE) > 64:
+            _RESP_CACHE.clear()
+        _RESP_CACHE[key] = (time.time(), port, data, ctype)
+
+
+def _api_bytes(path: str, timeout: float = 20.0) -> bytes:
+    host, port, password = service_info()
+    if not port:
+        return b""
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    try:
+        conn.request(
+            "GET", path,
+            headers={"Authorization": _basic(password), "Accept": "application/json"},
+        )
+        resp = conn.getresponse()
+        data = resp.read()
+        return data if resp.status == 200 else b""
+    except OSError:
+        return b""
+    finally:
+        conn.close()
+
+
+def prefetch_catalog(directory: str = "") -> None:
+    """Pré-busca modelos/provedores (escopo do projeto + global) e cacheia.
+
+    O *sync* da SPA tem timeout de 15 s. Servir do cache garante que o
+    primeiro carregamento não dependa da latência do motor/Drive.
+    """
+    port = service_info()[1]
+    if not port:
+        return
+    scoped = (
+        "?location%5Bdirectory%5D=" + quote(directory, safe="")
+        if directory else ""
+    )
+    for kind in ("model", "provider"):
+        for query in (scoped, ""):
+            raw = _api_bytes(f"/api/{kind}{query}")
+            if not raw:
+                continue
+            try:
+                json.loads(raw)
+            except ValueError:
+                continue
+            _cache_put(f"/api/{kind}|{directory if query else ''}", port, raw)
 
 
 _CATALOG_CACHE: dict = {"ts": 0.0, "data": {"ready": False, "models": 0, "providers": 0}}
@@ -357,6 +451,16 @@ def catalog(force: bool = False, ttl: float = 5.0) -> dict:
     }
     with _CATALOG_LOCK:
         _CATALOG_CACHE.update(ts=now, data=data)
+    try:
+        port = service_info()[1]
+        if isinstance(models, dict) and models.get("data"):
+            key = _cache_key(f"/api/model{query}" if query else "/api/model")
+            _cache_put(key, port, json.dumps(models, ensure_ascii=False).encode("utf-8"))
+        if isinstance(providers, dict) and providers.get("data"):
+            key = _cache_key(f"/api/provider{query}" if query else "/api/provider")
+            _cache_put(key, port, json.dumps(providers, ensure_ascii=False).encode("utf-8"))
+    except (OSError, ValueError):
+        pass
     return dict(data)
 
 
@@ -394,6 +498,52 @@ def _remember_session(sid: str) -> None:
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(sid)
         os.replace(tmp, CURRENT_SESSION_FILE)
+    except OSError:
+        pass
+
+
+def _take_close_once() -> bool:
+    global _CLOSE_ONCE_DONE
+    with _CLOSE_ONCE_LOCK:
+        if _CLOSE_ONCE_DONE:
+            return False
+        _CLOSE_ONCE_DONE = True
+        return True
+
+
+def _rearm_close_once() -> None:
+    """Cada documento HTML (page load) rearma o reconnect do SSE."""
+    global _CLOSE_ONCE_DONE
+    with _CLOSE_ONCE_LOCK:
+        _CLOSE_ONCE_DONE = False
+
+
+def current_active() -> tuple[str, int]:
+    """Sessão em execução ativa e idade (ms) do início."""
+    try:
+        data = json.loads(Path(ACTIVE_SESSION_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "", 0
+    if not isinstance(data, dict):
+        return "", 0
+    sid = str(data.get("sid") or "").strip()
+    try:
+        ts = float(data.get("ts") or 0)
+    except (TypeError, ValueError):
+        ts = 0.0
+    age = int((time.time() - ts) * 1000) if ts else 0
+    return sid, max(age, 0)
+
+
+def _remember_active(sid: str) -> None:
+    sid = str(sid or "").strip()
+    if not sid:
+        return
+    try:
+        tmp = f"{ACTIVE_SESSION_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"sid": sid, "ts": time.time()}, fh)
+        os.replace(tmp, ACTIVE_SESSION_FILE)
     except OSError:
         pass
 
@@ -498,6 +648,8 @@ def _sync_session_from_event(chunk: bytes) -> None:
             sid = data["session"].get("id")
         if sid:
             _remember_session(str(sid))
+            if payload.get("type") == "session.execution.started":
+                _remember_active(str(sid))
             if payload.get("type") == "session.created":
                 threading.Thread(
                     target=_rename_new_session_soon, args=(str(sid),), daemon=True
@@ -672,7 +824,15 @@ class _Handler(BaseHTTPRequestHandler):
             # web e terminal na mesma conversa.
             sid = latest_session()
             source = "latest"
-        body = json.dumps({"sid": sid, "source": source}).encode("utf-8")
+        active, active_age = current_active()
+        body = json.dumps(
+            {
+                "sid": sid,
+                "active": active,
+                "active_age_ms": active_age,
+                "source": source,
+            }
+        ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -733,6 +893,33 @@ class _Handler(BaseHTTPRequestHandler):
 
         body = self._read_body()
         rota_api = self.path.split("?", 1)[0]
+        cache_key = _cache_key(self.path)
+        if method in ("GET", "HEAD") and rota_api in ("/api/model", "/api/provider"):
+            hit = _cache_get(cache_key, port)
+            if hit:
+                cached_data, cached_type = hit
+                cached_gzip = False
+                if (
+                    len(cached_data) > 262144
+                    and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+                ):
+                    try:
+                        cached_data = gzip.compress(cached_data, 6)
+                        cached_gzip = True
+                    except OSError:
+                        cached_gzip = False
+                self.send_response(200)
+                self.send_header("Content-Type", cached_type or "application/json")
+                self.send_header("Content-Length", str(len(cached_data)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-UFVAI-Cache", "hit")
+                if cached_gzip:
+                    self.send_header("Content-Encoding", "gzip")
+                    self.send_header("Vary", "Accept-Encoding")
+                self.end_headers()
+                if method != "HEAD":
+                    self.wfile.write(cached_data)
+                return
         if method == "POST" and rota_api == "/api/session" and body:
             try:
                 req = json.loads(body.decode("utf-8", "replace"))
@@ -779,6 +966,54 @@ class _Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.close_connection = True
                 tail = b""
+                write_lock = threading.Lock()
+                closed = False
+
+                def _emit(payload: bytes) -> None:
+                    nonlocal closed
+                    with write_lock:
+                        if closed:
+                            return
+                        self.wfile.write(
+                            f"{len(payload):X}\r\n".encode() + payload + b"\r\n"
+                        )
+                        self.wfile.flush()
+                        if not payload:
+                            closed = True
+
+                # v0.7.11-web8: no Colab o bundle da SPA pode carregar depois
+                # do primeiro server.connected. Sem esse handshake a SPA não
+                # dispara provider.sync/model.sync e o seletor/lista de
+                # provedores ficam em branco até abrir as configurações.
+                # Fechamos a PRIMEIRA conexão uma vez; a reconexão recebe um
+                # handshake real quando o listener já existe.
+                if _CLOSE_FIRST_SSE > 0 and _take_close_once():
+                    def _force_reconnect() -> None:
+                        nonlocal closed
+                        time.sleep(_CLOSE_FIRST_SSE)
+                        with write_lock:
+                            if closed:
+                                return
+                            try:
+                                self.wfile.write(b"0\r\n\r\n")
+                                self.wfile.flush()
+                            except OSError:
+                                pass
+                            closed = True
+                        for obj in (self.connection, conn):
+                            try:
+                                obj.shutdown(socket.SHUT_RDWR)
+                            except OSError:
+                                pass
+                            try:
+                                obj.close()
+                            except OSError:
+                                pass
+
+                    threading.Thread(
+                        target=_force_reconnect, name="ufvai-reconnect", daemon=True
+                    ).start()
+
                 try:
                     while True:
                         chunk = resp.read1(4096)
@@ -793,10 +1028,8 @@ class _Handler(BaseHTTPRequestHandler):
                                     tail = tail[-4096:]
                             else:
                                 tail = buf[-65536:]
-                        self.wfile.write(f"{len(chunk):X}\r\n".encode() + chunk + b"\r\n")
-                        self.wfile.flush()
-                    self.wfile.write(b"0\r\n\r\n")
-                    self.wfile.flush()
+                        _emit(chunk)
+                    _emit(b"")
                 except (BrokenPipeError, ConnectionResetError):
                     pass
                 return
@@ -822,9 +1055,16 @@ class _Handler(BaseHTTPRequestHandler):
                 data, status_out = _catalog_response(
                     rota_api.rsplit("/", 1)[-1], data, resp.status
                 )
+            if (
+                method in ("GET", "HEAD")
+                and rota_api in ("/api/model", "/api/provider")
+                and status_out == 200
+            ):
+                _cache_put(cache_key, port, data)
             if method == "POST" and rota_api == "/api/session" and resp.status == 200:
                 data, created_sid = _brand_new_session(data)
             if ctype.startswith("text/html") and resp.status == 200:
+                _rearm_close_once()
                 sid = current_session()
                 if not _session_exists(host, port, password, sid):
                     sid = ""

@@ -1,37 +1,34 @@
-Correção do repositório versaoteste — UI web, sincronização e alternador
+Correção do repositório versaoteste — sync em tempo real (web8)
 
 SUBSTITUIR NO REPOSITÓRIO (mesmos caminhos)
 - README.md                       (badge/links → versaoteste)
 - PesquisAI.ipynb                 (clone validado + checagem da 8001)
 - COLAB_BOOT_0.7.11.ipynb/.py     (opcional; roda o .py da pasta)
-- pesquisai/ocweb.py              (catálogo, SSE→sessão, no-store, fila 128)
-- pesquisai/launch_app.py         (sessão/estado, restore model, órfãs, warmup)
-- pesquisai/constants.py          (CURRENT_SESSION_FILE)
-- pesquisai/launch_app_responsive_v041.py (alternador terminal ↔ web)
-- debs/*.deb + SHA256SUMS         (web5)
+- pesquisai/ocweb.py              (handshake/cache/sessão ativa/tema/título)
+- pesquisai/launch_app.py         (restore model, órfãs, warmup)
+- pesquisai/constants.py          (CURRENT_SESSION_FILE + ACTIVE_SESSION_FILE)
+- pesquisai/launch_app_responsive_v041.py (alternador + tema web)
+- debs/*.deb + SHA256SUMS         (web8)
 
-O QUE MUDOU NESTA REVISÃO (web5)
-1. O botão da topbar e o item do menu ☰ agora dizem
-   "Alternar terminal / versão web" (5 idiomas).
-2. O relay SSE grava a sessão ativa em /tmp/ufvai-current-session; ao
-   recarregar, o web abre a MESMA conversa do terminal. Sem sessão salva,
-   usa a ativa/mais recente (/__ufvai/session?fallback=1).
-3. GET /__ufvai/catalog informa modelos/provedores e o boot.js espera o
-   catálogo antes de abrir a sessão — corrige a lista de modelos em branco
-   após um reload/restore.
-4. /api/* responde com Cache-Control: no-store; o proxy aceita 128
-   conexões em fila (antes 5) — corrige "Can't reach this server" e
-   mensagens presas em "pending".
-5. No boot, sessões órfãs (busy > idle há 15 min) recebem /interrupt.
-6. Sessão restaurada com provedor inexistente troca para o modelo padrão.
-7. O motor é aquecido (/api/provider + /api/model) antes de a interface abrir.
+O QUE MUDOU NESTA REVISÃO (web8)
+1. A SPA só dispara provider.sync/model.sync após server.connected. O proxy
+   fecha a 1ª conexão SSE de cada page load (1 s); a reconexão entrega o
+   handshake real quando o listener já existe.
+2. /api/model e /api/provider são pré-buscados no boot e servidos do cache
+   (X-UFVAI-Cache: hit, gzip). Evita o timeout de 15 s do sync.
+3. session.execution.started grava /tmp/ufvai-active-session; a web segue a
+   sessão em execução do terminal em tempo real (janela de 30 s), sem trocar
+   se você está digitando ou "Working".
+4. Mantidas: tema claro/escuro na web, título UFVAI, fallback do catálogo,
+   fila 128, /interrupt em órfãs, sessão do projeto.
 
 TESTE
 1. Runtime → Reiniciar sessão.
 2. Abrir:
    https://colab.research.google.com/github/gustavobraga-byte/versaoteste/blob/main/PesquisAI.ipynb
 3. Rodar a célula; abrir a porta 8001.
-4. Conferir: .../proxy/8002/__ufvai_ready  → {"ready": true}
-             .../proxy/8002/__ufvai/catalog → {"ready": true, "models": >0}
-5. Alternar terminal/web pelo botão da topbar; recarregar e conferir que a
-   conversa e o seletor de modelos continuam iguais.
+4. Conferir: .../proxy/8002/__ufvai/ready   → {"ready": true}
+             .../proxy/8002/__ufvai/catalog → {"ready": true, "scoped_models": >0}
+             .../proxy/8002/__ufvai/diag    → contagens scoped/global
+5. Abrir uma sessão e conferir o seletor de modelos SEM abrir Configurações.
+6. Mandar uma mensagem no terminal e ver a web acompanhar.
