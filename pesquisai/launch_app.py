@@ -137,12 +137,161 @@ def _persist_current_session(session_id: str | None) -> None:
     try:
         sid = str(session_id or "").strip()
         if sid:
-            with open(CURRENT_SESSION_FILE, "w", encoding="utf-8") as fh:
+            tmp = f"{CURRENT_SESSION_FILE}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
                 fh.write(sid)
+            os.replace(tmp, CURRENT_SESSION_FILE)
         elif os.path.exists(CURRENT_SESSION_FILE):
             os.remove(CURRENT_SESSION_FILE)
     except OSError:
         pass
+
+
+def _engine_api(method: str, path: str, payload: dict | None = None,
+                timeout: float = 4.0):
+    """Chamada autenticada ao serviço local do OpenCode (``None`` em falha)."""
+    import http.client
+    try:
+        from . import ocweb
+        host, port, password = ocweb.service_info()
+        if not port:
+            return None
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        try:
+            body = None if payload is None else json.dumps(payload).encode("utf-8")
+            headers = {"Authorization": ocweb._basic(password)}
+            if body is not None:
+                headers["Content-Type"] = "application/json"
+            conn.request(method, path, body=body, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read()
+            if resp.status >= 300:
+                return None
+            return json.loads(data.decode("utf-8", "replace")) if data else {}
+        finally:
+            conn.close()
+    except (OSError, ValueError):
+        return None
+
+
+def _recover_stale_sessions(max_idle_ms: int = 900_000) -> int:
+    """Interrompe execuções órfãs de um runtime anterior.
+
+    Se o Colab cair no meio de uma resposta, a sessão fica ``busy > idle``
+    para sempre: a SPA mostra "Trabalhando", as mensagens novas entram no
+    inbox e nunca são entregues. Só mexe em execuções com mais de 15 min.
+    """
+    deadline = time.time() + 8.0
+    rows: list = []
+    while time.time() < deadline:
+        listing = _engine_api("GET", "/api/session?limit=50&order=desc")
+        if isinstance(listing, dict) and isinstance(listing.get("data"), list):
+            rows = listing["data"]
+            break
+        time.sleep(0.5)
+    now_ms = int(time.time() * 1000)
+    recovered = 0
+    for row in rows:
+        try:
+            t = row.get("time") or {}
+            busy = int(t.get("busy") or 0)
+            idle = int(t.get("idle") or 0)
+            if busy and busy > idle and now_ms - busy > max_idle_ms:
+                sid = str(row.get("id") or "")
+                if sid and _engine_api(
+                    "POST", f"/api/session/{sid}/interrupt", None
+                ) is not None:
+                    recovered += 1
+        except (TypeError, ValueError):
+            continue
+    if recovered:
+        logger.info("Sessões órfãs interrompidas no boot: %s", recovered)
+    return recovered
+
+
+def _warm_engine_catalog(timeout_s: float = 8.0) -> bool:
+    """Aquece provedores/modelos antes de a SPA abrir a sessão."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            from . import ocweb
+            data = ocweb.catalog(force=True)
+            if data.get("ready"):
+                logger.info(
+                    "Catálogo do motor pronto: %s modelos, %s provedores",
+                    data.get("models"), data.get("providers"),
+                )
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(0.5)
+    logger.warning("Catálogo do motor não ficou pronto em %.0fs", timeout_s)
+    return False
+
+
+def _available_provider_ids() -> set[str]:
+    data = _engine_api("GET", "/api/provider")
+    rows = data.get("data") if isinstance(data, dict) else None
+    return {
+        str(row.get("id"))
+        for row in (rows or [])
+        if isinstance(row, dict) and row.get("id")
+    }
+
+
+def _default_model_ref() -> dict | None:
+    """Modelo padrão do ``opencode.json``; senão o primeiro disponível."""
+    for path in (
+        os.path.expanduser("~/.config/opencode/opencode.json"),
+        os.path.expanduser("~/.config/ufvai/opencode.json"),
+    ):
+        try:
+            cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        model = cfg.get("model")
+        if isinstance(model, str) and "/" in model:
+            provider, model_id = model.split("/", 1)
+            return {"providerID": provider, "modelID": model_id}
+        if isinstance(model, dict) and model.get("providerID") and model.get("modelID"):
+            return {
+                "providerID": str(model["providerID"]),
+                "modelID": str(model["modelID"]),
+            }
+    data = _engine_api("GET", "/api/model")
+    rows = data.get("data") if isinstance(data, dict) else None
+    for row in rows or []:
+        if not isinstance(row, dict) or row.get("enabled") is False:
+            continue
+        if row.get("type") not in (None, "chat"):
+            continue
+        provider = row.get("providerID")
+        model_id = row.get("modelID") or row.get("id")
+        if provider and model_id:
+            return {"providerID": str(provider), "modelID": str(model_id)}
+    return None
+
+
+def _ensure_session_model_available(session_id: str) -> str:
+    """Após um restore, evita sessão presa a provedor que não existe aqui.
+
+    Se o provedor gravado na sessão não está configurado neste ambiente, a
+    lista de modelos fica em branco no seletor. Troca para o modelo padrão.
+    """
+    session = _engine_api("GET", f"/api/session/{session_id}")
+    data = session.get("data") if isinstance(session, dict) else None
+    model = (data or {}).get("model") or {}
+    provider = str(model.get("providerID") or "")
+    if provider and provider in _available_provider_ids():
+        return ""
+    ref = _default_model_ref()
+    if not ref:
+        return ""
+    if _engine_api(
+        "POST", f"/api/session/{session_id}/model", {"model": ref}
+    ) is None:
+        return ""
+    return f"{ref['providerID']}/{ref['modelID']}"
 
 
 def _remember_ttyd_session(session_id: str | None) -> None:
@@ -2927,7 +3076,16 @@ def restore_opencode_auth_from_drive(backup_dir: "str | None" = None) -> bool:
         return True
 
     if _json_has_items(_opencode_auth_export_text()):
-        return False  # o motor já tem credenciais; não duplicar
+        # O motor já tem credenciais — mas pode ter só as anônimas/padrão.
+        # Importa se o backup trouxer provedores que faltam (sincronização).
+        try:
+            current = json.loads(_opencode_auth_export_text() or "{}")
+            backup = json.loads(raw or "{}")
+            missing = set(backup) - set(current)
+        except ValueError:
+            missing = set()
+        if not missing:
+            return False  # nada novo para importar
     fd, tmp_path = tempfile.mkstemp(prefix="ufvai_oc_auth_", suffix=".json", dir="/tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -5219,6 +5377,21 @@ def start_wrapper_server():
                 if session_id:
                     _t_ttyd = time.time()
                     try:
+                        # v0.7.11-web5: sessão restaurada pode apontar para
+                        # provedor que não existe neste ambiente (ex.: criada
+                        # com OpenCode Go em outra máquina). Sem isso o
+                        # seletor de modelos abre vazio.
+                        try:
+                            _switched_model = _ensure_session_model_available(session_id)
+                            if _switched_model:
+                                logger.info(
+                                    "Restore: modelo da sessão ajustado para %s",
+                                    _switched_model,
+                                )
+                        except Exception as _model_exc:  # noqa: BLE001
+                            logger.warning(
+                                "Restore: ajuste de modelo falhou (%s)", _model_exc
+                            )
                         _stop_terminal()
 
                         # Ajuste 14/10/2026 (v0.6.21): garantia antes do
@@ -6572,6 +6745,17 @@ def launch():
         else:
             start_ttyd()
         boot.done(97)
+
+        # v0.7.11-web5: o motor pode subir com uma execução órfã (runtime
+        # anterior morto no meio da resposta). Sem isso a SPA fica em
+        # "Trabalhando" e as mensagens novas nunca saem de "pending".
+        try:
+            boot.active("Sincronizando provedores e modelos", 97)
+            _recover_stale_sessions()
+            _warm_engine_catalog()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Sincronização inicial do motor falhou: %s", exc)
+        boot.done(98)
         
         if IN_COLAB and output:
             terminal_url = output.eval_js(f"google.colab.kernel.proxyPort({OCWEB_PORT})")

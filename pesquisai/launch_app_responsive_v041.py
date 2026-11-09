@@ -1198,7 +1198,7 @@ def create_wrapper_html(
       <button class="tb-icon" onclick="openManual()" title="Manual do UFVAI" data-i18n-title="manual.title">
         <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
       </button>
-      <button class="tb-icon" onclick="toggleConsole()" id="console-toggle" title="Alternar terminal / OpenCode web" data-i18n-title="console.toggle">
+      <button class="tb-icon" onclick="toggleConsole()" id="console-toggle" title="Alternar terminal / versão web" data-i18n-title="console.toggle">
         <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/><path d="M7 9l2 2-2 2M12 13h4"/></svg>
       </button>
       <button class="tb-icon" onclick="openShortcuts()" title="Atalhos de Teclado" data-i18n-title="shortcuts.title">
@@ -1280,7 +1280,7 @@ def create_wrapper_html(
     <div style="height:1px;background:var(--line);margin:8px 0;"></div>
     <button class="modal-close" onclick="openHealth(); toggleMobileMenu();">🩺 <span data-i18n="dashboard.title">Dashboard de Saúde</span></button>
     <button class="modal-close" onclick="openManual(); toggleMobileMenu();">📘 <span data-i18n="manual.title">Manual do UFVAI</span></button>
-    <button class="modal-close" onclick="toggleConsole(); toggleMobileMenu();">🖥️ <span data-i18n="console.toggle">Alternar terminal / OpenCode web</span></button>
+    <button class="modal-close" onclick="toggleConsole(); toggleMobileMenu();">🖥️ <span data-i18n="console.toggle">Alternar terminal / versão web</span></button>
     <button class="modal-close" onclick="openShortcuts(); toggleMobileMenu();">⌨️ <span data-i18n="shortcuts.title">Atalhos de Teclado</span></button>
     <button class="modal-close" onclick="openAgents(); toggleMobileMenu();">📋 <span data-i18n="agents.title">Diretrizes do Agente</span></button>
     <button class="modal-close" onclick="openVpn(); toggleMobileMenu();">🛡 <span data-i18n="vpn.title">VPN da UFV</span></button>
@@ -6758,7 +6758,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Excluir chave de",
             "providers.deleted": "excluído",
             "sessions.refresh": "↻ Atualizar",
-            "console.toggle": "Alternar terminal / OpenCode web",
+            "console.toggle": "Alternar terminal / versão web",
             "sessions.title": "Histórico de Sessões",
             "sessions.search_placeholder": "🔍 Buscar por id ou conteúdo…",
             "shortcuts.title": "Atalhos de Teclado",
@@ -6965,7 +6965,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Delete key for",
             "providers.deleted": "deleted",
             "sessions.refresh": "↻ Refresh",
-            "console.toggle": "Toggle terminal / OpenCode web",
+            "console.toggle": "Toggle terminal / web version",
             "sessions.title": "Session History",
             "sessions.search_placeholder": "🔍 Search by id or content…",
             "shortcuts.title": "Keyboard Shortcuts",
@@ -7172,7 +7172,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Eliminar clave de",
             "providers.deleted": "eliminado",
             "sessions.refresh": "↻ Actualizar",
-            "console.toggle": "Alternar terminal / web de OpenCode",
+            "console.toggle": "Alternar terminal / versión web",
             "sessions.title": "Historial de Sesiones",
             "sessions.search_placeholder": "🔍 Buscar por id o contenido…",
             "shortcuts.title": "Atajos de Teclado",
@@ -7379,7 +7379,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "Supprimer la clé de",
             "providers.deleted": "supprimé",
             "sessions.refresh": "↻ Actualiser",
-            "console.toggle": "Basculer terminal / web OpenCode",
+            "console.toggle": "Basculer terminal / version web",
             "sessions.title": "Historique des sessions",
             "sessions.search_placeholder": "🔍 Rechercher par id ou contenu…",
             "shortcuts.title": "Raccourcis clavier",
@@ -7586,7 +7586,7 @@ def create_wrapper_html(
             "providers.confirm_delete": "删除以下提供商的密钥：",
             "providers.deleted": "已删除",
             "sessions.refresh": "↻ 刷新",
-            "console.toggle": "切换终端 / OpenCode 网页",
+            "console.toggle": "切换终端 / 网页版",
             "sessions.title": "会话历史",
             "sessions.search_placeholder": "🔍 按 ID 或内容搜索…",
             "shortcuts.title": "键盘快捷键",

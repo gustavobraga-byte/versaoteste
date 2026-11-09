@@ -20,14 +20,18 @@ Compatibilidade: HTTP/1.1, SSE (streaming em chunks) e WebSocket (túnel).
 from __future__ import annotations
 
 import base64
+import gzip
 import http.client
 import json
 import os
 import select
 import socket
 import threading
+import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from .constants import CURRENT_SESSION_FILE
 
@@ -150,17 +154,44 @@ _BOOT_JS = """(function(){
   try{var f=window.fetch;window.fetch=function(u,o){o=o||{};if(o.credentials===undefined||o.credentials==="omit")o.credentials="same-origin";return f.call(this,u,o)}}catch(e){}
   function b64(s){return btoa(unescape(encodeURIComponent(s))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}
   function key(){var a=document.querySelector('a[href*="/server/"][href*="/session/"]');if(!a)return "";var m=(a.getAttribute("href")||"").match(/\\/server\\/([^\\/]+)\\/session\\//);return m?m[1]:""}
+  function catalog(cb){fetch("/__ufvai/catalog",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){cb(d||{ready:true})}).catch(function(){cb({ready:true})})}
+  function whenReady(cb,t){
+    catalog(function(d){
+      if(d&&d.ready)return cb(true);
+      if(t<=0)return cb(false);
+      setTimeout(function(){whenReady(cb,t-1)},600);
+    });
+  }
+  // Sessão: espera o catálogo de provedores/modelos antes de navegar.
   var n=0,t=setInterval(function(){
     n++;
     if(location.pathname!=="/"){clearInterval(t);return}
     var k=key();if(!k&&n>=6)k=b64(location.origin);
     if(!k){if(n>40)clearInterval(t);return}
     clearInterval(t);
-    fetch("/__ufvai/session",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){
-      if(d&&d.sid)location.replace("/server/"+k+"/session/"+d.sid);
+    fetch("/__ufvai/session?fallback=1",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){
+      var go=function(){ if(d&&d.sid)location.replace("/server/"+k+"/session/"+d.sid); };
+      if(d&&d.sid)whenReady(go,20); else go();
     }).catch(function(){});
   },700);
+  // Numa sessão aberta direto: se o catálogo NÃO estava pronto no load e
+  // ficou pronto depois, recarrega UMA vez para a SPA buscar os modelos.
+  if(/^\\/server\\/[^\\/]+\\/session\\//.test(location.pathname)){
+    catalog(function(d0){
+      if(d0&&d0.ready)return;
+      whenReady(function(ok){
+        if(!ok)return;
+        try{
+          var k="ufvai.catalog.reload."+location.pathname;
+          if(sessionStorage.getItem(k))return;
+          sessionStorage.setItem(k,"1");
+          setTimeout(function(){location.reload()},400);
+        }catch(e){}
+      },20);
+    });
+  }
 })();"""
+
 
 _BOOT_TAG = '<script src="/__ufvai/boot.js"></script>'
 
@@ -187,6 +218,135 @@ def _session_exists(host: str, port: int, password: str, sid: str) -> bool:
         return False
     finally:
         conn.close()
+
+
+def _api_json(path: str, timeout: float = 5.0):
+    """GET JSON no serviço do OpenCode (``None`` em falha)."""
+    host, port, password = service_info()
+    if not port:
+        return None
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    try:
+        conn.request(
+            "GET",
+            path,
+            headers={"Authorization": _basic(password), "Accept": "application/json"},
+        )
+        resp = conn.getresponse()
+        data = resp.read()
+        if resp.status != 200:
+            return None
+        return json.loads(data.decode("utf-8", "replace"))
+    except (OSError, ValueError):
+        return None
+    finally:
+        conn.close()
+
+
+_CATALOG_CACHE: dict = {"ts": 0.0, "data": {"ready": False, "models": 0, "providers": 0}}
+_CATALOG_LOCK = threading.Lock()
+
+
+def catalog(force: bool = False, ttl: float = 5.0) -> dict:
+    """Estado do catálogo do motor: provedores e modelos já carregados.
+
+    A SPA consulta ``/api/model`` e ``/api/provider`` ao abrir a sessão. Se o
+    motor ainda estiver subindo, a resposta pode vir vazia e o seletor de
+    modelos fica em branco até um recarregamento. O ``boot.js`` usa este
+    endpoint para esperar o catálogo antes de navegar.
+    """
+    now = time.time()
+    with _CATALOG_LOCK:
+        if not force and now - float(_CATALOG_CACHE["ts"]) < ttl:
+            return dict(_CATALOG_CACHE["data"])
+    models = _api_json("/api/model")
+    providers = _api_json("/api/provider")
+    rows = models.get("data") if isinstance(models, dict) else None
+    provs = providers.get("data") if isinstance(providers, dict) else None
+    data = {
+        "ready": bool(rows),
+        "models": len(rows or []),
+        "providers": len(provs or []),
+        "upstream": f"http://{service_info()[0]}:{service_info()[1]}",
+    }
+    with _CATALOG_LOCK:
+        _CATALOG_CACHE.update(ts=now, data=data)
+    return dict(data)
+
+
+def latest_session() -> str:
+    """Sessão usada pelo terminal: ativa ou a mais recente."""
+    active = _api_json("/api/session/active")
+    data = active.get("data") if isinstance(active, dict) else None
+    if isinstance(data, dict):
+        for sid, info in data.items():
+            if not isinstance(info, dict):
+                continue
+            if info.get("type") in ("running", "busy", "pending"):
+                return str(sid)
+    listing = _api_json("/api/session?limit=1&order=desc")
+    rows = listing.get("data") if isinstance(listing, dict) else None
+    if isinstance(rows, list) and rows:
+        return str(rows[0].get("id") or "")
+    return ""
+
+
+_SYNC_EVENTS = {
+    "session.created",
+    "session.viewed",
+    "session.execution.started",
+    "session.model.selected",
+}
+
+
+def _remember_session(sid: str) -> None:
+    sid = str(sid or "").strip()
+    if not sid:
+        return
+    try:
+        tmp = f"{CURRENT_SESSION_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(sid)
+        os.replace(tmp, CURRENT_SESSION_FILE)
+    except OSError:
+        pass
+
+
+def _sync_session_from_event(chunk: bytes) -> None:
+    """Persiste a sessão ativa vista no SSE (terminal ↔ web).
+
+    O terminal e a SPA usam o mesmo motor; quando o usuário cria/troca de
+    sessão na TUI, o evento chega aqui e o próximo boot/reload da web abre
+    a mesma conversa.
+    """
+    try:
+        text = chunk.decode("utf-8", "ignore")
+    except Exception:  # noqa: BLE001
+        return
+    for block in text.split("\n\n"):
+        if not any(ev in block for ev in _SYNC_EVENTS):
+            continue
+        line = next(
+            (ln for ln in block.splitlines() if ln.startswith("data: ")), None
+        )
+        if not line:
+            continue
+        try:
+            payload = json.loads(line[6:])
+        except ValueError:
+            continue
+        if payload.get("type") not in _SYNC_EVENTS:
+            continue
+        data = payload.get("data") or {}
+        if not isinstance(data, dict):
+            continue
+        sid = data.get("sessionID")
+        if not sid and isinstance(data.get("session"), dict):
+            sid = data["session"].get("id")
+        if sid:
+            _remember_session(str(sid))
+
+
 
 
 # ── proxy HTTP/SSE/WebSocket ─────────────────────────────────
@@ -297,12 +457,30 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _catalog_info(self) -> None:
+        body = json.dumps(catalog()).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _session_info(self) -> None:
         host, port, password = service_info()
         sid = current_session()
+        source = "persisted"
         if not _session_exists(host, port, password, sid):
             sid = ""
-        body = json.dumps({"sid": sid}).encode("utf-8")
+        qs = parse_qs(urlparse(self.path).query)
+        fallback = qs.get("fallback", ["0"])[0].lower() in ("1", "true", "yes")
+        if not sid and fallback:
+            # v0.7.11-web5: o terminal pode ter criado/trocado a sessão sem
+            # reiniciar o ttyd. Cair para a sessão ativa/mais recente mantém
+            # web e terminal na mesma conversa.
+            sid = latest_session()
+            source = "latest"
+        body = json.dumps({"sid": sid, "source": source}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -320,6 +498,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if rota == "/__ufvai/session":
             self._session_info()
+            return
+        if rota == "/__ufvai/catalog":
+            self._catalog_info()
             return
 
         if self.headers.get("Upgrade", "").lower() == "websocket":
@@ -359,8 +540,25 @@ class _Handler(BaseHTTPRequestHandler):
         headers = self._forward_headers(password)
         conn = http.client.HTTPConnection(host, port, timeout=600)
         try:
-            conn.request(method, self.path, body=body, headers=headers)
-            resp = conn.getresponse()
+            # v0.7.11-web5: uma tentativa extra cobre o reinício do motor
+            # (service.json muda de porta) sem devolver 502 para a SPA.
+            resp = None
+            for attempt in range(2):
+                try:
+                    conn.request(method, self.path, body=body, headers=headers)
+                    resp = conn.getresponse()
+                    break
+                except OSError:
+                    try:
+                        conn.close()
+                    except OSError:
+                        pass
+                    if attempt == 0:
+                        time.sleep(0.15)
+                        conn = http.client.HTTPConnection(host, port, timeout=600)
+                        continue
+                    raise
+            assert resp is not None
             ctype = (resp.getheader("Content-Type") or "").lower()
 
             if ctype.startswith("text/event-stream"):
@@ -370,14 +568,25 @@ class _Handler(BaseHTTPRequestHandler):
                         continue
                     self.send_header(key, value)
                 self.send_header("Transfer-Encoding", "chunked")
-                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Cache-Control", "no-cache, no-store, no-transform")
                 self.send_header("X-Accel-Buffering", "no")
                 self.end_headers()
+                self.close_connection = True
+                tail = b""
                 try:
                     while True:
                         chunk = resp.read1(4096)
                         if not chunk:
                             break
+                        if tail or b'"type":"session.' in chunk:
+                            buf = tail + chunk
+                            if b"\n\n" in buf:
+                                events, _, tail = buf.rpartition(b"\n\n")
+                                _sync_session_from_event(events)
+                                if len(tail) > 65536:
+                                    tail = tail[-4096:]
+                            else:
+                                tail = buf[-65536:]
                         self.wfile.write(f"{len(chunk):X}\r\n".encode() + chunk + b"\r\n")
                         self.wfile.flush()
                     self.wfile.write(b"0\r\n\r\n")
@@ -387,6 +596,20 @@ class _Handler(BaseHTTPRequestHandler):
                 return
 
             data = resp.read()
+            encoding = (resp.getheader("Content-Encoding") or "").lower().strip()
+            if encoding in ("gzip", "x-gzip"):
+                try:
+                    data = gzip.decompress(data)
+                except OSError:
+                    pass
+            elif encoding == "deflate":
+                try:
+                    data = zlib.decompress(data)
+                except zlib.error:
+                    try:
+                        data = zlib.decompress(data, -zlib.MAX_WBITS)
+                    except zlib.error:
+                        pass
             if ctype.startswith("text/html") and resp.status == 200:
                 sid = current_session()
                 if not _session_exists(host, port, password, sid):
@@ -398,6 +621,10 @@ class _Handler(BaseHTTPRequestHandler):
                 if key.lower() in _BLOCKED_HEADERS:
                     continue
                 self.send_header(key, value)
+            # v0.7.11-web5: API nunca deve vir do cache do navegador — um
+            # /api/model vazio (motor subindo) ficaria "grudado" no reload.
+            if self.path.startswith("/api/") or self.path.startswith("/__ufvai/"):
+                self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             if method != "HEAD":
@@ -428,6 +655,19 @@ _THREAD: threading.Thread | None = None
 _LOCK = threading.Lock()
 
 
+class _Server(ThreadingHTTPServer):
+    """Servidor do proxy com fila maior.
+
+    A SPA dispara ~20 requisições em paralelo ao abrir uma sessão. O backlog
+    padrão do ``socketserver`` (5) recusava conexões nesse pico — a SPA
+    marcava "Can't reach this server" e algumas mensagens ficavam pendentes.
+    """
+
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 128
+
+
 def start(port: int = 8002) -> bool:
     """Sobe o proxy em ``0.0.0.0:<port>`` (idempotente)."""
     return _start(port)
@@ -439,8 +679,7 @@ def _start(port: int = 8002) -> bool:
         if _SERVER is not None:
             return True
         try:
-            server = ThreadingHTTPServer(("0.0.0.0", int(port)), _Handler)
-            server.daemon_threads = True
+            server = _Server(("0.0.0.0", int(port)), _Handler)
             thread = threading.Thread(
                 target=server.serve_forever,
                 name="ufvai-ocweb",
