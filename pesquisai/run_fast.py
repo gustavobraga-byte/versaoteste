@@ -74,6 +74,7 @@ from .opencode_config import (
 )
 from .opencode_utils import find_opencode, reset_opencode_cache
 from .tui_pt import install_pt_plugin
+from .tui_sync import install_sync_plugin
 
 # Descrição do agente UFVAI (aparece na lista de agentes da V2)
 UFVAI_AGENT_DESCRIPTION = (
@@ -1127,6 +1128,15 @@ def _setup_theme_and_agent() -> None:
         logger.warning(f"Plugin PT da TUI não pôde ser instalado: {exc}")
         pt_plugin_dir = ""
 
+    # ── Plugin de sincronização TUI ↔ web (v0.7.11-web9) ─────────────
+    # A TUI publica a sessão que está exibindo; o proxy faz push à web.
+    # Sem este plugin o proxy cai no modo anterior (eventos + polling).
+    try:
+        sync_plugin_dir = install_sync_plugin()
+    except OSError as exc:
+        logger.warning(f"Plugin de sincronização da TUI não pôde ser instalado: {exc}")
+        sync_plugin_dir = ""
+
     # ── cli.json: nome e modo do tema (preserva a escolha do usuário) ──
     ok_cli, existing_cli = load_json_config(CLI_JSON)
     if ok_cli:
@@ -1147,6 +1157,9 @@ def _setup_theme_and_agent() -> None:
         if pt_plugin_dir:
             # Habilita o plugin PT (idempotente; preserva plugins do usuário).
             merged_cli = merge_cli_plugins(merged_cli, pt_plugin_dir)
+        if sync_plugin_dir:
+            # Habilita o plugin de sincronização (idempotente).
+            merged_cli = merge_cli_plugins(merged_cli, sync_plugin_dir)
         write_json_atomic(CLI_JSON, merged_cli)
     else:
         logger.warning("cli.json não pôde ser lido; tema do terminal mantido como está.")

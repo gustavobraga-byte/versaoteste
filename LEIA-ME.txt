@@ -1,31 +1,28 @@
-Correção do repositório versaoteste — chave Google, .deb e sync (web9)
+Correção do repositório versaoteste — sincronização TUI↔web (web10)
 
 SUBSTITUIR NO REPOSITÓRIO (mesmos caminhos)
-- README.md                       (badge/links → versaoteste)
-- PesquisAI.ipynb                 (clone validado + checagem da 8001)
-- COLAB_BOOT_0.7.11.ipynb/.py     (opcional; roda o .py da pasta)
-- pesquisai/ocweb.py              (handshake, cache, sessão ativa, tema)
+- README.md / PesquisAI.ipynb / COLAB_BOOT_0.7.11.*
+- pesquisai/ocweb.py              (live/focus, cache, handshake, tema)
 - pesquisai/launch_app.py         (engine guard, ttyd PATH, restore model)
-- pesquisai/constants.py          (CURRENT_SESSION_FILE + ACTIVE_SESSION_FILE)
 - pesquisai/launch_app_responsive_v041.py (alternador + tema web)
+- pesquisai/constants.py          (FOCUS_FILE, WEB_FOCUS_FILE, ACTIVE...)
 - pesquisai/onboarding.py         (chave Google sem prefixo obrigatório)
 - pesquisai/run_fast.py           (boot fail-open + ufvai-engine)
-- debs/*.deb + SHA256SUMS         (web9)
+- pesquisai/tui_sync.py           (plugin de foco da TUI)  ← NOVO
+- debs/*.deb + SHA256SUMS         (web10)
 
-O QUE MUDOU (web9)
-1. Chave do Google NÃO precisa começar com "AIza" — prefixo é heurística;
-   a validação real é no provedor.
-2. Boot do .deb é fail-open: falha em Drive/deps/skills/vault não impede a
-   interface de subir.
-3. Sem o motor OpenCode 2.x, o terminal é pulado e a página 503 orienta
-   "ufvai --engine-install"; o app tenta ufvai-engine antes do curl|bash.
-4. .deb depende de unzip/xz-utils e põe /opt/pesquisai/bin no PATH do ttyd.
-5. Mantidas as correções de sync: reconexão SSE (handshake), cache de
-   modelos/provedores, sessão ativa em tempo real, tema e título UFVAI.
+SINCRONIZAÇÃO (web10)
+1. TUI→web: o plugin publica a sessão exibida em /tmp/ufvai-focus.json a cada
+   250 ms; o proxy lê a cada 150 ms e faz push em /__ufvai/live. A web troca
+   em ~0,3 s.
+2. Web→TUI: ao navegar, a web grava /tmp/ufvai-web-focus.json (400 ms); o
+   plugin navega a TUI em ~0,4 s.
+3. Ao abrir uma URL de sessão, a web ignora o 1º foco do live e reporta a
+   própria sessão ao terminal (a URL manda na abertura; depois, a TUI manda).
+4. Sem o plugin, o proxy cai no fallback de eventos/polling.
 
 TESTE
 1. Runtime → Reiniciar sessão (Colab) ou `ufvai` (offline).
 2. Abrir a porta 8001.
-3. Conferir .../proxy/8002/__ufvai/catalog e .../diag.
-4. Colar a chave do Google (qualquer formato) e salvar.
-5. Se o terminal não abrir no .deb: `ufvai --engine-install` e `ufvai --doctor`.
+3. Trocar de sessão no terminal → a web deve acompanhar em <1 s.
+4. Trocar de sessão na web → o terminal deve acompanhar em <1 s.

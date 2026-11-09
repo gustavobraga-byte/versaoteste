@@ -24,6 +24,7 @@ import gzip
 import http.client
 import json
 import os
+import queue
 import select
 import socket
 import threading
@@ -33,7 +34,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from .constants import ACTIVE_SESSION_FILE, CURRENT_SESSION_FILE
+from .constants import (
+    ACTIVE_SESSION_FILE,
+    CURRENT_SESSION_FILE,
+    FOCUS_FILE,
+    WEB_FOCUS_FILE,
+)
 
 OCWEB_PORT: int = 8002
 UPSTREAM_HOST: str = "127.0.0.1"
@@ -171,21 +177,73 @@ _BOOT_JS = """(function(){
       setTimeout(function(){whenReady(cb,t-1)},600);
     });
   }
-  // v0.7.11-web8: segue a sessão ativa do terminal em tempo real.
-  function syncSession(){
-    if(!/^\\/server\\/[^\\/]+\\/session\\//.test(location.pathname))return;
-    var p=location.pathname.split("/");
-    var k=p[2],sid=p[4];
-    if(!k||!sid)return;
-    var ed=document.querySelector('[contenteditable="true"][aria-label="Prompt"]');
-    if(ed&&(ed.textContent||"").trim())return;
-    var body=document.body.innerText||"";
-    if(/\\b(Working|Trabalhando)\\b/.test(body))return;
-    fetch("/__ufvai/session?fallback=1",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){
-      if(d&&d.active&&d.active!==sid&&d.active_age_ms<30000)location.replace("/server/"+k+"/session/"+d.active);
-    }).catch(function(){});
+  // v0.7.11-web9: a TUI publica a sessão que está exibindo; o proxy faz
+  // push por SSE (/__ufvai/live) e a web troca na hora — sem polling e sem
+  // inferir a sessão: é exatamente o que o terminal mostra.
+  function curSid(){
+    var m=location.pathname.match(/^\\/server\\/[^\\/]+\\/session\\/([^\\/]+)/);
+    return m?m[1]:"";
   }
-  setInterval(syncSession,2500);
+  function canNav(){
+    var ed=document.querySelector('[contenteditable="true"][aria-label="Prompt"]');
+    if(ed&&(ed.textContent||"").trim())return false;
+    var body=document.body.innerText||"";
+    if(/\\b(Working|Trabalhando)\\b/.test(body))return false;
+    return true;
+  }
+  function navTo(sid){
+    var m=location.pathname.match(/^(\\/server\\/[^\\/]+)\\/session\\//);
+    if(!m||!sid||sid===curSid())return;
+    try{
+      var a=document.querySelector('a[href*="/session/'+sid+'"]');
+      if(a){a.click();return}
+    }catch(e){}
+    location.replace(m[1]+"/session/"+sid);
+  }
+  var _live=null;
+  function startLive(){
+    if(!curSid()||typeof window.EventSource!=="function")return false;
+    try{
+      if(_live){try{_live.close()}catch(e){}}
+      _live=new window.EventSource("/__ufvai/live");
+      var _first=true;
+      _live.onmessage=function(ev){
+        var d=null;try{d=JSON.parse(ev.data)}catch(e){return}
+        // O 1º foco é o estado atual da TUI: ao ABRIR a página, a URL da web
+        // é a intenção do usuário e ela reporta o foco ao terminal. Só os
+        // focos seguintes (trocas reais na TUI) navegam a web.
+        if(_first){_first=false;return}
+        if(!d||!d.sid||d.sid===curSid()||!canNav())return;
+        navTo(d.sid);
+      };
+    }catch(e){return false}
+    return true;
+  }
+  function liveOk(){try{return !!_live&&_live.readyState===1}catch(e){return false}}
+  startLive();
+  if(window.addEventListener)window.addEventListener("pageshow",function(){startLive()});
+  // Reserva: sem push (EventSource indisponível), consulta a cada 2,5 s.
+  setInterval(function(){
+    if(!curSid()||liveOk())return;
+    if(!_live||_live.readyState===2)startLive();
+    if(liveOk())return;
+    fetch("/__ufvai/session?fallback=1",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){
+      if(d&&d.active&&d.active!==curSid()&&d.active_age_ms<30000&&canNav())navTo(d.active);
+    }).catch(function(){});
+  },2500);
+  // v0.7.11-web9: web → terminal — o plugin da TUI segue este foco.
+  var _reported=location.pathname,_lastSid=curSid(),_forceReport=true;
+  function reportFocus(){
+    var sid=curSid();
+    if(!sid||(!_forceReport&&location.pathname===_reported&&sid===_lastSid))return;
+    _forceReport=false;_reported=location.pathname;_lastSid=sid;
+    try{
+      fetch("/__ufvai/focus",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({sid:sid,ts:Date.now(),source:"web"}),cache:"no-store"});
+    }catch(e){}
+  }
+  setInterval(reportFocus,400);
+  setTimeout(function(){_forceReport=true;reportFocus();},900);
   // Sessão: espera o catálogo de provedores/modelos antes de navegar.
   var n=0,t=setInterval(function(){
     n++;
@@ -274,6 +332,8 @@ _CLOSE_ONCE_LOCK = threading.Lock()
 _CLOSE_ONCE_DONE = False
 _RESP_CACHE: dict = {}
 _RESP_LOCK = threading.Lock()
+_LAST_SESSION_WRITTEN = {"sid": None}
+_LAST_SESSION_LOCK = threading.Lock()
 
 
 def _cache_key(path: str) -> str:
@@ -481,6 +541,74 @@ def latest_session() -> str:
     return ""
 
 
+# ── foco da TUI ↔ web (v0.7.11-web9) ─────────────────────────
+# A TUI (plugin ufvai-sync) grava a sessão que está exibindo em
+# ``FOCUS_FILE``. Um observador lê o arquivo e faz *push* imediato para as
+# páginas abertas por ``/__ufvai/live`` — sem polling de 2,5 s e sem inferir
+# a sessão por eventos: é o mesmo dado que a TUI mostra na tela.
+_LIVE_SUBS: set = set()
+_LIVE_LOCK = threading.Lock()
+_FOCUS_STOP = threading.Event()
+
+
+def read_focus() -> dict:
+    """Foco publicado pela TUI (``{}`` se ausente/ inválido)."""
+    try:
+        raw = Path(FOCUS_FILE).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_web_focus(sid: str) -> bool:
+    """Grava o foco escolhido na web (o plugin da TUI segue)."""
+    sid = str(sid or "").strip()
+    if not sid:
+        return False
+    try:
+        tmp = f"{WEB_FOCUS_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"sid": sid, "ts": int(time.time() * 1000), "source": "web"}, fh)
+        os.replace(tmp, WEB_FOCUS_FILE)
+        return True
+    except OSError:
+        return False
+
+
+def _publish_live(payload: dict) -> None:
+    msg = json.dumps(payload, ensure_ascii=False)
+    with _LIVE_LOCK:
+        subs = list(_LIVE_SUBS)
+    for sub in subs:
+        try:
+            sub.put_nowait(msg)
+        except Exception:  # noqa: BLE001 — fila cheia: a próxima atualiza
+            pass
+
+
+def _watch_focus() -> None:
+    """Observa ``FOCUS_FILE`` (0,25 s) e publica mudanças de sessão."""
+    last = ""
+    while not _FOCUS_STOP.is_set():
+        data = read_focus()
+        sid = str(data.get("sid") or "").strip()
+        if sid and sid != last:
+            last = sid
+            _remember_session(sid)
+            _publish_live(
+                {
+                    "sid": sid,
+                    "ts": data.get("ts") or int(time.time() * 1000),
+                    "source": data.get("source") or "tui",
+                }
+            )
+        _FOCUS_STOP.wait(0.15)
+
+
 _SYNC_EVENTS = {
     "session.created",
     "session.viewed",
@@ -493,6 +621,10 @@ def _remember_session(sid: str) -> None:
     sid = str(sid or "").strip()
     if not sid:
         return
+    with _LAST_SESSION_LOCK:
+        if _LAST_SESSION_WRITTEN["sid"] == sid:
+            return
+        _LAST_SESSION_WRITTEN["sid"] = sid
     try:
         tmp = f"{CURRENT_SESSION_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
@@ -801,6 +933,7 @@ class _Handler(BaseHTTPRequestHandler):
             "model": {"scoped": _count(model_scoped), "global": _count(model_global)},
             "provider": {"scoped": _count(provider_scoped), "global": _count(provider_global)},
             "fallback": _count(model_scoped) in (0,) or _count(provider_scoped) in (0,),
+            "focus": read_focus(),
         }).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -840,6 +973,67 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _live_stream(self) -> None:
+        """SSE local: entrega o foco da TUI assim que ele muda."""
+        sub: queue.Queue = queue.Queue(maxsize=64)
+        with _LIVE_LOCK:
+            _LIVE_SUBS.add(sub)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store, no-transform")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+        def _send(payload: bytes) -> None:
+            self.wfile.write(f"{len(payload):X}\r\n".encode() + payload + b"\r\n")
+            self.wfile.flush()
+
+        try:
+            _send(b"retry: 1000\n\n")
+            data = read_focus()
+            sid = str(data.get("sid") or "").strip()
+            if sid:
+                _send(
+                    b"data: "
+                    + json.dumps(
+                        {
+                            "sid": sid,
+                            "ts": data.get("ts") or 0,
+                            "source": data.get("source") or "tui",
+                        }
+                    ).encode("utf-8")
+                    + b"\n\n"
+                )
+            while True:
+                try:
+                    msg = sub.get(timeout=15)
+                except queue.Empty:
+                    _send(b": ping\n\n")
+                    continue
+                _send(b"data: " + str(msg).encode("utf-8") + b"\n\n")
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            with _LIVE_LOCK:
+                _LIVE_SUBS.discard(sub)
+
+    def _web_focus(self) -> None:
+        """A web informa a sessão que está exibindo (terminal segue)."""
+        body = self._read_body() or b""
+        try:
+            data = json.loads(body.decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            data = {}
+        sid = str((data or {}).get("sid") or "").strip() if isinstance(data, dict) else ""
+        ok = write_web_focus(sid)
+        self.send_response(204 if ok else 400)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _handle(self, method: str) -> None:
         rota = self.path.split("?", 1)[0]
         if rota == "/__ufvai_ready":
@@ -847,6 +1041,12 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if rota == "/__ufvai/boot.js":
             self._boot_js()
+            return
+        if rota == "/__ufvai/live":
+            self._live_stream()
+            return
+        if rota == "/__ufvai/focus":
+            self._web_focus()
             return
         if rota == "/__ufvai/session":
             self._session_info()
@@ -982,6 +1182,19 @@ class _Handler(BaseHTTPRequestHandler):
                         if not payload:
                             closed = True
 
+                heartbeat_stop = threading.Event()
+
+                def _heartbeat() -> None:
+                    while not heartbeat_stop.wait(10.0):
+                        try:
+                            _emit(b": ufvai-ping\n\n")
+                        except OSError:
+                            return
+
+                threading.Thread(
+                    target=_heartbeat, name="ufvai-keepalive", daemon=True
+                ).start()
+
                 # v0.7.11-web8: no Colab o bundle da SPA pode carregar depois
                 # do primeiro server.connected. Sem esse handshake a SPA não
                 # dispara provider.sync/model.sync e o seletor/lista de
@@ -1033,6 +1246,8 @@ class _Handler(BaseHTTPRequestHandler):
                     _emit(b"")
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+                finally:
+                    heartbeat_stop.set()
                 return
 
             data = resp.read()
@@ -1163,6 +1378,10 @@ def _start(port: int = 8002) -> bool:
             )
             thread.start()
             _SERVER, _THREAD = server, thread
+            _FOCUS_STOP.clear()
+            threading.Thread(
+                target=_watch_focus, name="ufvai-focus", daemon=True
+            ).start()
             return True
         except OSError:
             return False
@@ -1173,6 +1392,7 @@ def stop() -> None:
     with _LOCK:
         server, _SERVER = _SERVER, None
         _THREAD = None
+    _FOCUS_STOP.set()
     if server is not None:
         try:
             server.shutdown()
