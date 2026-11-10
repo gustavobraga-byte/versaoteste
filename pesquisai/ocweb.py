@@ -25,6 +25,7 @@ import http.client
 import json
 import os
 import queue
+import re
 import select
 import socket
 import threading
@@ -32,7 +33,7 @@ import time
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 
 from .constants import (
     ACTIVE_SESSION_FILE,
@@ -121,10 +122,27 @@ def service_file() -> Path:
     return Path("/root/.local/state/opencode/service.json")
 
 
+_SERVICE_CACHE: dict = {"key": None, "value": (UPSTREAM_HOST, 0, "")}
+
+
 def service_info() -> tuple[str, int, str]:
-    """(host, porta, senha) do serviço em execução; ``(host, 0, '')`` se ausente."""
+    """(host, porta, senha) do serviço em execução; ``(host, 0, '')`` se ausente.
+
+    v0.7.11-web10: o ``service.json`` é lido em *toda* requisição do proxy
+    (dezenas por navegação). O cache por ``mtime``/tamanho elimina esse I/O
+    sem esconder a troca de porta quando o motor reinicia.
+    """
+    path = service_file()
     try:
-        data = json.loads(service_file().read_text(encoding="utf-8"))
+        st = path.stat()
+        key = (str(path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return UPSTREAM_HOST, 0, ""
+    cached = _SERVICE_CACHE.get("value")
+    if _SERVICE_CACHE.get("key") == key and cached:
+        return cached
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return UPSTREAM_HOST, 0, ""
     url = str(data.get("url") or "")
@@ -134,7 +152,10 @@ def service_info() -> tuple[str, int, str]:
             port = int(url.rsplit(":", 1)[1].strip("/"))
         except ValueError:
             port = 0
-    return UPSTREAM_HOST, port, str(data.get("password") or "")
+    info = (UPSTREAM_HOST, port, str(data.get("password") or ""))
+    _SERVICE_CACHE["key"] = key
+    _SERVICE_CACHE["value"] = info
+    return info
 
 
 def _basic(password: str) -> str:
@@ -155,9 +176,16 @@ def _inject_html(data: bytes, session_id: str = "") -> bytes:
     return text.encode("utf-8")
 
 
-
-_BOOT_JS = """(function(){
-  try{var f=window.fetch;window.fetch=function(u,o){o=o||{};if(o.credentials===undefined||o.credentials==="omit")o.credentials="same-origin";return f.call(this,u,o)}}catch(e){}
+_BOOT_JS = r"""(function(){
+  try{var f=window.fetch;window.fetch=function(u,o){
+    o=o||{};
+    if(o.credentials===undefined||o.credentials==="omit")o.credentials="same-origin";
+    try{
+      var _u=(typeof u==="string")?u:((u&&u.url)||"");
+      if(_u.indexOf("/interrupt")>=0)window.__ufvaiLastInterrupt=Date.now();
+    }catch(e){}
+    return f.call(this,u,o)
+  }}catch(e){}
   function ufvaiTheme(t){
     t=(t==="light")?"light":"dark";
     try{localStorage.setItem("opencode-color-scheme",t);
@@ -167,8 +195,10 @@ _BOOT_JS = """(function(){
   }
   try{var _qt=new URLSearchParams(location.search).get("theme");if(_qt)ufvaiTheme(_qt.indexOf("light")>=0?"light":"dark");}catch(e){}
   window.addEventListener("message",function(e){var d=e.data||{};if(d&&d.type==="ufvai-theme")ufvaiTheme(d.theme);});
-  function b64(s){return btoa(unescape(encodeURIComponent(s))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}
-  function key(){var a=document.querySelector('a[href*="/server/"][href*="/session/"]');if(!a)return "";var m=(a.getAttribute("href")||"").match(/\\/server\\/([^\\/]+)\\/session\\//);return m?m[1]:""}
+  try{performance.setResourceTimingBufferSize(1000)}catch(e){}
+
+  function b64(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+  function key(){var a=document.querySelector('a[href*="/server/"][href*="/session/"]');if(!a)return "";var m=(a.getAttribute("href")||"").match(/\/server\/([^\/]+)\/session\//);return m?m[1]:""}
   function catalog(cb){fetch("/__ufvai/catalog",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){cb(d||{ready:true})}).catch(function(){cb({ready:true})})}
   function whenReady(cb,t){
     catalog(function(d){
@@ -177,74 +207,222 @@ _BOOT_JS = """(function(){
       setTimeout(function(){whenReady(cb,t-1)},600);
     });
   }
-  // v0.7.11-web9: a TUI publica a sessão que está exibindo; o proxy faz
-  // push por SSE (/__ufvai/live) e a web troca na hora — sem polling e sem
-  // inferir a sessão: é exatamente o que o terminal mostra.
-  function curSid(){
-    var m=location.pathname.match(/^\\/server\\/[^\\/]+\\/session\\/([^\\/]+)/);
-    return m?m[1]:"";
-  }
+
+  // ── rota da SPA ────────────────────────────────────────────────────────
+  // A chave da rota é o base64url da PRÓPRIA origem (é assim que a SPA monta
+  // os links). Usar a URL do motor deixa a sessão em branco.
+  function curSid(){var m=location.pathname.match(/^\/server\/[^\/]+\/session\/([^\/?#]+)/);return m?m[1]:""}
+  function originKey(){try{return b64(location.origin)}catch(e){return ""}}
+  function routeBase(){var m=location.pathname.match(/^(\/server\/[^\/]+)\/session\//);return m?m[1]:""}
   function canNav(){
+    // Só não troca com rascunho no prompt: o texto digitado seria perdido.
     var ed=document.querySelector('[contenteditable="true"][aria-label="Prompt"]');
-    if(ed&&(ed.textContent||"").trim())return false;
-    var body=document.body.innerText||"";
-    if(/\\b(Working|Trabalhando)\\b/.test(body))return false;
-    return true;
+    return !(ed&&(ed.textContent||"").trim());
+  }
+  function mainText(){var m=document.querySelector("main");return m?(m.innerText||""):""}
+
+  // ── foco: ordem total decidida pelo servidor (seq) ─────────────────────
+  // Cada troca (TUI ou web) chega com um seq. Aplica-se só o que é mais novo
+  // que o último visto e que não coincide com a sessão na tela. Batimentos e o
+  // snapshot de conexão só servem de referência: nunca revertem uma escolha.
+  var _lastSeq=-1,_seeded=false,_pendingSid="",_echoSid="",_echoUntil=0,_reportedSid="";
+  function seedSeq(n){if(typeof n==="number"&&n>_lastSeq)_lastSeq=n;_seeded=true}
+  function applyFocus(ev){
+    if(!ev||!ev.sid)return;
+    if(!_seeded){seedSeq(ev.seq);return}
+    if(typeof ev.seq==="number"){if(ev.seq<=_lastSeq)return;_lastSeq=ev.seq}
+    if(ev.sid===curSid()){_pendingSid="";return}
+    if(!canNav()){_pendingSid=ev.sid;return}   // rascunho: aplica quando esvaziar
+    navTo(ev.sid);
   }
   function navTo(sid){
-    var m=location.pathname.match(/^(\\/server\\/[^\\/]+)\\/session\\//);
-    if(!m||!sid||sid===curSid())return;
-    try{
-      var a=document.querySelector('a[href*="/session/'+sid+'"]');
-      if(a){a.click();return}
-    }catch(e){}
-    location.replace(m[1]+"/session/"+sid);
+    if(!sid||sid===curSid())return false;
+    var base=routeBase()||("/server/"+originKey());
+    if(!base||base==="/server/")return false;
+    // A troca vem do terminal: a navegação resultante não volta como foco.
+    _echoSid=sid;_echoUntil=Date.now()+2000;
+    var path=base+"/session/"+sid;
+    if(routeBase()){
+      try{
+        // Rota interna da SPA, sem recarregar. Se nenhum nó do DOM mudar em
+        // 1,5 s, a SPA ignorou o evento: recarrega UMA vez por sessão.
+        var reacted=false,mo=null;
+        try{
+          mo=new MutationObserver(function(){reacted=true});
+          mo.observe(document.body,{childList:true,subtree:true,characterData:true});
+        }catch(e){}
+        history.pushState({},"",path);
+        window.dispatchEvent(new PopStateEvent("popstate",{state:{}}));
+        setTimeout(function(){
+          try{if(mo)mo.disconnect()}catch(e){}
+          if(reacted||curSid()!==sid)return;
+          var k="ufvai.navfb."+sid;
+          try{if(sessionStorage.getItem(k))return;sessionStorage.setItem(k,"1")}catch(e){}
+          if(canNav()){try{location.replace(path)}catch(e){}}
+        },1500);
+        return true;
+      }catch(e){}
+    }
+    // Fora de uma sessão (lista de projetos): o próprio link da SPA resolve a rota.
+    try{var a=document.querySelector('a[href*="/session/'+sid+'"]');if(a){a.click();return true}}catch(e){}
+    try{location.replace(path)}catch(e){}
+    return true;
   }
-  var _live=null;
+
+  // ── canal ao vivo: /__ufvai/live (SSE) ─────────────────────────────────
+  var _live=null,_lastLive=0;
+  function liveOk(){return !!_live&&_live.readyState===1&&(Date.now()-_lastLive)<20000}
   function startLive(){
-    if(!curSid()||typeof window.EventSource!=="function")return false;
+    if(typeof window.EventSource!=="function")return false;
     try{
       if(_live){try{_live.close()}catch(e){}}
       _live=new window.EventSource("/__ufvai/live");
-      var _first=true;
+      _live.onopen=function(){_lastLive=Date.now()};
       _live.onmessage=function(ev){
+        _lastLive=Date.now();   // qualquer dado (inclusive o ping) prova que o canal está vivo
         var d=null;try{d=JSON.parse(ev.data)}catch(e){return}
-        // O 1º foco é o estado atual da TUI: ao ABRIR a página, a URL da web
-        // é a intenção do usuário e ela reporta o foco ao terminal. Só os
-        // focos seguintes (trocas reais na TUI) navegam a web.
-        if(_first){_first=false;return}
-        if(!d||!d.sid||d.sid===curSid()||!canNav())return;
-        navTo(d.sid);
+        if(!d||d.type==="ping")return;
+        if(d.type==="snapshot"){
+          if(!_seeded){seedSeq(d.seq);return}
+          applyFocus(d);
+          return;
+        }
+        if(d.type==="focus")applyFocus(d);
       };
     }catch(e){return false}
     return true;
   }
-  function liveOk(){try{return !!_live&&_live.readyState===1}catch(e){return false}}
   startLive();
   if(window.addEventListener)window.addEventListener("pageshow",function(){startLive()});
-  // Reserva: sem push (EventSource indisponível), consulta a cada 2,5 s.
+
+  // Reserva: sem canal vivo, consulta a cada 1,5 s. Usa só o foco ordenado
+  // (nunca a sessão "active", que puxava a página para longe da escolhida).
   setInterval(function(){
-    if(!curSid()||liveOk())return;
+    if(_pendingSid&&_pendingSid!==curSid()&&canNav()){var s=_pendingSid;_pendingSid="";navTo(s);return}
     if(!_live||_live.readyState===2)startLive();
     if(liveOk())return;
     fetch("/__ufvai/session?fallback=1",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){
-      if(d&&d.active&&d.active!==curSid()&&d.active_age_ms<30000&&canNav())navTo(d.active);
+      if(d&&d.focus){if(!_seeded)seedSeq(d.focus.seq);else applyFocus(d.focus)}
     }).catch(function(){});
-  },2500);
-  // v0.7.11-web9: web → terminal — o plugin da TUI segue este foco.
-  var _reported=location.pathname,_lastSid=curSid(),_forceReport=true;
+  },1500);
+
+  // ── web → terminal ─────────────────────────────────────────────────────
+  // Toda troca feita aqui é publicada na hora (pushState, replaceState,
+  // popstate) e, como rede de segurança, a cada 1,2 s.
   function reportFocus(){
     var sid=curSid();
-    if(!sid||(!_forceReport&&location.pathname===_reported&&sid===_lastSid))return;
-    _forceReport=false;_reported=location.pathname;_lastSid=sid;
+    if(!sid||sid===_reportedSid)return;
+    _reportedSid=sid;
+    if(sid===_echoSid&&Date.now()<_echoUntil){_echoSid="";return}   // eco do terminal
     try{
       fetch("/__ufvai/focus",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({sid:sid,ts:Date.now(),source:"web"}),cache:"no-store"});
+        body:JSON.stringify({sid:sid,ts:Date.now(),source:"web"}),cache:"no-store",keepalive:true});
     }catch(e){}
   }
-  setInterval(reportFocus,400);
-  setTimeout(function(){_forceReport=true;reportFocus();},900);
-  // Sessão: espera o catálogo de provedores/modelos antes de navegar.
+  setInterval(reportFocus,1200);
+  try{
+    var _ps=history.pushState,_rs=history.replaceState;
+    history.pushState=function(){var r=_ps.apply(this,arguments);try{reportFocus()}catch(e){}return r};
+    history.replaceState=function(){var r=_rs.apply(this,arguments);try{reportFocus()}catch(e){}return r};
+    window.addEventListener("popstate",function(){try{reportFocus()}catch(e){}});
+  }catch(e){}
+  reportFocus();   // primeira leitura: publica o que está na tela
+
+  // ── botão Parar: rede de segurança ─────────────────────────────────────
+  // O botão da SPA faz POST /api/session/<id>/interrupt?resume=true. Se essa
+  // chamada não sair, mandamos a interrupção 600 ms depois (idempotente).
+  function _stopFallback(ev){
+    try{
+      var el=ev.target;
+      var btn=(el&&el.closest)?el.closest('button[aria-label="Stop"],button[aria-label="Parar"]'):null;
+      if(!btn)return;
+      var sid=curSid(); if(!sid)return;
+      setTimeout(function(){
+        if(Date.now()-(window.__ufvaiLastInterrupt||0)<900)return;
+        fetch("/__ufvai/run-state?sid="+encodeURIComponent(sid),{cache:"no-store"})
+          .then(function(r){return r.ok?r.json():null})
+          .then(function(js){
+            if(js&&js.running){
+              try{
+                fetch("/api/session/"+sid+"/interrupt?resume=true",{
+                  method:"POST",headers:{"Content-Type":"application/json"},body:"{}",cache:"no-store"
+                });
+              }catch(e){}
+            }else if(js&&!js.running){
+              // Turno já terminou no servidor: o "Working" é estado preso.
+              _unstuckReload(sid);
+            }
+          }).catch(function(){});
+      },600);
+    }catch(e){}
+  }
+  try{document.addEventListener("click",_stopFallback,true);}catch(e){}
+
+  // Recarrega no máximo 1× a cada 2 min por sessão (o estado está no servidor).
+  function _unstuckReload(sid){
+    var k="ufvai.unstuck."+sid;
+    try{
+      var last=Number(sessionStorage.getItem(k)||0);
+      if(Date.now()-last<120000)return;
+      sessionStorage.setItem(k,String(Date.now()));
+    }catch(e){}
+    try{location.reload();}catch(e){}
+  }
+
+  // "Working" preso: só age quando o MOTOR diz que a sessão não está rodando
+  // (/__ufvai/run-state usa /api/session/active), três vezes seguidas (~18 s).
+  var _stuck=0;
+  setInterval(function(){
+    window.__ufvaiWatch=(window.__ufvaiWatch||0)+1;
+    var sid=curSid(); if(!sid){_stuck=0;return}
+    if(!/(?:Working|Trabalhando)/.test(mainText())){_stuck=0;return}
+    var ed=document.querySelector('[contenteditable="true"][aria-label="Prompt"]');
+    if(ed&&(ed.textContent||"").trim())return;      // usuário digitando: não mexer
+    fetch("/__ufvai/run-state?sid="+encodeURIComponent(sid),{cache:"no-store"})
+      .then(function(r){return r.ok?r.json():null})
+      .then(function(js){
+        if(!js||js.running){_stuck=0;return}          // o motor diz que está rodando
+        _stuck++;
+        window.__ufvaiStuck=_stuck;
+        try{window.dispatchEvent(new Event("focus"));}catch(e){}
+        if(_stuck<3)return;
+        _stuck=0;
+        _unstuckReload(sid);
+      }).catch(function(){});
+  },6000);
+
+  // ── modelos ────────────────────────────────────────────────────────────
+  // A SPA busca /api/model ao abrir a sessão. Se a lista não chegou (motor
+  // subindo, evento server.connected perdido), recarrega UMA vez a cada 10 min.
+  // Só age quando o servidor já tem modelos (há chave configurada).
+  function modelsOk(){
+    try{
+      var es=performance.getEntriesByType("resource");
+      for(var i=es.length-1;i>=0;i--){
+        if((es[i].name||"").indexOf("/api/model")<0)continue;
+        var st=es[i].responseStatus;
+        if(!st)return true;              // sem dado de status: não mexe
+        return st===200;
+      }
+    }catch(e){return true}
+    return false;                        // a SPA nunca pediu /api/model
+  }
+  if(/^\/server\/[^\/]+\/session\//.test(location.pathname)){
+    setTimeout(function(){
+      catalog(function(d){
+        if(!d||!d.ready)return;          // sem modelos no servidor (ex.: sem chave)
+        if(modelsOk())return;
+        try{
+          var last=Number(sessionStorage.getItem("ufvai.modelreload")||0);
+          if(Date.now()-last<600000)return;
+          sessionStorage.setItem("ufvai.modelreload",String(Date.now()));
+        }catch(e){}
+        if(canNav()){try{location.reload()}catch(e){}}
+      });
+    },12000);
+  }
+
+  // ── início: "/" abre a sessão atual (espera o catálogo, sem bloquear) ──
   var n=0,t=setInterval(function(){
     n++;
     if(location.pathname!=="/"){clearInterval(t);return}
@@ -256,22 +434,6 @@ _BOOT_JS = """(function(){
       if(d&&d.sid)whenReady(go,20); else go();
     }).catch(function(){});
   },700);
-  // Numa sessão aberta direto: se o catálogo NÃO estava pronto no load e
-  // ficou pronto depois, recarrega UMA vez para a SPA buscar os modelos.
-  if(/^\\/server\\/[^\\/]+\\/session\\//.test(location.pathname)){
-    catalog(function(d0){
-      if(d0&&d0.ready)return;
-      whenReady(function(ok){
-        if(!ok)return;
-        try{
-          var k="ufvai.catalog.reload."+location.pathname;
-          if(sessionStorage.getItem(k))return;
-          sessionStorage.setItem(k,"1");
-          setTimeout(function(){location.reload()},400);
-        }catch(e){}
-      },20);
-    });
-  }
 })();"""
 
 
@@ -286,20 +448,42 @@ def current_session() -> str:
         return ""
 
 
+_EXISTS_CACHE: dict = {}
+_EXISTS_LOCK = threading.Lock()
+_EXISTS_TTL = 15.0
+
+
 def _session_exists(host: str, port: int, password: str, sid: str) -> bool:
+    """Existência da sessão (cache de 15 s).
+
+    Chamada a cada HTML servido; sem cache virava uma ida ao motor dentro do
+    caminho crítico do primeiro paint.
+    """
     if not sid:
         return False
+    key = (port, sid)
+    now = time.time()
+    with _EXISTS_LOCK:
+        item = _EXISTS_CACHE.get(key)
+        if item and now - item[0] < _EXISTS_TTL:
+            return item[1]
     conn = http.client.HTTPConnection(host, port, timeout=3)
+    ok = False
     try:
         conn.request("GET", f"/api/session/{sid}",
                      headers={"Authorization": _basic(password)})
         resp = conn.getresponse()
         resp.read()
-        return resp.status == 200
+        ok = resp.status == 200
     except OSError:
-        return False
+        ok = False
     finally:
         conn.close()
+    with _EXISTS_LOCK:
+        if len(_EXISTS_CACHE) > 256:
+            _EXISTS_CACHE.clear()
+        _EXISTS_CACHE[key] = (now, ok)
+    return ok
 
 
 def _api_json(path: str, timeout: float = 5.0):
@@ -325,9 +509,14 @@ def _api_json(path: str, timeout: float = 5.0):
         conn.close()
 
 
-# v0.7.11-web8: fecha a 1ª conexão SSE uma vez para forçar um handshake
-# real depois que o listener da SPA já está registrado.
-_CLOSE_FIRST_SSE = float(os.environ.get("UFVAI_TEST_CLOSE_FIRST_SSE", "1.0") or 0)
+# v0.8.0 (web14b): atrasa a 1ª conexão SSE de cada documento HTML (~1,2 s)
+# para o ``server.connected`` chegar depois de o listener da SPA existir.
+# A versão anterior FECHAVA essa conexão logo na abertura: além de derrubar o
+# stream, o evento que dispara provider.sync/model.sync se perdia e o seletor
+# de modelos ficava vazio justamente no primeiro acesso (motor recém-iniciado).
+_SSE_HANDSHAKE_DELAY_S = float(
+    os.environ.get("UFVAI_SSE_HANDSHAKE_DELAY", "1.2") or 0
+)
 _CLOSE_ONCE_LOCK = threading.Lock()
 _CLOSE_ONCE_DONE = False
 _RESP_CACHE: dict = {}
@@ -343,14 +532,40 @@ def _cache_key(path: str) -> str:
     return f"{parsed.path}|{directory}"
 
 
-def _cache_get(key: str, port: int, ttl: float = 180.0):
+# v0.8.0 (web14): o catálogo (modelos/provedores) muda quando uma chave é salva
+# ou o motor reinicia. O TTL antigo (180 s) servia listas velhas por 3 minutos;
+# agora o cache também é invalidado pela identidade do motor (porta + mtime do
+# service.json), que muda a cada reinício.
+_CACHE_TTL_S: float = float(os.environ.get("UFVAI_CATALOG_TTL", "60") or 60)
+
+
+def _engine_stamp() -> tuple:
+    """Identidade do motor atual: (porta, mtime_ns do service.json)."""
+    try:
+        return (service_info()[1], service_file().stat().st_mtime_ns)
+    except OSError:
+        return (0, 0)
+
+
+def _has_rows(raw: bytes) -> bool:
+    """True se a resposta traz ``data`` com ao menos um item (lista vazia não é cacheada)."""
+    try:
+        payload = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return False
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    return isinstance(rows, list) and len(rows) > 0
+
+
+def _cache_get(key: str, port: int, ttl: float | None = None):
     now = time.time()
+    ttl = _CACHE_TTL_S if ttl is None else ttl
     with _RESP_LOCK:
         item = _RESP_CACHE.get(key)
         if not item:
             return None
-        ts, cached_port, data, ctype = item
-        if cached_port != port or now - ts > ttl:
+        ts, cached_port, data, ctype, stamp = item
+        if cached_port != port or now - ts > ttl or stamp != _engine_stamp():
             return None
         return data, ctype
 
@@ -359,7 +574,75 @@ def _cache_put(key: str, port: int, data: bytes, ctype: str = "application/json"
     with _RESP_LOCK:
         if len(_RESP_CACHE) > 64:
             _RESP_CACHE.clear()
-        _RESP_CACHE[key] = (time.time(), port, data, ctype)
+        _RESP_CACHE[key] = (time.time(), port, data, ctype, _engine_stamp())
+
+
+def invalidate_catalog_cache() -> None:
+    """Descarta modelos/provedores em cache (chave salva ou motor reiniciado)."""
+    with _RESP_LOCK:
+        for key in [k for k in _RESP_CACHE if k.startswith(("/api/model", "/api/provider"))]:
+            _RESP_CACHE.pop(key, None)
+    with _CATALOG_LOCK:
+        _CATALOG_CACHE.update(ts=0.0)
+    with _GLOBAL_LOCK:
+        _GLOBAL_ROWS.clear()
+        _GLOBAL_ROWS.update({"ts": 0.0, "model": None, "provider": None})
+
+
+def compute_run_state(
+    data: dict,
+    rows: list,
+    now_ms: int,
+    stale_ms: int = 120_000,
+    engine_running: bool | None = None,
+) -> dict:
+    """Decide se o turno está rodando a partir da última mensagem.
+
+    ``session.time.busy > idle`` não serve sozinho: quando um turno morre no
+    meio, o motor mantém ``outcome`` do turno anterior e ``idle`` velho, e a
+    UI fica "Working" para sempre. A mensagem do assistente é o sinal direto:
+    ``time.completed`` presente = terminou; ausente e recente = rodando;
+    ausente e parada há muito tempo = turno órfão (``stale``).
+    """
+    last_assistant = next(
+        (
+            m
+            for m in (rows or [])
+            if isinstance(m, dict) and m.get("type") == "assistant"
+        ),
+        None,
+    )
+    running = False
+    stale = False
+    last_ms = 0
+    completed = None
+    if last_assistant:
+        t = last_assistant.get("time") or {}
+        created = int(t.get("created") or 0)
+        streamed = int(t.get("streamed") or 0)
+        completed = t.get("completed")
+        last_ms = max(created, streamed)
+        if not completed and last_ms:
+            age = now_ms - last_ms
+            running = age < stale_ms
+            stale = not running
+    if engine_running is not None:
+        # v0.8.0 (web14): o motor é a fonte da verdade. Entre dois passos do
+        # turno a última mensagem já está fechada, mas a sessão segue em
+        # execução — a heurística acima dava falso "parado" e recarregava a
+        # página a cada ~30 s.
+        running = bool(engine_running)
+        stale = bool(not running and not completed and last_ms and now_ms - last_ms >= stale_ms)
+    return {
+        "running": bool(running),
+        "stale": bool(stale),
+        "completed": completed is not None,
+        "last_activity_ms": last_ms,
+        "age_ms": (now_ms - last_ms) if last_ms else None,
+        "outcome": (data or {}).get("outcome"),
+        "busy": ((data or {}).get("time") or {}).get("busy", 0),
+        "idle": ((data or {}).get("time") or {}).get("idle", 0),
+    }
 
 
 def _api_bytes(path: str, timeout: float = 20.0) -> bytes:
@@ -424,15 +707,17 @@ def _global_rows(kind: str, ttl: float = 30.0):
     now = time.time()
     with _GLOBAL_LOCK:
         cached = _GLOBAL_ROWS.get(kind)
-        if cached is not None and now - float(_GLOBAL_ROWS["ts"]) < ttl:
+        if cached and now - float(_GLOBAL_ROWS.get(f"{kind}_ts", 0.0)) < ttl:
             return cached
     payload = _api_json(f"/api/{kind}", timeout=15.0)
     rows = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
+    # v0.8.0 (web14): lista vazia não é guardada — ela pode ser só o motor
+    # ainda subindo, e cacheá-la deixava o seletor vazio por 30 s.
+    if not isinstance(rows, list) or not rows:
         return None
     with _GLOBAL_LOCK:
         _GLOBAL_ROWS[kind] = rows
-        _GLOBAL_ROWS["ts"] = now
+        _GLOBAL_ROWS[f"{kind}_ts"] = now
     return rows
 
 
@@ -541,6 +826,243 @@ def latest_session() -> str:
     return ""
 
 
+# ── páginas de mensagens: agregação e pré-busca (v0.7.11-web10) ─────
+# A SPA carrega a conversa inteira ao abrir uma sessão:
+#   message.list({limit:200, order:"asc"}) e depois
+#   message.list({limit:200, cursor:...}) até `cursor.next` ser nulo.
+# Em conversa longa isso são várias idas sequenciais e ~3,5 MB de JSON
+# (medido: 779 mensagens). Aqui o proxy busca as páginas seguintes no
+# motor (loopback, ~30 ms cada), devolve UMA resposta e ainda a mantém
+# comprimida. O número de idas pelo túnel do Colab cai a 1.
+_MESSAGE_PATH = re.compile(r"^/api/session/[^/]+/message$")
+_AGG_MAX_PAGES = int(os.environ.get("UFVAI_AGG_MAX_PAGES", "12") or 12)
+_AGG_MIN_LIMIT = 100
+_PREFETCH: dict = {}
+_PREFETCH_READY: dict = {}
+_PREFETCH_LAST: dict = {}
+_PREFETCH_LOCK = threading.Lock()
+_PREFETCH_TTL = float(os.environ.get("UFVAI_PREFETCH_TTL", "8") or 0)
+_LAST_DIRECTORY: dict = {"value": "", "header": ""}
+
+
+def _directory_of(path: str) -> str:
+    qs = parse_qs(urlparse(path).query)
+    for key in ("location[directory]", "directory"):
+        value = qs.get(key)
+        if value:
+            return value[0]
+    return ""
+
+
+def _session_of(path: str) -> str:
+    m = re.match(r"^/api/session/([^/]+)(?:/|$)", urlparse(path).path)
+    return m.group(1) if m else ""
+
+
+def _is_message_first_page(path: str) -> bool:
+    parsed = urlparse(path)
+    if not _MESSAGE_PATH.match(parsed.path):
+        return False
+    qs = parse_qs(parsed.query)
+    if qs.get("cursor"):
+        return False
+    if (qs.get("order") or [""])[0] != "asc":
+        return False
+    try:
+        limit = int((qs.get("limit") or ["0"])[0])
+    except ValueError:
+        limit = 0
+    return limit >= _AGG_MIN_LIMIT
+
+
+def _get_upstream(
+    path: str,
+    timeout: float = 30.0,
+    extra_headers: dict | None = None,
+) -> tuple[int, bytes]:
+    host, port, password = service_info()
+    if not port:
+        return 0, b""
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    try:
+        headers = {
+            "Authorization": _basic(password),
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+        }
+        if extra_headers:
+            headers.update(extra_headers)
+        conn.request("GET", path, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read()
+        if raw[:2] == b"\x1f\x8b" or (resp.getheader("Content-Encoding") or "") == "gzip":
+            try:
+                raw = gzip.decompress(raw)
+            except OSError:
+                pass
+        return resp.status, raw
+    except OSError:
+        return 0, b""
+    finally:
+        conn.close()
+
+
+def aggregate_message_pages(
+    path: str, first: bytes, extra_headers: dict | None = None
+) -> bytes:
+    """Junta as páginas seguintes de ``message.list`` numa única resposta.
+
+    O cursor do motor é opaco e não pode ser combinado com ``order`` — por
+    isso a primeira página usa ``order=asc`` e as seguintes apenas
+    ``limit``+``cursor``, exatamente como a SPA faz. Se algo falhar, devolve
+    a primeira página intacta (o cursor original continua no JSON).
+    """
+    try:
+        payload = json.loads(first.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        return first
+    if not isinstance(payload, dict):
+        return first
+    items = payload.get("data")
+    cursor = ((payload.get("cursor") or {}).get("next") or "")
+    if not isinstance(items, list) or not cursor:
+        return first
+    parsed = urlparse(path)
+    qs = parse_qs(parsed.query)
+    base = {k: v[0] for k, v in qs.items() if k != "cursor"}
+    base.pop("order", None)
+    pages = 1
+    while cursor and pages < _AGG_MAX_PAGES:
+        status, raw = _get_upstream(
+            parsed.path + "?" + urlencode({**base, "cursor": cursor}),
+            extra_headers=extra_headers,
+        )
+        if status != 200 or not raw:
+            break
+        try:
+            page = json.loads(raw.decode("utf-8", "replace"))
+        except (ValueError, UnicodeDecodeError):
+            break
+        chunk = page.get("data") if isinstance(page, dict) else None
+        if not isinstance(chunk, list):
+            break
+        cursor = ((page.get("cursor") or {}).get("next") or "")
+        if not chunk:
+            break
+        items.extend(chunk)
+        pages += 1
+    payload["data"] = items
+    current = payload.get("cursor")
+    current = current if isinstance(current, dict) else {}
+    current["next"] = cursor or None
+    payload["cursor"] = current
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def prefetch_session(sid: str, ready: threading.Event | None = None) -> None:
+    """Pré-busca a conversa que a TUI acabou de exibir (uso único).
+
+    Roda em paralelo com o push do SSE. Se a requisição da SPA chegar antes
+    de terminar, ela espera em ``wait_prefetch`` — o resultado é o primeiro
+    paint da conversa já com os bytes na mão, sem ida extra ao motor.
+    """
+    sid = str(sid or "").strip()
+    directory = _LAST_DIRECTORY.get("value") or ""
+    header = _LAST_DIRECTORY.get("header") or ""
+    try:
+        if not sid or _PREFETCH_TTL <= 0:
+            return
+        with _PREFETCH_LOCK:
+            last = _PREFETCH_LAST.get(sid, 0.0)
+            if time.time() - last < 30.0:
+                return
+            _PREFETCH_LAST[sid] = time.time()
+            if len(_PREFETCH_LAST) > 64:
+                _PREFETCH_LAST.clear()
+        query = {"limit": "200", "order": "asc"}
+        extra: dict = {}
+        if header:
+            extra["x-opencode-directory"] = header
+        elif directory:
+            extra["x-opencode-directory"] = quote(directory, safe="")
+        else:
+            return
+        path = f"/api/session/{quote(sid, safe='')}/message?" + urlencode(query)
+        status, raw = _get_upstream(path, extra_headers=extra)
+        if status != 200 or not raw:
+            return
+        raw = aggregate_message_pages(path, raw, extra_headers=extra)
+        gz = b""
+        if len(raw) > 131072:
+            try:
+                gz = gzip.compress(raw, 6)
+            except OSError:
+                gz = b""
+        with _PREFETCH_LOCK:
+            if len(_PREFETCH) > 8:
+                _PREFETCH.clear()
+            _PREFETCH[sid] = (
+                time.time(),
+                unquote(header) if header else directory,
+                raw,
+                gz,
+            )
+    finally:
+        if ready is not None:
+            ready.set()
+
+
+def _prefetch_state() -> dict:
+    now = time.time()
+    with _PREFETCH_LOCK:
+        return {
+            sid: {"age_s": round(now - ts, 2), "bytes": len(raw)}
+            for sid, (ts, _dir, raw, _gz) in _PREFETCH.items()
+        }
+
+
+def wait_prefetch(path: str, timeout: float = 2.5) -> None:
+    """Espera (curto) a pré-busca em andamento da sessão pedida."""
+    if not _is_message_first_page(path):
+        return
+    sid = _session_of(path)
+    with _PREFETCH_LOCK:
+        event = _PREFETCH_READY.get(sid)
+    if event is not None:
+        event.wait(timeout)
+
+
+def take_prefetch(path: str, directory: str = "") -> tuple[bytes, bytes] | None:
+    """Consome (uma vez) a pré-busca se o pedido casa com ela."""
+    if not _is_message_first_page(path):
+        return None
+    sid = _session_of(path)
+    if not sid:
+        return None
+    directory = directory or _directory_of(path)
+    now = time.time()
+    with _PREFETCH_LOCK:
+        item = _PREFETCH.pop(sid, None)
+        _PREFETCH_READY.pop(sid, None)
+    if not item:
+        return None
+    ts, saved_dir, raw, gz = item
+    if now - ts > _PREFETCH_TTL:
+        return None
+    if directory and saved_dir and directory != saved_dir:
+        return None
+    return raw, gz
+
+
+def drop_prefetch(path: str) -> None:
+    sid = _session_of(path)
+    if not sid:
+        return
+    with _PREFETCH_LOCK:
+        _PREFETCH.pop(sid, None)
+        _PREFETCH_READY.pop(sid, None)
+
+
 # ── foco da TUI ↔ web (v0.7.11-web9) ─────────────────────────
 # A TUI (plugin ufvai-sync) grava a sessão que está exibindo em
 # ``FOCUS_FILE``. Um observador lê o arquivo e faz *push* imediato para as
@@ -551,8 +1073,14 @@ _LIVE_LOCK = threading.Lock()
 _FOCUS_STOP = threading.Event()
 
 
-def read_focus() -> dict:
-    """Foco publicado pela TUI (``{}`` se ausente/ inválido)."""
+# A TUI reescreve o foco a cada 5 s (heartbeat). Passados 15 s sem
+# atualização, o arquivo é resíduo de uma TUI encerrada e não deve arrastar a
+# web para uma sessão antiga.
+FOCUS_MAX_AGE_MS = 15000
+
+
+def read_focus(max_age_ms: int = FOCUS_MAX_AGE_MS) -> dict:
+    """Foco publicado pela TUI (``{}`` se ausente, inválido ou vencido)."""
     try:
         raw = Path(FOCUS_FILE).read_text(encoding="utf-8")
     except OSError:
@@ -561,22 +1089,156 @@ def read_focus() -> dict:
         data = json.loads(raw)
     except ValueError:
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    try:
+        ts = int(data.get("ts") or 0)
+    except (TypeError, ValueError):
+        ts = 0
+    if max_age_ms > 0 and (not ts or int(time.time() * 1000) - ts > max_age_ms):
+        return {}
+    return data
 
 
-def write_web_focus(sid: str) -> bool:
-    """Grava o foco escolhido na web (o plugin da TUI segue)."""
+def write_focus(sid: str, route: str = "session") -> bool:
+    """Grava o foco publicado pela TUI (mesmo formato do plugin).
+
+    Usado quando o plugin entrega o foco por HTTP (``POST /__ufvai/focus`` com
+    ``source: "tui"``) — o arquivo continua sendo escrito para que o polling e
+    o ``/__ufvai/session`` enxerguem o mesmo estado.
+    """
     sid = str(sid or "").strip()
     if not sid:
         return False
+    payload = {
+        "sid": sid,
+        "ts": int(time.time() * 1000),
+        "route": str(route or "session"),
+        "source": "tui",
+    }
+    try:
+        tmp = f"{FOCUS_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, FOCUS_FILE)
+        return True
+    except OSError:
+        return False
+
+
+# v0.8.0 (web14): o foco tem UMA ordem, decidida pelo servidor. Cada TROCA de
+# sessão — vinda da TUI ou da web — recebe um ``seq`` crescente. Batimentos da
+# TUI (mesma sessão) não geram evento: nunca revertem uma escolha recente.
+#   TUI → web : /__ufvai/live          (SSE; eventos das duas origens)
+#   web → TUI : /__ufvai/focus/stream  (SSE; só eventos da web)
+#   arquivos  : FOCUS_FILE / WEB_FOCUS_FILE (reserva e compatibilidade)
+_TUI_SUBS: set = set()
+_FOCUS_LOCK = threading.Lock()
+_FOCUS: dict = {
+    # v0.8.0 (web14b): o seq nasce do relógio (ms). Se o proxy reiniciar, os
+    # clientes que guardaram um seq alto não ignoram os eventos novos.
+    "seq": int(time.time() * 1000), "sid": "", "source": "", "ts": 0,
+    "tui_sid": "", "web_sid": "",
+}
+
+
+def _focus_next(sid: str, source: str) -> int:
+    """Registra uma troca de sessão. Chamar com ``_FOCUS_LOCK`` adquirido."""
+    _FOCUS["seq"] = int(_FOCUS["seq"]) + 1
+    _FOCUS["sid"] = sid
+    _FOCUS["source"] = source
+    _FOCUS["ts"] = int(time.time() * 1000)
+    return int(_FOCUS["seq"])
+
+
+def _focus_snapshot() -> dict:
+    """Foco atual para quem acabou de conectar (referência; não navega)."""
+    with _FOCUS_LOCK:
+        sid = str(_FOCUS.get("sid") or "")
+        seq = int(_FOCUS.get("seq") or 0)
+        source = str(_FOCUS.get("source") or "")
+    if not sid:
+        data = read_focus()
+        sid = str(data.get("sid") or "").strip()
+        source = str(data.get("source") or "tui")
+    return {"sid": sid, "seq": seq, "source": source}
+
+
+def _write_web_file(sid: str, seq: int) -> bool:
     try:
         tmp = f"{WEB_FOCUS_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"sid": sid, "ts": int(time.time() * 1000), "source": "web"}, fh)
+            json.dump(
+                {"sid": sid, "seq": seq, "ts": int(time.time() * 1000), "source": "web"},
+                fh,
+            )
         os.replace(tmp, WEB_FOCUS_FILE)
         return True
     except OSError:
         return False
+
+
+def _start_prefetch(sid: str) -> None:
+    ready = threading.Event()
+    with _PREFETCH_LOCK:
+        _PREFETCH_READY[sid] = ready
+    threading.Thread(
+        target=prefetch_session,
+        args=(sid, ready),
+        name="ufvai-prefetch",
+        daemon=True,
+    ).start()
+
+
+def apply_tui_focus(sid: str, route: str = "session") -> bool:
+    """Foco publicado pela TUI (``POST /__ufvai/focus``, ``source: "tui"``).
+
+    Grava o arquivo de reserva sempre, mas só publica quando a sessão mudou em
+    relação à última que a TUI reportou (batimentos não publicam).
+    """
+    sid = str(sid or "").strip()
+    if not sid:
+        return False
+    write_focus(sid, route)
+    with _FOCUS_LOCK:
+        if _FOCUS.get("tui_sid") == sid:
+            return True
+        _FOCUS["tui_sid"] = sid
+        seq = _focus_next(sid, "tui")
+        ts = int(_FOCUS["ts"])
+    _remember_session(sid)
+    with _LIVE_LOCK:
+        has_pages = bool(_LIVE_SUBS)
+    if has_pages:
+        _start_prefetch(sid)
+    _publish_live({"type": "focus", "sid": sid, "seq": seq, "source": "tui", "ts": ts})
+    return True
+
+
+def write_web_focus(sid: str) -> bool:
+    """Foco escolhido na web (``POST /__ufvai/focus``, ``source: "web"``).
+
+    Publica para o terminal (``/__ufvai/focus/stream``) e para as outras abas
+    da web (``/__ufvai/live``). A ``CURRENT_SESSION_FILE`` só é atualizada
+    quando a TUI segue a escolha (``apply_tui_focus``).
+    """
+    sid = str(sid or "").strip()
+    if not sid:
+        return False
+    with _FOCUS_LOCK:
+        changed = _FOCUS.get("web_sid") != sid
+        if changed:
+            _FOCUS["web_sid"] = sid
+            seq = _focus_next(sid, "web")
+        else:
+            seq = int(_FOCUS.get("seq") or 0)
+        ts = int(_FOCUS.get("ts") or 0)
+    ok = _write_web_file(sid, seq)
+    if changed:
+        msg = {"type": "focus", "sid": sid, "seq": seq, "source": "web", "ts": ts}
+        _publish_live(msg)
+        _publish_tui(msg)
+    return ok
 
 
 def _publish_live(payload: dict) -> None:
@@ -590,23 +1252,36 @@ def _publish_live(payload: dict) -> None:
             pass
 
 
+def _publish_tui(payload: dict) -> None:
+    msg = json.dumps(payload, ensure_ascii=False)
+    with _LIVE_LOCK:
+        subs = list(_TUI_SUBS)
+    for sub in subs:
+        try:
+            sub.put_nowait(msg)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _watch_focus() -> None:
-    """Observa ``FOCUS_FILE`` (0,25 s) e publica mudanças de sessão."""
-    last = ""
+    """Rede de segurança: observa ``FOCUS_FILE`` (50 ms).
+
+    Cobre plugins antigos, quem escreve o arquivo à mão e o caso em que o POST
+    da TUI falha. Só age quando a sessão no arquivo é diferente da última que a
+    TUI reportou, então não duplica o que já chegou por HTTP.
+    """
+    last_ts = 0
     while not _FOCUS_STOP.is_set():
         data = read_focus()
         sid = str(data.get("sid") or "").strip()
-        if sid and sid != last:
-            last = sid
-            _remember_session(sid)
-            _publish_live(
-                {
-                    "sid": sid,
-                    "ts": data.get("ts") or int(time.time() * 1000),
-                    "source": data.get("source") or "tui",
-                }
-            )
-        _FOCUS_STOP.wait(0.15)
+        ts = int(data.get("ts") or 0)
+        if sid and ts != last_ts:
+            last_ts = ts
+            with _FOCUS_LOCK:
+                known = _FOCUS.get("tui_sid")
+            if sid != known:
+                apply_tui_focus(sid, str(data.get("route") or "session"))
+        _FOCUS_STOP.wait(0.05)
 
 
 _SYNC_EVENTS = {
@@ -644,7 +1319,7 @@ def _take_close_once() -> bool:
 
 
 def _rearm_close_once() -> None:
-    """Cada documento HTML (page load) rearma o reconnect do SSE."""
+    """Cada documento HTML (page load) rearma o atraso do 1º SSE."""
     global _CLOSE_ONCE_DONE
     with _CLOSE_ONCE_LOCK:
         _CLOSE_ONCE_DONE = False
@@ -792,6 +1467,137 @@ def _sync_session_from_event(chunk: bytes) -> None:
 
 # ── proxy HTTP/SSE/WebSocket ─────────────────────────────────
 
+# v0.8.0 (web14): tempo máximo que o proxy espera o motor subir antes de
+# devolver erro à SPA. O motor V2 reseta conexões e responde 503
+# (``service_starting``) por ~5-10 s após iniciar; a SPA não repete
+# requisições falhas, então sem essa espera o seletor de modelos ficava vazio.
+_UPSTREAM_WAIT_S: float = float(os.environ.get("UFVAI_UPSTREAM_WAIT_S", "12") or 12)
+
+# v0.8.0 (web14b): logo após o motor (re)iniciar, ``/api/model`` e
+# ``/api/provider`` podem responder 200 com ``data: []`` antes de o catálogo
+# terminar de carregar. A SPA aceita esse vazio e não repete — o seletor de
+# modelos fica em branco para quem abre a interface nessa janela. Enquanto a
+# janela estiver aberta, o proxy repete a leitura por até ``_EMPTY_RETRY_S``.
+_WARM_LOCK = threading.Lock()
+_WARM: dict = {"stamp": None, "until": 0.0}
+_WARM_GRACE_S: float = float(os.environ.get("UFVAI_WARM_GRACE_S", "25") or 25)
+_EMPTY_RETRY_S: float = float(os.environ.get("UFVAI_EMPTY_RETRY_S", "6") or 6)
+
+
+def _engine_warm() -> bool:
+    """True durante a janela de carregamento após um (re)início do motor.
+
+    A identidade vem do ``service.json`` (porta + mtime): qualquer reinício
+    abre a janela. Fora dela, lista vazia é resposta legítima (ex.: sem chave)
+    e não deve atrasar a SPA.
+    """
+    stamp = _engine_stamp()
+    now = time.time()
+    with _WARM_LOCK:
+        if _WARM["stamp"] != stamp:
+            _WARM["stamp"] = stamp
+            _WARM["until"] = now + _WARM_GRACE_S
+        return now < float(_WARM["until"])
+
+
+def _payload_has_rows(raw: bytes, encoding: str = "") -> bool:
+    """``data`` com ao menos um item, mesmo quando o corpo veio comprimido."""
+    enc = (encoding or "").lower().strip()
+    data = raw
+    if enc in ("gzip", "x-gzip"):
+        try:
+            data = gzip.decompress(raw)
+        except OSError:
+            return False
+    elif enc == "deflate":
+        try:
+            data = zlib.decompress(raw)
+        except zlib.error:
+            try:
+                data = zlib.decompress(data, -zlib.MAX_WBITS)
+            except zlib.error:
+                return False
+    return _has_rows(data)
+
+
+
+class _Buffered:
+    """Resposta do motor já lida (corpo em memória), com a interface usada pelo proxy."""
+
+    def __init__(self, status: int, reason: str, headers: list, body: bytes) -> None:
+        self.status = status
+        self.reason = reason
+        self._headers = headers
+        self._body = body
+
+    def getheader(self, name: str, default=None):
+        for key, value in self._headers:
+            if key.lower() == name.lower():
+                return value
+        return default
+
+    def getheaders(self) -> list:
+        return list(self._headers)
+
+    def read(self, amt=None) -> bytes:
+        body, self._body = self._body, b""
+        return body
+
+
+def _open_upstream(method: str, path: str, body, headers: dict, host: str, port: int):
+    """Abre a requisição ao motor, repetindo enquanto ele está subindo.
+
+    GET/HEAD são repetidos em qualquer falha de conexão e em 503 (corpo curto,
+    antes do SSE). POST só é repetido quando a conexão é recusada — nesse caso
+    nada chegou ao motor, então não há risco de executar duas vezes.
+    Devolve ``(resposta, conexão)``; a conexão é ``None`` quando a resposta
+    já foi lida e está em memória (``_Buffered``).
+    """
+    deadline = time.time() + _UPSTREAM_WAIT_S
+    idempotent = method in ("GET", "HEAD")
+    route = path.split("?", 1)[0]
+    # Só GET de catálogo, e só na janela de carregamento do motor.
+    catalog_get = method == "GET" and route in ("/api/model", "/api/provider") and _engine_warm()
+    empty_deadline = min(deadline, time.time() + _EMPTY_RETRY_S)
+    delay = 0.15
+    while True:
+        conn = http.client.HTTPConnection(host, port, timeout=600)
+        try:
+            conn.request(method, path, body=body, headers=headers)
+            resp = conn.getresponse()
+        except (OSError, http.client.HTTPException) as exc:
+            conn.close()
+            retry_ok = idempotent or isinstance(exc, ConnectionRefusedError)
+            if not retry_ok or time.time() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 1.6, 1.0)
+            continue
+        ctype = (resp.getheader("Content-Type") or "").lower()
+        if idempotent and resp.status == 503 and not ctype.startswith("text/event-stream"):
+            raw = resp.read(65536)
+            headers_out = resp.getheaders()
+            conn.close()
+            if time.time() < deadline:
+                time.sleep(delay)
+                delay = min(delay * 1.6, 1.0)
+                continue
+            return _Buffered(503, resp.reason, headers_out, raw), None
+        if catalog_get and resp.status == 200:
+            # v0.8.0 (web14b): 200 com lista vazia durante o aquecimento é
+            # transitório. Repetir aqui evita que a SPA "grude" no vazio.
+            raw = resp.read()
+            headers_out = resp.getheaders()
+            encoding = resp.getheader("Content-Encoding") or ""
+            conn.close()
+            if _payload_has_rows(raw, encoding) or time.time() >= empty_deadline:
+                return _Buffered(200, resp.reason or "OK", headers_out, raw), None
+            time.sleep(delay)
+            delay = min(delay * 1.6, 1.0)
+            continue
+        return resp, conn
+
+
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "UFVAI-OCWeb/0.7.11"
@@ -814,6 +1620,29 @@ class _Handler(BaseHTTPRequestHandler):
             length = 0
         return self.rfile.read(length) if length > 0 else None
 
+    def _accept_encoding(self) -> str:
+        """Codificações que o navegador aceita (só as que o proxy entende).
+
+        v0.7.11-web10: antes o proxy pedia ``identity`` ao motor e servia
+        **tudo sem compressão**. Só o bundle da SPA passa de 3,3 MB (0,9 MB
+        em gzip) e uma página de mensagens longas chega a ~350 kB (89 kB em
+        gzip). No proxy do Colab isso é a diferença entre "instantâneo" e
+        "dezenas de segundos". ``br``/``zstd`` ficam de fora porque o proxy
+        precisa inspecionar algumas respostas (HTML, /api/model, /api/provider).
+        """
+        raw = (self.headers.get("Accept-Encoding") or "").lower()
+        if "gzip" in raw:
+            return "gzip, deflate"
+        if "deflate" in raw:
+            return "deflate"
+        return "identity"
+
+    def _accepts(self, encoding: str) -> bool:
+        raw = (self.headers.get("Accept-Encoding") or "").lower()
+        if encoding == "deflate":
+            return "deflate" in raw
+        return "gzip" in raw
+
     def _forward_headers(self, password: str) -> dict[str, str]:
         headers: dict[str, str] = {}
         for key, value in self.headers.items():
@@ -821,7 +1650,7 @@ class _Handler(BaseHTTPRequestHandler):
                 continue
             headers[key] = value
         headers["Authorization"] = _basic(password)
-        headers["Accept-Encoding"] = "identity"
+        headers["Accept-Encoding"] = self._accept_encoding()
         headers["Connection"] = "close"
         return headers
 
@@ -898,6 +1727,52 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _run_state(self) -> None:
+        """Estado **real** de execução de uma sessão (para destravar a UI).
+
+        ``session.time.busy > idle`` não é confiável quando um turno morre no
+        meio (o motor mantém ``outcome`` do turno anterior e ``idle`` velho).
+        Aqui olhamos a última mensagem do assistente: se ela tem
+        ``time.completed``, o turno terminou; se não tem, ainda está rodando —
+        a menos que esteja parada há mais de ``STALE_MS`` (turno órfão).
+        """
+        qs = parse_qs(urlparse(self.path).query)
+        sid = str(qs.get("sid", [""])[0] or "").strip()
+        if not sid:
+            self._json_error(400, "sid obrigatório")
+            return
+        sess = _api_json(f"/api/session/{quote(sid, safe='')}")
+        data = sess.get("data") if isinstance(sess, dict) else None
+        if not isinstance(data, dict):
+            self._json_error(404, "sessão não encontrada")
+            return
+        msgs = _api_json(
+            f"/api/session/{quote(sid, safe='')}/message?limit=3&order=desc"
+        )
+        rows = msgs.get("data") if isinstance(msgs, dict) else None
+        # Sinal autoritativo do motor: sessões em execução (``type``: running,
+        # busy ou pending). ``None`` se o motor não respondeu → heurística.
+        active = _api_json("/api/session/active")
+        act_map = active.get("data") if isinstance(active, dict) else None
+        engine_running = None
+        if isinstance(act_map, dict):
+            status = act_map.get(sid)
+            engine_running = bool(
+                isinstance(status, dict)
+                and status.get("type") in ("running", "busy", "pending")
+            )
+        info = compute_run_state(
+            data, rows or [], int(time.time() * 1000), engine_running=engine_running
+        )
+        info["sid"] = sid
+        body = json.dumps(info).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _catalog_info(self) -> None:
         body = json.dumps(catalog()).encode("utf-8")
         self.send_response(200)
@@ -933,13 +1808,23 @@ class _Handler(BaseHTTPRequestHandler):
             "model": {"scoped": _count(model_scoped), "global": _count(model_global)},
             "provider": {"scoped": _count(provider_scoped), "global": _count(provider_global)},
             "fallback": _count(model_scoped) in (0,) or _count(provider_scoped) in (0,),
-            "focus": read_focus(),
+            "focus": read_focus(0),
+            "prefetch": _prefetch_state(),
         }).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json_error(self, status: int, message: str) -> None:
+        body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -958,12 +1843,16 @@ class _Handler(BaseHTTPRequestHandler):
             sid = latest_session()
             source = "latest"
         active, active_age = current_active()
+        # v0.8.0 (web14): ``focus`` traz a ordem (seq) do último foco. A web usa
+        # só isso no reserva; ``active`` (sessão que começou a executar) não
+        # serve para navegar — puxava a página para longe da sessão escolhida.
         body = json.dumps(
             {
                 "sid": sid,
                 "active": active,
                 "active_age_ms": active_age,
                 "source": source,
+                "focus": _focus_snapshot(),
             }
         ).encode("utf-8")
         self.send_response(200)
@@ -973,11 +1862,18 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _live_stream(self) -> None:
-        """SSE local: entrega o foco da TUI assim que ele muda."""
+    def _live_stream(self, kind: str = "web") -> None:
+        """SSE de foco: ``web`` (páginas, eventos das duas origens) ou ``tui``
+        (plugin do terminal, só eventos da web).
+
+        Primeiro envia um ``snapshot`` (referência, sem navegar). Depois, cada
+        troca como ``data:``. O ping também vai em ``data:`` — o navegador só
+        marca o canal como vivo quando recebe mensagem com dados.
+        """
+        subs = _TUI_SUBS if kind == "tui" else _LIVE_SUBS
         sub: queue.Queue = queue.Queue(maxsize=64)
         with _LIVE_LOCK:
-            _LIVE_SUBS.add(sub)
+            subs.add(sub)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store, no-transform")
@@ -993,32 +1889,21 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             _send(b"retry: 1000\n\n")
-            data = read_focus()
-            sid = str(data.get("sid") or "").strip()
-            if sid:
-                _send(
-                    b"data: "
-                    + json.dumps(
-                        {
-                            "sid": sid,
-                            "ts": data.get("ts") or 0,
-                            "source": data.get("source") or "tui",
-                        }
-                    ).encode("utf-8")
-                    + b"\n\n"
-                )
+            snap = {"type": "snapshot", **_focus_snapshot()}
+            _send(b"data: " + json.dumps(snap, ensure_ascii=False).encode("utf-8") + b"\n\n")
             while True:
                 try:
                     msg = sub.get(timeout=15)
                 except queue.Empty:
-                    _send(b": ping\n\n")
+                    ping = json.dumps({"type": "ping", "seq": int(_FOCUS.get("seq") or 0)})
+                    _send(b"data: " + ping.encode("utf-8") + b"\n\n")
                     continue
                 _send(b"data: " + str(msg).encode("utf-8") + b"\n\n")
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
         finally:
             with _LIVE_LOCK:
-                _LIVE_SUBS.discard(sub)
+                subs.discard(sub)
 
     def _web_focus(self) -> None:
         """A web informa a sessão que está exibindo (terminal segue)."""
@@ -1028,7 +1913,13 @@ class _Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             data = {}
         sid = str((data or {}).get("sid") or "").strip() if isinstance(data, dict) else ""
-        ok = write_web_focus(sid)
+        source = str((data or {}).get("source") or "web") if isinstance(data, dict) else "web"
+        if source == "tui":
+            # v0.7.11-web12: a TUI entrega o foco por HTTP → o proxy publica no
+            # SSE na hora (~1 ms), sem esperar o polling do arquivo.
+            ok = apply_tui_focus(sid, str((data or {}).get("route") or "session"))
+        else:
+            ok = write_web_focus(sid)
         self.send_response(204 if ok else 400)
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", "0")
@@ -1036,6 +1927,20 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _handle(self, method: str) -> None:
         rota = self.path.split("?", 1)[0]
+        # Escopo do projeto (a pré-busca precisa dele para consultar o motor).
+        # A SPA manda `x-opencode-directory` (encodeURIComponent) nas rotas
+        # de sessão; algumas rotas usam `location[directory]` na query.
+        dir_header = self.headers.get("x-opencode-directory") or ""
+        _dir = _directory_of(self.path)
+        if dir_header:
+            _LAST_DIRECTORY["header"] = dir_header
+            _LAST_DIRECTORY["value"] = unquote(dir_header)
+        elif _dir:
+            _LAST_DIRECTORY["value"] = _dir
+            _LAST_DIRECTORY["header"] = quote(_dir, safe="")
+        if method in ("POST", "PUT", "PATCH", "DELETE"):
+            # Qualquer escrita invalida a conversa pré-buscada da sessão.
+            drop_prefetch(self.path)
         if rota == "/__ufvai_ready":
             self._health()
             return
@@ -1043,7 +1948,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._boot_js()
             return
         if rota == "/__ufvai/live":
-            self._live_stream()
+            self._live_stream("web")
+            return
+        if rota == "/__ufvai/focus/stream":
+            self._live_stream("tui")
             return
         if rota == "/__ufvai/focus":
             self._web_focus()
@@ -1056,6 +1964,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if rota == "/__ufvai/diag":
             self._diag()
+            return
+        if rota == "/__ufvai/run-state":
+            self._run_state()
             return
 
         if self.headers.get("Upgrade", "").lower() == "websocket":
@@ -1131,27 +2042,45 @@ class _Handler(BaseHTTPRequestHandler):
                 if not titulo or titulo.lower() == "opencode":
                     req["title"] = "UFVAI"
                     body = json.dumps(req, ensure_ascii=False).encode("utf-8")
+        if method == "GET" and _is_message_first_page(self.path):
+            # v0.7.11-web10: a conversa que a TUI acabou de exibir já está
+            # aqui (a SPA espera no máximo 2,5 s por ela).
+            wait_prefetch(self.path)
+            hit = take_prefetch(
+                self.path, unquote(dir_header) if dir_header else _dir
+            )
+            if hit:
+                raw, gz = hit
+                accept = (self.headers.get("Accept-Encoding") or "").lower()
+                use_gz = bool(gz) and "gzip" in accept
+                payload = gz if use_gz else raw
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-UFVAI-Prefetch", "hit")
+                if use_gz:
+                    self.send_header("Content-Encoding", "gzip")
+                    self.send_header("Vary", "Accept-Encoding")
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+
         headers = self._forward_headers(password)
-        conn = http.client.HTTPConnection(host, port, timeout=600)
+        conn = None
         try:
-            # v0.7.11-web5: uma tentativa extra cobre o reinício do motor
-            # (service.json muda de porta) sem devolver 502 para a SPA.
-            resp = None
-            for attempt in range(2):
-                try:
-                    conn.request(method, self.path, body=body, headers=headers)
-                    resp = conn.getresponse()
-                    break
-                except OSError:
-                    try:
-                        conn.close()
-                    except OSError:
-                        pass
-                    if attempt == 0:
-                        time.sleep(0.15)
-                        conn = http.client.HTTPConnection(host, port, timeout=600)
-                        continue
-                    raise
+            # v0.8.0 (web14b): uma vez por documento, espera o listener da SPA
+            # existir antes de abrir o SSE — sem fechar a conexão depois.
+            if (
+                _SSE_HANDSHAKE_DELAY_S > 0
+                and self.path.split("?", 1)[0] == "/api/event"
+                and _take_close_once()
+            ):
+                time.sleep(_SSE_HANDSHAKE_DELAY_S)
+            # v0.8.0 (web14): repete enquanto o motor sobe (ver _open_upstream).
+            # Substitui a tentativa única da v0.7.11-web5, que não cobria a
+            # janela de ~5-10 s do reinício e devolvia 502 para a SPA.
+            resp, conn = _open_upstream(method, self.path, body, headers, host, port)
             assert resp is not None
             ctype = (resp.getheader("Content-Type") or "").lower()
 
@@ -1195,42 +2124,14 @@ class _Handler(BaseHTTPRequestHandler):
                     target=_heartbeat, name="ufvai-keepalive", daemon=True
                 ).start()
 
-                # v0.7.11-web8: no Colab o bundle da SPA pode carregar depois
-                # do primeiro server.connected. Sem esse handshake a SPA não
-                # dispara provider.sync/model.sync e o seletor/lista de
-                # provedores ficam em branco até abrir as configurações.
-                # Fechamos a PRIMEIRA conexão uma vez; a reconexão recebe um
-                # handshake real quando o listener já existe.
-                if _CLOSE_FIRST_SSE > 0 and _take_close_once():
-                    def _force_reconnect() -> None:
-                        nonlocal closed
-                        time.sleep(_CLOSE_FIRST_SSE)
-                        with write_lock:
-                            if closed:
-                                return
-                            try:
-                                self.wfile.write(b"0\r\n\r\n")
-                                self.wfile.flush()
-                            except OSError:
-                                pass
-                            closed = True
-                        for obj in (self.connection, conn):
-                            try:
-                                obj.shutdown(socket.SHUT_RDWR)
-                            except OSError:
-                                pass
-                            try:
-                                obj.close()
-                            except OSError:
-                                pass
-
-                    threading.Thread(
-                        target=_force_reconnect, name="ufvai-reconnect", daemon=True
-                    ).start()
+                # v0.8.0 (web14b): o handshake já foi atrasado antes de abrir
+                # o stream (ver _SSE_HANDSHAKE_DELAY_S). Não fechamos mais a
+                # primeira conexão: derrubá-la perdia o server.connected e
+                # deixava o seletor de modelos vazio no primeiro acesso.
 
                 try:
                     while True:
-                        chunk = resp.read1(4096)
+                        chunk = resp.read1(65536)
                         if not chunk:
                             break
                         if tail or b'"type":"session.' in chunk:
@@ -1252,19 +2153,42 @@ class _Handler(BaseHTTPRequestHandler):
 
             data = resp.read()
             encoding = (resp.getheader("Content-Encoding") or "").lower().strip()
-            if encoding in ("gzip", "x-gzip"):
-                try:
-                    data = gzip.decompress(data)
-                except OSError:
-                    pass
-            elif encoding == "deflate":
-                try:
-                    data = zlib.decompress(data)
-                except zlib.error:
+            # Só estas rotas precisam ser abertas pelo proxy (título/tema no
+            # HTML, catálogo reparado, título da sessão recém-criada). Todo o
+            # resto segue comprimido de ponta a ponta: menos bytes no túnel do
+            # Colab e zero custo de descompressão/recompressão.
+            aggregate = method == "GET" and _is_message_first_page(self.path)
+            transform = (
+                ctype.startswith("text/html")
+                or rota_api in ("/api/model", "/api/provider")
+                or aggregate
+                or (method == "POST" and rota_api == "/api/session")
+            )
+            passthrough = ""
+            if encoding in ("gzip", "x-gzip", "deflate"):
+                normalized = "deflate" if encoding == "deflate" else "gzip"
+                if not transform and self._accepts(normalized):
+                    passthrough = normalized
+                elif normalized == "gzip":
                     try:
-                        data = zlib.decompress(data, -zlib.MAX_WBITS)
-                    except zlib.error:
+                        data = gzip.decompress(data)
+                    except OSError:
                         pass
+                else:
+                    try:
+                        data = zlib.decompress(data)
+                    except zlib.error:
+                        try:
+                            data = zlib.decompress(data, -zlib.MAX_WBITS)
+                        except zlib.error:
+                            pass
+            if aggregate and resp.status == 200:
+                # Uma resposta só, com todas as páginas que a SPA pediria
+                # em sequência (cursor oculto até o limite de segurança).
+                extra = (
+                    {"x-opencode-directory": dir_header} if dir_header else None
+                )
+                data = aggregate_message_pages(self.path, data, extra_headers=extra)
             created_sid = ""
             status_out = resp.status
             if method in ("GET", "HEAD") and rota_api in ("/api/model", "/api/provider"):
@@ -1275,6 +2199,7 @@ class _Handler(BaseHTTPRequestHandler):
                 method in ("GET", "HEAD")
                 and rota_api in ("/api/model", "/api/provider")
                 and status_out == 200
+                and _has_rows(data)
             ):
                 _cache_put(cache_key, port, data)
             if method == "POST" and rota_api == "/api/session" and resp.status == 200:
@@ -1289,10 +2214,15 @@ class _Handler(BaseHTTPRequestHandler):
             # v0.7.11-web7: /api/model pode passar de 1 MB. Compactar reduz
             # o risco de o proxy do Colab truncar/estourar timeout.
             gzip_out = False
+            _accepts_gzip = "gzip" in (
+                self.headers.get("Accept-Encoding") or ""
+            ).lower()
             if (
-                rota_api in ("/api/model", "/api/provider")
+                (rota_api in ("/api/model", "/api/provider") or aggregate)
                 and len(data) > 262144
-                and "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+                and _accepts_gzip
+            ) or (
+                ctype.startswith("text/html") and len(data) > 4096 and _accepts_gzip
             ):
                 try:
                     data = gzip.compress(data, 6)
@@ -1309,7 +2239,10 @@ class _Handler(BaseHTTPRequestHandler):
             # /api/model vazio (motor subindo) ficaria "grudado" no reload.
             if self.path.startswith("/api/") or self.path.startswith("/__ufvai/"):
                 self.send_header("Cache-Control", "no-store")
-            if gzip_out:
+            if passthrough:
+                self.send_header("Content-Encoding", passthrough)
+                self.send_header("Vary", "Accept-Encoding")
+            elif gzip_out:
                 self.send_header("Content-Encoding", "gzip")
                 self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", str(len(data)))
@@ -1328,7 +2261,8 @@ class _Handler(BaseHTTPRequestHandler):
             except OSError:
                 pass
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
     do_GET = lambda self: self._handle("GET")  # type: ignore[assignment]
     do_POST = lambda self: self._handle("POST")  # type: ignore[assignment]
