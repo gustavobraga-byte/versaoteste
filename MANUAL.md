@@ -1522,17 +1522,52 @@ Guia completo (arquitetura, API, CLI, testes e diagnóstico):
 
 ## 11-B. 🖥️ Interface web do OpenCode (v0.7.11-web)
 
-Variante da 0.7.11: a janela principal mostra a **SPA do OpenCode** em vez do
-terminal `ttyd`. O proxy `pesquisai/ocweb.py` (porta **8002**) lê o
-`service.json`, injeta o **Basic auth** e repassa `/_assets`, `/api/*` e o SSE
-`/api/event`; o navegador nunca recebe a senha.
+Variante da 0.7.11 com **duas visões** alternáveis no mesmo botão: o
+**terminal** (`ttyd`, porta 8000) e a **web** (porta **8002**).
+
+### Web18 — as duas visões vivas (terminal e web ao mesmo tempo)
+
+O botão de alternância **não recarrega** mais nada: o terminal (`ttyd`) e a
+web ficam em duas molduras simultâneas e só a visibilidade muda. A sessão do
+agente no terminal **não reinicia** ao ir para a web, e a web continua
+recebendo mensagens (SSE aberto) em segundo plano — voltar é instantâneo e
+preserva a conversa e a rolagem.
+
+Se a URL da web não responder, a moldura cai sozinha no proxy 8002 (sem tela
+em branco).
+
+### Web17 — interface web refeita do zero
+
+A web nova **não** é mais a SPA do OpenCode com remendos: é um cliente
+escrito para o projeto (`pesquisai/webui/` — HTML + CSS + JS sem build e sem
+dependências), servido por `pesquisai/webui_server.py` (porta 8002) e apoiado
+no contrato `pesquisai/webapi.py` (`/api/ufvai/*`). O navegador nunca recebe a
+senha do motor: a autenticação fica no servidor.
+
+| Recurso | Como funciona |
+|---|---|
+| **Modelos** | Catálogo compacto do motor (479 modelos / 5 provedores nesta máquina), com busca, agrupamento por provedor, custo e aviso honesto de “chave não detectada” |
+| **Conversa** | Streaming real (SSE normalizado): texto, raciocínio (bloco recolhível) e cartões de ferramenta com entrada/saída |
+| **Sessões** | Lista lateral com busca; abrir, criar e alternar sem recarregar a página |
+| **Agente** | Seletor de agente (UFVAI e demais) por sessão |
+| **Interromper** | Botão **■** durante a execução (`POST …/interrupt`) |
+| **Tema** | Claro/escuro, sincronizado com o botão da interface principal (`postMessage`) |
+| **Foco TUI ↔ web** | Trocar de sessão na web move o terminal (e vice-versa) |
+
+Diagnóstico rápido:
+
+```bash
+curl -s http://127.0.0.1:8002/api/ufvai/bootstrap | head -c 400   # estado inicial
+curl -s http://127.0.0.1:8002/api/ufvai/models    | head -c 400   # catálogo
+curl -s http://127.0.0.1:8002/health                              # servidor + motor
+```
 
 > **Revisão `web2`:** a célula `COLAB_BOOT_0.7.11.py` agora copia a própria
 > pasta (antes copiava `UFVAI-v0.7.11`, sem a UI web) e aborta com aviso se a
 > porta 8001 já estiver ocupada por uma sessão antiga.
 
-O tema do UFVAI é aplicado por CSS sobre os tokens `--v2-*` (navy/dourado/
-creme, claro e escuro), com barra superior e badge **UFV·AI**. O `ttyd`
+O tema do UFVAI é aplicado no cliente novo por tokens próprios (claro e
+escuro), sincronizado com o botão de tema da interface principal. O `ttyd`
 continua ativo em segundo plano como fallback. Guia completo:
 [`docs/OPENCODE_WEB.md`](docs/OPENCODE_WEB.md).
 

@@ -182,7 +182,7 @@ RESPONSIVE_CSS: str = """
     .footer-right .btn-provider { gap: 0; }
     .footer-right .btn-provider span { display: none; }  /* "+ provedor" vira só o ícone */
     /* terminal: ocupa mais espaço em mobile */
-    #terminal-frame { height: calc(100vh - 50px - 36px) !important; }
+    #terminal-frame, #web-frame { height: calc(100vh - 50px - 36px) !important; }
     /* modais: largura quase total */
     #modal, #provider-overlay > div, #health-overlay > div,
     #sessions-overlay > div, #shortcuts-overlay > div, #lang-overlay > div {
@@ -216,7 +216,7 @@ RESPONSIVE_CSS: str = """
     #topbar { height: 40px; }
     .logo { font-size: 12px; }
     #footer { height: 28px; font-size: 9px; }
-    #terminal-frame { height: calc(100vh - 40px - 28px) !important; }
+    #terminal-frame, #web-frame { height: calc(100vh - 40px - 28px) !important; }
   }
 
   /* === Tablet/iPad portrait: esconde UFV footer === */
@@ -539,6 +539,7 @@ def create_wrapper_html(
     boot_id: str | None = None,
     web_mode: bool = False,
     ttyd_url: str | None = None,
+    web_url: str | None = None,
 ) -> str:
     """Cria a versão v0.4.1 do wrapper HTML do PesquisAI.
 
@@ -965,6 +966,14 @@ def create_wrapper_html(
       width: 100%; height: calc(100% - 90px);
       border: none;
     }
+    /* v0.7.11-web18: a web ocupa a mesma área; a visibilidade é alternada */
+    #web-frame {
+      position: absolute;
+      inset: 50px 0 40px 0;
+      width: 100%; height: calc(100% - 90px);
+      border: none;
+    }
+    #terminal-frame.ufvai-hidden, #web-frame.ufvai-hidden { display: none; }
 
     #footer {
       position: fixed; inset: auto 0 0 0;
@@ -1314,6 +1323,20 @@ def create_wrapper_html(
   id="terminal-frame"
   src="about:blank"
   data-terminal-url="{__TERMINAL_URL__}"
+  allow="clipboard-read; clipboard-write"
+  tabindex="0"
+  style="width:100%; height:calc(100% - 90px); border:none; outline:none;">
+</iframe>
+
+ <!-- v0.7.11-web18: terminal e web convivem em DUAS molduras.
+      Alternar a visão alterna a VISIBILIDADE: nenhuma das duas é
+      recarregada — a sessão do agente continua viva no ttyd e a web
+      mantém o stream SSE aberto em segundo plano. -->
+ <iframe
+  id="web-frame"
+  class="ufvai-hidden"
+  src="about:blank"
+  data-web-url="{__WEB_URL__}"
   allow="clipboard-read; clipboard-write"
   tabindex="0"
   style="width:100%; height:calc(100% - 90px); border:none; outline:none;">
@@ -2825,6 +2848,8 @@ def create_wrapper_html(
 
     // Recarrega o iframe do ttyd (usado após salvar key/trocar tema/restaurar sessão)
     async function reloadTerminalFrame() {
+      // v0.7.11-web18: recarrega SÓ o terminal — a web continua viva
+      // (stream SSE aberto, mensagens carregadas, rolagem preservada).
       const fr = document.getElementById("terminal-frame");
       if (!fr) return;
       const theme = document.documentElement.getAttribute("data-theme") || "pesquisai";
@@ -4255,6 +4280,9 @@ def create_wrapper_html(
           applyWrapperTheme(next);
           setCookie(THEME_COOKIE, next);
           try { localStorage.setItem(THEME_COOKIE, next); } catch (e) {}
+          // v0.7.11-web20: o tema vai para as DUAS molduras imediatamente —
+          // o botão do cabeçalho tem de mudar o tema da web em qualquer modo.
+          _postThemeToFrame();
 
           // 2. 🐛 FIX: Recarrega iframe do ttyd para que o terminal
           //    seja renderizado com o novo tema. Mesmo padrão usado em
@@ -4275,6 +4303,8 @@ def create_wrapper_html(
             fr.src = "about:blank";
             setTimeout(() => {
               fr.src = origSrc + "?theme=" + next + "&t=" + Date.now();
+              // v0.7.11-web18: a web escondida também recebe o tema.
+              _postThemeToFrame();
               toast("✅ " + (dict["theme.terminal_reloaded"] || "Terminal recarregado com novo tema"), "ok");
             }, 3500);
           }
@@ -4379,7 +4409,11 @@ def create_wrapper_html(
     const TERMINAL_URL = (document.getElementById("terminal-frame") || {}).dataset
       ? (document.getElementById("terminal-frame").dataset.terminalUrl || "")
       : "";
-    const WEB_URL = TERMINAL_URL;
+    // v0.7.11-web18: a web tem URL própria (pode ser outra porta); se não
+    // houver, cai na URL do proxy (8002).
+    const WEB_URL = (document.getElementById("web-frame") || {}).dataset
+      ? (document.getElementById("web-frame").dataset.webUrl || TERMINAL_URL)
+      : TERMINAL_URL;
     const TTYD_URL = (function () {
       var u = "{__TTYD_URL__}";
       if (u) return u;
@@ -4408,17 +4442,27 @@ def create_wrapper_html(
         ? "light" : "dark";
     }
     function _postThemeToFrame() {
-      const fr = document.getElementById("terminal-frame");
-      if (!fr || !fr.contentWindow) return;
-      try {
-        fr.contentWindow.postMessage({ type: "ufvai-theme", theme: _currentTheme() }, "*");
-      } catch (e) {}
+      // v0.7.11-web18: as duas molduras (mesmo a que está escondida) recebem
+      // o tema — ao alternar, a visão escondida já está pronta.
+      // v0.7.11-web20: envia o valor CANÔNICO do UFVAI ("pesquisai" /
+      // "pesquisai-light"); antes era "light"/"dark" e a web não reconhecia.
+      var _t = (document.documentElement.getAttribute("data-theme") === "pesquisai-light")
+        ? "pesquisai-light" : "pesquisai";
+      ["terminal-frame", "web-frame"].forEach(function (id) {
+        const fr = document.getElementById(id);
+        if (!fr || !fr.contentWindow) return;
+        try {
+          fr.contentWindow.postMessage({ type: "ufvai-theme", theme: _t }, "*");
+        } catch (e) {}
+      });
     }
     (function _bindThemeSync() {
-      const fr = document.getElementById("terminal-frame");
-      if (!fr) return;
-      fr.addEventListener("load", function () {
-        setTimeout(_postThemeToFrame, 60);
+      ["terminal-frame", "web-frame"].forEach(function (id) {
+        const fr = document.getElementById(id);
+        if (!fr) return;
+        fr.addEventListener("load", function () {
+          setTimeout(_postThemeToFrame, 60);
+        });
       });
     })();
     function _frameUrl(mode) {
@@ -4427,13 +4471,53 @@ def create_wrapper_html(
       return WEB_URL + sep + "theme=" + _currentTheme();
     }
     function applyConsole(mode) {
-      const fr = document.getElementById("terminal-frame");
-      if (!fr) return;
-      _console = (mode === "ttyd" && TTYD_URL) ? "ttyd" : "web";
+      const target = (mode === "ttyd" && TTYD_URL) ? "ttyd" : "web";
+      _console = target;
       try { localStorage.setItem(_CONSOLE_KEY, _console); } catch (e) {}
       const b = document.getElementById("console-toggle");
       if (b) { b.dataset.mode = _console; b.setAttribute("aria-label", _console); }
-      fr.src = _frameUrl(_console);
+      // v0.7.11-web18: cada visão tem sua própria moldura e é carregada UMA
+      // vez. Alternar só muda a visibilidade — o ttyd mantém a sessão do
+      // agente e a web mantém o SSE aberto (nada recarrega, nada reconecta).
+      [["ttyd", "terminal-frame"], ["web", "web-frame"]].forEach(function (pair) {
+        const fr = document.getElementById(pair[1]);
+        if (!fr) return;
+        if (pair[0] === target) {
+          if (!fr.dataset.loaded) {
+            fr.dataset.loaded = "1";
+            fr.src = _frameUrl(pair[0]);
+            if (pair[0] === "web") _watchWebFrame(fr);
+          }
+          fr.classList.remove("ufvai-hidden");
+        } else {
+          fr.classList.add("ufvai-hidden");
+        }
+      });
+    }
+    // v0.7.11-web18b: confirma que a web respondeu. Se a URL da web não
+    // existir (porta trocada, proxy antigo), a moldura cai no proxy 8002
+    // em vez de ficar em branco.
+    function _watchWebFrame(fr) {
+      if (!fr) return;
+      fr.addEventListener("load", function () {
+        var answered = false;
+        var onMsg = function (e) {
+          if (!e.data || e.data.type !== "ufvai-pong") return;
+          answered = true;
+          window.removeEventListener("message", onMsg);
+        };
+        window.addEventListener("message", onMsg);
+        try { fr.contentWindow.postMessage({ type: "ufvai-ping" }, "*"); }
+        catch (e) { answered = true; }
+        setTimeout(function () {
+          if (answered) return;
+          window.removeEventListener("message", onMsg);
+          var fallback = TERMINAL_URL;
+          if (!fallback || fr.src.indexOf(fallback) === -1) return;
+          var sep = fallback.indexOf("?") < 0 ? "?" : "&";
+          fr.src = fallback + sep + "theme=" + _currentTheme();
+        }, 4000);
+      }, { once: true });
     }
     function toggleConsole() { applyConsole(_console === "web" ? "ttyd" : "web"); }
 
@@ -4514,7 +4598,16 @@ def create_wrapper_html(
       }
       let loaded = false;
       el.frame.onload = () => { loaded = true; hideBootSplash(); };
-      el.frame.src = _frameUrl(_console);
+      // v0.7.11-web18: applyConsole carrega a visão atual (uma vez só) e
+      // esconde a outra; o splash espera a moldura ativa.
+      applyConsole(_console);
+      const activeFrame = document.getElementById(
+        _console === "web" ? "web-frame" : "terminal-frame");
+      if (activeFrame && activeFrame !== el.frame) {
+        activeFrame.addEventListener("load", function () {
+          loaded = true; hideBootSplash();
+        });
+      }
       if (!_ttydWatch) {
         _ttydWatch = setInterval(async () => {
           try {
@@ -4526,9 +4619,11 @@ def create_wrapper_html(
             if (d.pid === _ttydPid) return;
             _ttydPid = d.pid;                 // ttyd reiniciado por baixo
             const f = document.getElementById("terminal-frame");
-            if (f) {
+            // v0.7.11-web18: só mexe na moldura do terminal (e só se ela
+            // já tiver sido carregada uma vez).
+            if (f && f.dataset.loaded) {
               try { f.contentWindow.location.reload(); }
-              catch (e) { f.src = _frameUrl(_console); }
+              catch (e) { f.src = _frameUrl("ttyd"); }
             }
           } catch (e) {}
         }, 20000);
@@ -6721,6 +6816,8 @@ def create_wrapper_html(
 
     # Substitui placeholders do template (feito DEPOIS da f-string)
     html = html.replace("{__TERMINAL_URL__}", terminal_url)
+    # v0.7.11-web18: a web pode morar em outra porta que o proxy (8002).
+    html = html.replace("{__WEB_URL__}", web_url or terminal_url)
     html = html.replace("{__TTYD_URL__}", ttyd_url or "")
     html = html.replace("{__READY_URL__}", "/api/ocweb_ready" if web_mode else "/api/ttyd_ready")
     html = html.replace("{__DRIVE_URL__}", drive_url)

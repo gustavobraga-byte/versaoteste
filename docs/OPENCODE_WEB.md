@@ -1,3 +1,32 @@
+# 🖥️ UFVAI v0.7.11-web — interface web do UFVAI
+
+> **Web17 (2026-11-10): arquitetura refeita do zero.** A “versão web” deixou de
+> ser a SPA do OpenCode com remendos e passou a ser um **cliente próprio**
+> (`pesquisai/webui/`) servido por `pesquisai/webui_server.py` (porta 8002),
+> falando com o motor por um contrato próprio (`pesquisai/webapi.py`).
+>
+> ```text
+> navegador ──► webui_server (:8002) ──► motor OpenCode (/api/*)
+>                  ├── webui/       cliente novo (HTML + CSS + JS, sem build)
+>                  └── webapi.py    contrato + normalização (modelos, mensagens, SSE)
+> ```
+>
+> **O que isso resolve:** o seletor de modelos da SPA antiga dependia de
+> `/api/model` e de um evento `server.connected` que se perdia enquanto o motor
+> subia — a interface ficava sem modelos, às vezes mostrando `modelo
+> (unavailable)` sem explicar o motivo. O cliente novo recebe um catálogo
+> **compacto e explícito** (479 modelos / 5 provedores nesta máquina), com
+> busca, agrupamento por provedor e o aviso honesto de “chave não detectada”.
+>
+> **O que continua igual:** a senha do motor nunca chega ao navegador, o
+> protocolo de foco TUI ↔ web (`/__ufvai/focus`, `/__ufvai/focus/stream`) e o
+> `ttyd` como fallback.
+>
+> O texto abaixo descreve a arquitetura **anterior** (SPA do OpenCode), mantida
+> como histórico de referência das rotas e dos diagnósticos.
+
+---
+
 # 🖥️ UFVAI v0.7.11-web — interface web do OpenCode no lugar do ttyd
 
 > **Variante da v0.7.11.** A janela principal do UFVAI deixa de exibir o
@@ -235,3 +264,181 @@ O proxy agora:
 - cacheia o global por ~15–30 s;
 - expõe `GET /__ufvai/diag` com `project`, contagens `scoped/global` e
   `fallback` (abrir `.../proxy/8002/__ufvai/diag`).
+---
+
+## 14. Handshake, cache e sessão ativa (revisão `web8`)
+
+- **Handshake**: a SPA só dispara `provider.sync`/`model.sync` depois de um
+  `server.connected`. No Colab o bundle pode carregar depois do primeiro
+  evento. O proxy fecha a 1ª conexão SSE **a cada page load** (1 s); a
+  reconexão entrega o handshake real ao listener já pronto.
+- **Cache**: `/api/model` e `/api/provider` (escopo do projeto e global) são
+  pré-buscados no boot; a SPA recebe do cache com `X-UFVAI-Cache: hit`
+  (gzip quando grande). Evita o timeout de 15 s do sync.
+- **Sessão ativa**: `session.execution.started` grava
+  `/tmp/ufvai-active-session` (sid + timestamp). O `boot.js` consulta
+  `/__ufvai/session` a cada 2,5 s e segue a sessão do terminal se o início
+  for recente (< 30 s), sem trocar quando há texto no composer ou “Working”.
+
+---
+
+## 15. Boot offline e chave Google (revisão `web9`)
+
+- O boot é **fail-open**: falha em Drive/dependências/skills/vault não impede a
+  interface de subir.
+- Sem o motor OpenCode 2.x, o terminal é pulado e a página 503 orienta
+  `ufvai --engine-install`; o app tenta o instalador `ufvai-engine` antes do
+  `curl | bash`.
+- O `.deb` inclui `unzip`/`xz-utils` nas dependências e põe
+  `/opt/pesquisai/bin` no `PATH` para o `ttyd` empacotado.
+- A chave do Google **não precisa** começar com `AIza`; o prefixo é apenas
+  heurística de reconhecimento e não bloqueia o salvamento.
+
+---
+
+## 16. Foco TUI ↔ web em tempo real (revisão `web10`)
+
+- O plugin de TUI `ufvai-sync` (instalado em
+  `~/.config/opencode/tui/ufvai-sync`) publica `context.ui.router.current()`
+  em `/tmp/ufvai-focus.json` a cada 250 ms.
+- O proxy observa o arquivo a cada 150 ms e faz push em `/__ufvai/live`
+  (SSE). A web navega para a sessão exibida no terminal em ~0,3 s.
+- No sentido inverso, a web grava `/tmp/ufvai-web-focus.json` ao trocar de
+  sessão (400 ms); o plugin navega a TUI (~0,4 s), se o foco tiver < 5 s.
+- Ao abrir uma URL de sessão, o **primeiro** foco do live é ignorado e a web
+  reporta a própria sessão ao terminal: a URL escolhida manda na abertura;
+  depois, as trocas da TUI mandam.
+- Sem o plugin (motor antigo), o proxy cai no fallback de eventos/polling.
+
+---
+
+## 17. Sincronização em tempo real — correções da `web11`
+
+A revisão `web10` criou o canal, mas três defeitos impediam o uso real:
+
+### 17.1 A rota usava a chave errada
+
+`/server/<key>/session/<id>` exige `key = base64url(location.origin)` — é
+assim que a SPA registra o servidor em que está rodando. O `boot.js` montava a
+rota com a URL do **motor**; a SPA não encontrava servidor algum e a sessão
+abria em branco (só o badge). Verificação rápida no console:
+
+```js
+btoa(location.origin)           // deve ser o <key> da URL
+```
+
+Agora `originKey()` calcula a chave e `routeBase()` reaproveita o prefixo da
+URL atual; a navegação nunca inventa um `/server/` novo.
+
+### 17.2 Trocar de sessão recarregava a página
+
+`navTo()` faz `history.pushState` + `PopStateEvent` e, se em 700 ms o texto de
+`<main>` não mudou (a SPA ignorou o evento), cai para `location.replace`.
+Em navegação normal a troca é instantânea e o estado do editor sobrevive.
+
+### 17.3 O push do terminal voltava como foco (ping-pong)
+
+Toda navegação era publicada em `POST /__ufvai/focus`; o push recebido do
+terminal era republicado de volta. Agora a navegação vinda de push é marcada
+(`sessionStorage["ufvai-pushed"]`, com `_pushedSid` em memória) e **não** é
+publicada. O foco inicial de uma página aberta manualmente continua sendo
+publicado (`first=!_reported`), para o terminal seguir o navegador.
+
+### 17.4 Tempos observados (Chromium headless, proxy isolado)
+
+| Cenário | Antes | Agora |
+|---|---|---|
+| home → sessão empurrada pela TUI | ~2,6 s / recarga | 0,23–0,35 s, sem recarga |
+| sessão → sessão empurrada pela TUI | ~2,7 s | 0,15 s, marcador de estado vivo |
+| clique do usuário → arquivo da web | 0,7–4,3 s | 0,2–0,8 s |
+
+O polling de 1,2 s permanece apenas como reserva quando o `EventSource` não
+está conectado (`readyState !== 1` ou sem mensagem há 5 s).
+
+---
+
+## 18. Pergunta da UFV uma vez só e foco instantâneo (revisão `web12`)
+
+### 18.1 Onde a decisão fica
+
+| Arquivo | Escopo | Observação |
+|---|---|---|
+| `~/.config/ufvai/vpn/prefs.json` | sessão | efêmero no Colab (some no restart) |
+| `backups/ufvai_vpn_prefs.json` | **Drive** | decisão definitiva (“sou aluno” / “não”) |
+| `keys_store.json` | Drive (cifrado) | CPF + senha, só com “lembrar” |
+
+`load_prefs()` lê os dois e combina: `ask_dismissed` e `auto_connect` são OU
+lógico; as demais chaves vêm do local (mais recente). `save_prefs()` grava nos
+dois e **mescla** com o que já existe, para que uma escrita parcial não apague a
+decisão.
+
+`should_ask()` só retorna `True` quando **nenhum** dos dois registrou a resposta
+e não há credenciais salvas. Ou seja: a pergunta aparece uma vez por Drive.
+
+### 18.2 Reconexão automática
+
+- Escolher “sou aluno(a) da UFV” marca a caixa “Lembrar neste Drive (cifrado)”
+  por padrão (pode ser desmarcada).
+- `_finish_connect()` chama `set_auto_connect(True)` depois de uma conexão
+  **bem-sucedida** com `remember=True`.
+- No boot, `_vpn_autoconnect_startup()` espera 4 s e chama
+  `vpn.connect(use_saved=True)` numa thread — sem modal, sem bloquear a UI.
+- `disconnect()` e `forget_credentials()` chamam `set_auto_connect(False)`:
+  quem desconectou de propósito não é reconectado sozinho.
+- O painel 🛡 mostra “reconecta sozinho ao abrir” quando está armado
+  (`auto_connect_ready`).
+
+### 18.3 Latência do foco
+
+| Caminho | Antes (`web11`) | Agora (`web12`) |
+|---|---|---|
+| TUI → proxy | arquivo + polling 150 ms | `POST /__ufvai/focus` (source `tui`) → SSE |
+| TUI → web (medido) | 150–350 ms | **14 ms** no proxy; ~230 ms no teste de ponta |
+| web → TUI (medido) | 720 ms | **90 ms** |
+| polling de reserva | 800 ms (web) / 150 ms (proxy) | 1.200 ms (web) / 50 ms (proxy) |
+
+O plugin continua gravando `/tmp/ufvai-focus.json` como reserva — plugins
+antigos e escritas manuais seguem funcionando.
+
+---
+
+## 19. “Working” preso e botão Parar (revisão `web13`)
+
+### 19.1 Por que ficava “Working”
+
+O status da sessão na SPA é um **conjunto alimentado por evento**:
+`session.execution.started` entra, `session.execution.succeeded|failed|
+interrupted` sai. Se o evento final não chega (SSE bufferizado no proxy do
+Colab, reconexão no meio), o rodapé nunca limpa — mesmo com o turno encerrado
+no motor.
+
+`session.time.busy > time.idle` **não** serve para decidir: quando um turno
+morre no meio, o motor mantém `outcome` do turno anterior e `idle` velho.
+
+### 19.2 O sinal correto
+
+`GET /__ufvai/run-state?sid=<id>` inspeciona a **última mensagem do
+assistente**:
+
+| Situação | `running` | `stale` |
+|---|---|---|
+| `time.completed` presente | `false` | `false` |
+| sem `completed`, atividade < 120 s | `true` | `false` |
+| sem `completed`, parada ≥ 120 s | `false` | `true` |
+
+Com isso o `boot.js` faz duas coisas:
+
+1. **destrava** — se a UI mostra “Working” e `running=false`, revalida e
+   recarrega uma vez (máx. 1×/30 s por sessão, via `sessionStorage`);
+2. **Parar** — se a chamada da SPA não sair em 600 ms, o fallback consulta o
+   estado: `running` → manda `POST /api/session/<id>/interrupt?resume=true`;
+   já terminado → apenas limpa a UI.
+
+### 19.3 Validação (proxy isolado + Chromium headless)
+
+- turno real de 30 s: **não** recarrega (sem falso positivo);
+- “Working” forjado com turno concluído: recarrega em ~8–12 s e limpa;
+- Parar em turno concluído: limpa em vez de interrupt inócuo;
+- Parar em turno real: `outcome = interrupted` no servidor;
+- `pytest`: **113 passed**.
+

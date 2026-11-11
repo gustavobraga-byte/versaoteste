@@ -267,6 +267,17 @@ def _providers_in_use() -> set:
     return used
 
 
+def _variant_ids(variants: list) -> list:
+    """Ids das variantes do modelo (o motor devolve ``[{id, settings}]``)."""
+    out: list[str] = []
+    for item in variants or []:
+        if isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, dict) and item.get("id"):
+            out.append(str(item["id"]))
+    return out
+
+
 def _model_cost(model: dict) -> dict:
     """Custo do modelo normalizado (``{input, output, free}``)."""
     costs = model.get("cost") or []
@@ -325,7 +336,7 @@ def catalog(force: bool = False) -> dict:
                 "output": int(limit.get("output") or 0),
                 "cost": cost,
                 "available": provider_available(pid, used),
-                "variants": [v for v in (row.get("variants") or []) if isinstance(v, str)],
+                "variants": _variant_ids(row.get("variants") or []),
             }
         )
         counts[pid] = counts.get(pid, 0) + 1
@@ -540,10 +551,28 @@ def _ok(status: int) -> bool:
     return 200 <= int(status) < 300
 
 
-def send_prompt(sid: str, text: str) -> dict:
-    """Envia um prompt para a sessão."""
+def send_prompt(
+    sid: str,
+    text: str,
+    files: list | None = None,
+    agents: list | None = None,
+    skills: list | None = None,
+) -> dict:
+    """Envia um prompt para a sessão.
+
+    ``files`` é a lista de anexos no formato do motor
+    (``{uri, source, name}``); o motor aceita **data URI** (base64) — um
+    caminho local é recusado com ``Invalid attachment URI``.
+    """
+    body: dict[str, Any] = {"text": text}
+    if files:
+        body["files"] = files
+    if agents:
+        body["agents"] = agents
+    if skills:
+        body["skills"] = skills
     status, data = engine_request(
-        "POST", f"/api/session/{sid}/prompt", {"text": text}, timeout=20
+        "POST", f"/api/session/{sid}/prompt", body, timeout=30
     )
     if not _ok(status):
         return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
@@ -600,7 +629,12 @@ def _error_text(data: Any) -> str:
 # ── agentes e comandos ───────────────────────────────────────────────────────
 
 def agents() -> list[dict]:
-    """Agentes disponíveis (UFVAI e demais)."""
+    """Agentes disponíveis — **apenas o UFVAI**.
+
+    O motor também expõe agentes internos (``general``, ``explore``,
+    ``compaction``, ``title``, ``summary``) que não fazem sentido para o
+    usuário: são rotinas internas do OpenCode. A interface mostra só o UFVAI.
+    """
     data = engine_json("/api/agent", timeout=15)
     rows = data.get("data") if isinstance(data, dict) else data
     rows = rows if isinstance(rows, list) else []
@@ -614,25 +648,172 @@ def agents() -> list[dict]:
                 "id": str(row.get("id") or row.get("name") or ""),
                 "name": str(row.get("name") or row.get("id") or ""),
                 "description": str(row.get("description") or "")[:200],
+                "internal": str(row.get("id") or "").lower()
+                in ("general", "explore", "compaction", "title", "summary", "build", "plan"),
                 "model": {
                     "id": str(model.get("id") or ""),
                     "providerID": str(model.get("providerID") or ""),
                 },
             }
         )
-    return out
+    visible = [a for a in out if not a["internal"]]
+    if not visible:
+        visible = out[:1]
+    return visible
 
 
 def commands() -> list[dict]:
-    """Comandos do agente (atalhos como ``/pesquisar``)."""
+    """Comandos do agente (menu ``/``).
+
+    Os comandos do UFVAI (``pesquisar``, ``revisar``, ``dados``…) vêm do
+    ``opencode.json``; o motor acrescenta os próprios (``init``, ``review``,
+    ``goal``). A interface os mostra agrupados.
+    """
     data = engine_json("/api/command", timeout=12)
     rows = data.get("data") if isinstance(data, dict) else data
     rows = rows if isinstance(rows, list) else []
+    out = []
+    for r in rows:
+        if isinstance(r, dict) and r.get("name"):
+            out.append(
+                {
+                    "name": str(r.get("name")),
+                    "description": str(r.get("description") or ""),
+                    "agent": str(r.get("agent") or ""),
+                }
+            )
+    return out
+
+
+def skills() -> list[dict]:
+    """Habilidades disponíveis (menção ``@skill``)."""
+    data = engine_json("/api/skill", timeout=15)
+    rows = data.get("data") if isinstance(data, dict) else data
+    rows = rows if isinstance(rows, list) else []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        out.append(
+            {
+                "id": str(row.get("id")),
+                "name": str(row.get("name") or row.get("id")),
+                "description": str(row.get("description") or "")[:240],
+            }
+        )
+    return out
+
+
+def files_list(path: str = "", directory: str = "") -> list[dict]:
+    """Listagem de arquivos do projeto (``@`` menu de menções)."""
+    query = ""
+    if directory:
+        query = "?location%5Bdirectory%5D=" + quote(directory, safe="")
+    if path:
+        query += ("&" if query else "?") + "path=" + quote(path, safe="")
+    data = engine_json(f"/api/fs/list{query}", timeout=15)
+    rows = data.get("data") if isinstance(data, dict) else data
+    rows = rows if isinstance(rows, list) else []
     return [
-        {"name": str(r.get("name") or ""), "description": str(r.get("description") or "")}
+        {"path": str(r.get("path") or ""), "type": str(r.get("type") or "file")}
         for r in rows
-        if isinstance(r, dict) and r.get("name")
+        if isinstance(r, dict)
     ]
+
+
+def files_find(query: str, directory: str = "", limit: int = 50) -> list[dict]:
+    """Busca de arquivos por nome (``@`` menu de menções)."""
+    params = ["query=" + quote(query or "", safe=""), "type=file", f"limit={int(limit)}"]
+    if directory:
+        params.insert(0, "location%5Bdirectory%5D=" + quote(directory, safe=""))
+    data = engine_json("/api/fs/find?" + "&".join(params), timeout=15)
+    rows = data.get("data") if isinstance(data, dict) else data
+    rows = rows if isinstance(rows, list) else []
+    return [
+        {"path": str(r.get("path") or ""), "type": str(r.get("type") or "file")}
+        for r in rows
+        if isinstance(r, dict)
+    ]
+
+
+def file_data_uri(path: str, directory: str = "", max_bytes: int = 3_000_000) -> dict | None:
+    """Lê um arquivo do projeto e devolve o anexo pronto (``data:`` URI).
+
+    O motor aceita anexos apenas com URI válido (data URI ou http(s)); um
+    caminho local é recusado (``Invalid attachment URI``). O arquivo é lido
+    **dentro do diretório do projeto** — nada fora dele é servido.
+    """
+    query = ""
+    if directory:
+        query = "?location%5Bdirectory%5D=" + quote(directory, safe="")
+    data = engine_json(f"/api/fs/read/{quote(path.lstrip('/'), safe='/')}{query}", timeout=20)
+    if data is None:
+        return None
+    if isinstance(data, dict):
+        content = data.get("content")
+        mime = str(data.get("mime") or data.get("mimeType") or "text/plain")
+    else:
+        content = data
+        mime = "text/plain"
+    if content is None:
+        return None
+    if isinstance(content, str):
+        raw = content.encode("utf-8", errors="replace")
+    elif isinstance(content, (bytes, bytearray)):
+        raw = bytes(content)
+    else:
+        raw = str(content).encode("utf-8", errors="replace")
+    if len(raw) > max_bytes:
+        raw = raw[:max_bytes]
+    import base64 as _b64
+
+    encoded = _b64.b64encode(raw).decode("ascii")
+    return {
+        "uri": f"data:{mime};base64,{encoded}",
+        "source": {"type": "inline"},
+        "name": path.split("/")[-1],
+    }
+
+
+def session_context(sid: str) -> dict:
+    """Contexto da sessão (tokens, arquivos, ferramentas — painel de detalhes)."""
+    data = engine_json(f"/api/session/{sid}/context", timeout=20)
+    return data if isinstance(data, dict) else {}
+
+
+def fork_session(sid: str) -> dict:
+    """Cria uma cópia (fork) da sessão."""
+    status, data = engine_request("POST", f"/api/session/{sid}/fork", {}, timeout=20)
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    row = data.get("data") if isinstance(data, dict) else data
+    return {"ok": True, "session": _session_row(row) if isinstance(row, dict) else {}}
+
+
+def compact_session(sid: str) -> dict:
+    """Compacta o histórico da sessão."""
+    status, data = engine_request("POST", f"/api/session/{sid}/compact", {}, timeout=30)
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    return {"ok": True}
+
+
+def background_session(sid: str) -> dict:
+    """Move a execução para segundo plano (Ctrl+B)."""
+    status, data = engine_request("POST", f"/api/session/{sid}/background", {}, timeout=15)
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    return {"ok": True}
+
+
+def rename_session(sid: str, title: str) -> dict:
+    """Renomeia a sessão."""
+    status, data = engine_request(
+        "PATCH", f"/api/session/{sid}", {"title": title}, timeout=15
+    )
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    return {"ok": True, "title": title}
 
 
 # ── eventos (motor → cliente) ────────────────────────────────────────────────

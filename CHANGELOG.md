@@ -1,6 +1,320 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web22] — 2026-11-11 — “Trabalhando…” não fica mais na tela depois do turno
+
+### Causa raiz
+
+O aviso de execução estava **sempre visível**, mesmo com a sessão já
+finalizada. A causa não era o estado do motor: era o CSS.
+
+Regras de classe com `display` (`.status-line { display: flex }`,
+`.pill { display: inline-flex }`) **sobrepunham** a regra padrão do navegador
+para o atributo `hidden` (`[hidden] { display: none }`). Ou seja:
+`element.hidden = true` era aplicado no DOM, mas o elemento continuava
+**exibido** — o aviso “Trabalhando…” permanecia na tela para sempre (e o chip
+de variante aparecia como um círculo dourado vazio, sintoma do mesmo defeito).
+
+Correção: `[hidden] { display: none !important; }` na folha de estilo do
+cliente.
+
+### Verificação
+
+Novo turno em sessão ociosa: o aviso aparece durante a execução (0,5 s → 2,5 s)
+e **desaparece em 3,0 s** (`hidden=true`, `display:none`) — antes ficava
+visível por mais de 30 s. Chips de variante e de uso de tokens passam a
+obedecer ao `hidden`.
+
+## [0.7.11-web21] — 2026-11-11 — a web dentro do wrapper: sem rodapé, sem logo repetida, sessões ocultáveis e ferramentas formatadas
+
+### Ajustes pedidos
+
+- **Sem rodapé próprio.** A web roda **dentro do wrapper** (iframe), que já
+  tem rodapé — a web não repete a marca, o e-mail, o GitHub e a versão.
+- **Sem repetir o cabeçalho.** `UFVAI · v0.7.11 · agente ativo` já aparecem no
+  cabeçalho do wrapper; o topo da web agora começa no título da sessão.
+- **Botão para ocultar as sessões.** O ☰ da web agora está sempre visível:
+  no desktop **colapsa a coluna** de sessões (0 px ↔ 268 px, com o estado
+  guardado em `localStorage`); no responsivo abre a gaveta como antes.
+- **Responsivo sem desconfiguração.** Modelo, variante, agente e uso de
+  tokens ficam em **uma linha rolável** (`overflow-x: auto`) em vez de
+  quebrarem a barra; no mobile o chip de tokens some.
+- **Uso das ferramentas formatado.** Cada mensagem ganha um resumo no estilo
+  da SPA do OpenCode (`2 chamadas · Shell · Edit`) que abre/fecha todos os
+  blocos; a entrada da ferramenta é formatada por tipo (`$ comando` no shell,
+  `arquivo: …` + prévia em write/edit, JSON indentado nos demais) e a saída
+  é truncada com a contagem de caracteres omitidos.
+
+### Other
+
+- `webui_server` mantém `Cache-Control: no-store` no cliente (HTML antigo no
+  navegador quebrava o JavaScript).
+
+## [0.7.11-web20] — 2026-11-11 — identidade UFVAI na web, menu `@` com skills e ajustes de exibição
+
+### Correções pedidas
+
+- **`@` ativa as habilidades.** O menu `@` da SPA do OpenCode lista *skills*
+  (`@ibge-br`, `@agrobr`, `@BR-DWGD`, `@cep-ufv`…); a web listava só
+  arquivos. Agora o menu tem dois grupos — **HABILIDADES** (184) e
+  **ARQUIVOS** — e a skill citada vai no prompt como `skills:[{id,mention}]`.
+  Verificado ponta a ponta: `@ibge-br` carregou a skill no motor.
+- **`/` lista o menu do OpenCode.** Mesma fonte (`/api/command`): 12 comandos
+  com descrição, na mesma ordem/linguagem da SPA.
+- **O botão de tema do cabeçalho altera o tema da web.** O wrapper enviava
+  `light`/`dark` no `postMessage` e a web esperava `pesquisai-light`/`pesquisai`
+  — o tema não mudava. Agora o wrapper envia o valor **canônico** (a web aceita
+  as duas formas) e as **duas molduras** recebem o tema em qualquer modo.
+- **Variantes do modelo.** O motor devolve `variants` como `[{id, settings}]`;
+  o gateway filtrava só strings e a lista vinha vazia. Agora **328 dos 479
+  modelos** expõem variantes (`low`, `high`, `max`…).
+- **Duplo clique renomeia a sessão** — na barra lateral **e** no título do topo.
+- **Hambúrguer no responsivo** verificado: o menu de sessões abre/fecha (com
+  scrim) e volta ao estado inicial.
+
+### Identidade visual (web = cabeçalho e rodapé do UFVAI)
+
+A web nova passou a usar a **mesma paleta e tipografia** da interface
+principal: superfície `#141c24`, trilho `#1f2831`, ouro `#b29149`, verde
+`#5dba7e`, raio 5 px, Syne/Montserrat/DM Mono; cabeçalho com **UFVAI +
+versão + “agente ativo”** e ícones à direita; **rodapé** com marca, e-mail,
+GitHub, pasta do projeto e versão do motor.
+
+### Ajustes de exibição
+
+Dois interruptores em **Ajustes → Geral**: **expandir raciocínio** e
+**expandir ferramentas** — persistidos em `localStorage` (`ufvai_web_prefs`)
+e aplicados às mensagens (histórico e streaming).
+
+### Outros
+
+- `webui_server` serve o cliente com `Cache-Control: no-store` (um
+  `index.html` antigo no navegador quebrava o JavaScript).
+- `scripts/webui_supervisor.sh` mantém a web nova em segundo plano após
+  reinício do runtime; `scripts/web18_runtime.py` regenera o wrapper com as
+  duas molduras e detecta a porta da web nova.
+
+## [0.7.11-web18] — 2026-11-11 — terminal e web vivos ao mesmo tempo
+
+### O problema
+
+Alternar entre o terminal e a versão web **recarregava** a visão que estava
+saindo: o wrapper trocava o `src` de **um único** `<iframe>`. Consequências:
+
+- a web recarregava a cada volta (perdia a conversa em tela, a rolagem e a
+  sessão escolhida) e o SSE era reconectado do zero;
+- o terminal era **descarregado** — o `ttyd` perdia o WebSocket e o TUI do
+  OpenCode era reiniciado a cada alternância;
+- como a carga vinha de um `src` novo, o botão às vezes ficava em branco até
+  a página "pegar" (o cache do proxy do Colab)+.
+
+### A solução: duas molduras, visibilidade alternada
+
+O wrapper agora tem **dois** `<iframe>` — `terminal-frame` (ttyd) e
+`web-frame` (web) — e o botão alterna a **visibilidade** (`ufvai-hidden`),
+não o endereço. Cada moldura é carregada **uma vez** e fica viva:
+
+- o `ttyd` mantém o WebSocket → a sessão do agente **não reinicia**;
+- a web mantém o SSE aberto → as mensagens continuam chegando em segundo
+  plano e a rolagem/seleção sobrevivem às alternâncias;
+- o tema é enviado (`postMessage`) para as **duas** molduras, inclusive a
+  escondida — ao alternar, a visão já está pronta.
+
+Outras correções no mesmo caminho:
+
+- `reloadTerminalFrame()` (usado ao salvar chave, trocar tema ou restaurar
+  sessão) agora recarrega **só** o terminal — a web não é tocada;
+- o watchdog do `ttyd` só recarrega a moldura do terminal, e apenas se ela
+  já tiver sido carregada;
+- a moldura da web tem **URL própria** (`data-web-url`), o que permite rodar a
+  web em outra porta sem mexer no terminal;
+- **fallback automático**: a web responde a um `ping` do wrapper
+  (`ufvai-ping` → `ufvai-pong`); se a URL não responder em 4 s, a moldura cai
+  no proxy 8002 em vez de ficar em branco.
+
+### Validação (Chromium headless)
+
+| Item | Resultado |
+|---|---|
+| Alternar 5× (terminal ↔ web) | **1** requisição de documento na web (só o primeiro carregamento) — **nenhuma recarga** |
+| `src` do iframe da web | idêntico antes e depois das alternâncias |
+| Terminal | carregado uma vez e mantido |
+| Erros de página | 0 |
+| `ping`/`pong` | `http://127.0.0.1:8003/?theme=dark` (resposta em < 1 s) |
+
+## [0.7.11-web17] — 2026-11-10 — **web nova: arquitetura refeita do zero**
+
+### Por que a versão web anterior não funcionava
+
+A “versão web” era, na verdade, a **SPA do próprio OpenCode** servida pelo
+proxy da porta 8002, com um `boot.js` injetado por cima (rewrite de rota,
+watchdog de recarga, monkey-patch de tema, polling de catálogo). Três
+consequências:
+
+1. **Os modelos não apareciam.** O seletor vinha da própria SPA, que depende de
+   `/api/model` e de um evento `server.connected` que se perdia quando o motor
+   ainda estava subindo. Quando a sessão gravada usava um modelo indisponível
+   no ambiente (o padrão do `opencode.json` era `google/gemini-flash-lite-latest`
+   e o provedor pode não ter credencial), a SPA mostrava `modelo (unavailable)`
+   e a interface seemed vazia — sem explicar o motivo.
+2. **Cada correção era um remendo** no `boot.js` (reload-loop, “Working” preso,
+   ping-pong de foco), porque a SPA não é do projeto: não há como garanti-la.
+3. **A senha do motor e o contrato interno** passavam pelo navegador.
+
+### A arquitetura nova
+
+Três peças, sem dependências externas e sem build:
+
+```
+navegador  ──►  webui_server (:8002)  ──►  motor OpenCode (/api/*)
+                  ├── webui/         cliente novo (HTML + CSS + JS escritos do zero)
+                  └── webapi.py      contrato + normalização do motor
+```
+
+- **`pesquisai/webui/`** — cliente novo: barra lateral de sessões, conversa com
+  *streaming*, seletor de modelo com busca e agrupamento por provedor, seletor
+  de agente, bloco de raciocínio, cartões de ferramenta, tema claro/escuro,
+  layout responsivo e atalhos (Enter envia, Esc fecha, Ctrl+K busca).
+- **`pesquisai/webapi.py`** — contrato estável para o navegador
+  (`/api/ufvai/*`): `bootstrap`, `models`, `sessions`, `messages`, `message`,
+  `interrupt`, `model`, `agent`, `focus` e o stream `events` (SSE). A senha do
+  motor **nunca** chega ao navegador; a API do motor é normalizada em
+  mensagens, eventos e catálogo.
+- **`pesquisai/webui_server.py`** — serve o cliente, o contrato e o SSE
+  normalizado (com reconexão ao motor), e mantém o protocolo de foco
+  TUI ↔ web (`/__ufvai/focus`, `/__ufvai/focus/stream`, `WEB_FOCUS_FILE`).
+
+### Catálogo de modelos (o bug que motivou a refatoração)
+
+- O motor devolve **479 modelos / 5 provedores**; a versão nova entrega um
+  catálogo **compacto** (`id`, `name`, contexto, custo, `available`) em vez dos
+  382 kB crus com `settings`/`headers` de cada modelo.
+- `available` é honesto: provedor público do OpenCode, variável de ambiente
+  presente **ou** uso recente em sessão (prova de que a credencial funciona).
+  Quando não há sinal, o cliente mostra “chave não detectada” — não
+  “bloqueado”.
+- Troca de modelo agora valida o **status** do motor: a resposta correta do
+  `POST /api/session/{id}/model` é **204**, e o gateway antes a tratava como
+  erro (502 na interface).
+
+### Medições (Chromium headless, motor 2.2.7)
+
+| Item | Resultado |
+|---|---|
+| Modelos listados no seletor | 479 (busca “gemini” → 40) |
+| Resposta do modelo após troca | `gemini-flash-lite-latest · google` (badge atualizado) |
+| Streaming | `text.delta` → `text.ended` → `run.finished` (SSE) |
+| Erros de console | 0 |
+| Sessões no histórico | renderizadas em ordem cronológica (`order=asc` + cursor) |
+
+### Pendências do ambiente
+
+- O **push para o GitHub** continua pendente (sem `gh` autenticado no runtime):
+  até lá, a web nova entra em produção quando a célula de boot roda a partir
+  da pasta do Drive (`UFVAI-v0.7.11-web/`), que já contém o código.
+- A porta 8002 só passa a servir o cliente novo no **próximo boot** (o proxy
+  antigo vive no processo do kernel). Nesta sessão ele roda em 8003 e o botão
+  “versão web” da interface aponta para lá.
+
+## [0.7.11-web16] — 2026-11-10 — limite de provedor e sessão presa
+
+### 🛠 Causa raiz do “pending” de ~8 minutos
+
+O plugin de retry **nunca era carregado** pelo motor. O log do OpenCode
+registrava, a cada tentativa:
+
+```
+failed to load plugin target=/root/.config/opencode/plugins/ufvai-retry
+cause="Plugin must export a default definition with an id and an effect or
+       setup function. (SchemaError(Missing key at ["default"]))"
+```
+
+O código do plugin estava correto (o Node o aceitava), mas o arquivo estava
+com modo **`0600`**: o runtime do motor não o conseguia ler, o import devolvia
+um módulo **sem exports** e o motor abortava a carga. Como o `install_plugin`
+compara o SHA-256 e pula a reescrita quando o conteúdo é igual, a permissão
+errada sobrevivia a todo boot — o plugin ficava inativo e **silencioso**: o
+único sintoma era a mensagem “pending” voltando a durar minutos.
+
+Correções:
+
+- `install_plugin` (retry e drive-guard) agora garante **`0644`** mesmo quando
+  o conteúdo já é idêntico, e há teste de regressão para isso;
+- o plugin passou a registrar carga e cada decisão em
+  `~/.local/state/ufvai/retry-plugin.log` — um plugin inativo agora é visível;
+- o modelo de reserva passou a ser o **modelo padrão do `opencode.json`** (o
+  mesmo que a SPA mostra): a reserva fixa `gemini-3.1-flash-lite` respondia
+  503 “high demand” enquanto `gemini-flash-lite-latest` atendia em 4 s.
+
+### Correções de comportamento
+
+- **“Sem modelo” em conversa já carregada**: a sessão podia ficar gravada com
+  um modelo que o ambiente não oferece (provedor desconectado, modelo
+  renomeado ou retirado do catálogo). A SPA mostrava `modelo (unavailable)` e o
+  envio falhava em `provider.no-route`. O proxy agora confere o modelo na
+  leitura da sessão e o troca por um válido (mesmo provedor → padrão → primeiro
+  disponível), no máximo uma vez a cada 5 min por sessão.
+- **Reparo de modelo no boot não funcionava**: o motor espera
+  `{"model": {"id": …, "providerID": …}}`; o UFVAI enviava `modelID` e recebia
+  400, então o ajuste era descartado em silêncio. Corrigido, e a checagem passou
+  a validar o **modelo**, não apenas o provedor.
+- **Mensagem “pending” por ~8 minutos**: o plugin de retry tratava
+  `usage limit reached`, `insufficient credits`, `billing`, `model unavailable`
+  e `no_route` como cota momentânea e esperava 62 s por tentativa (até 8). Agora
+  limite de plano/conta falha em segundos (ou faz **uma** troca para o modelo de
+  reserva) e credencial inválida (`401`/`403`/chave inválida) nunca é repetida.
+  Medido no ambiente: `OpenCode Go monthly usage limit reached` passou de
+  ~8 min para **4,1 s** (troca para o modelo livre + resposta).
+- **Execução morta deixava a conversa “Trabalhando” para sempre**: se a
+  execução caísse no meio, `time.busy > time.idle` permanecia e as mensagens
+  novas entravam na fila sem serem entregues. Um vigia no proxy (15 s) compara
+  com `/api/session/active` e interrompe apenas execuções que o motor já não
+  reconhece como ativas (`busy` parado há mais de 90 s).
+
+## [0.7.11-web15] — 2026-11-10 — terminal padrão, catálogo resiliente e sync contínuo
+
+- O wrapper inicia no **terminal (`ttyd`)**; o botão alterna para a versão web e
+  persiste a escolha em `localStorage["ufvai.console.v2"]`.
+- O catálogo interno agora repete respostas vazias durante o aquecimento do
+  motor; a SPA identifica resposta de modelo truncada e faz uma recuperação
+  controlada.
+- A sincronização não depende exclusivamente do SSE: a web consulta o foco
+  ordenado continuamente e a TUI acompanha o arquivo de reserva mesmo quando
+  o SSE permanece conectado sem entregar eventos.
+- Usuário novo: o boot não bloqueia mais o motor por falta de chave. O catálogo
+  público do OpenCode fica disponível imediatamente; o onboarding continua
+  oferecendo a configuração de uma chave própria por cima da interface.
+
 ## [0.7.11-web] — 2026-11-08 — 🖥️ Interface web do OpenCode no lugar do ttyd
+
+### ⚡ Correção (revisão `web14`) — modelo sempre visível e sincronização instantânea
+
+- **Seletor de modelos vazio no primeiro acesso**: logo após o motor subir,
+  `/api/model` e `/api/provider` podem responder **200 com `data: []`** antes de
+  o catálogo terminar de carregar. A SPA aceitava o vazio e não repetia. O proxy
+  agora repete a leitura por até **6 s** enquanto a janela de aquecimento
+  (`service.json` recém-reescrito) estiver aberta; fora dela, lista vazia é
+  resposta legítima (ex.: sem chave) e passa direto.
+- **Handshake do SSE não é mais derrubado**: a versão anterior **fechava** a
+  primeira conexão `/api/event` de cada página depois de 1 s para forçar um
+  novo `server.connected`. Isso perdia justamente o evento que dispara
+  `provider.sync`/`model.sync` e derrubava o stream na abertura. Agora a
+  primeira conexão é **atrasada ~1,2 s** (uma vez por documento) e permanece
+  aberta — o evento chega com o listener da SPA já registrado.
+- **Ordem de foco à prova de reinício**: o `seq` de `/__ufvai/focus` nasce do
+  relógio (ms) em vez de 0. Um proxy reiniciado não publica números menores que
+  os já vistos pelas abas abertas — sem foco “congelado” até recarregar.
+- **Motor em reinício**: `_open_upstream` repete GET/HEAD em conexão recusada e
+  em **503 `service_starting`** por até 12 s (POST só em conexão recusada),
+  em vez de devolver 502 para a SPA.
+- **Cache do catálogo**: invalidado quando o motor reinicia (porta + mtime do
+  `service.json`) e ao salvar uma chave; respostas vazias nunca são cacheadas.
+- **TUI ↔ web**: o plugin `ufvai-sync` publica **só trocas** de sessão
+  (`POST /__ufvai/focus`, `source: tui`) e escuta o SSE
+  `/__ufvai/focus/stream` no sentido web → TUI. Batimentos não revertem uma
+  escolha recente.
+- Testes do proxy: **48 passed** (`tests/test_v0711_ocweb.py`), incluindo os
+  novos casos de catálogo vazio durante o aquecimento.
+
 
 ### 🎯 Pedido
 - *"fazer uma versão 0.7.11 usando a versão web do opencode no lugar de mostrar
@@ -62,6 +376,124 @@
   script inline.
 - Validação com Chromium headless (Playwright): home → redireciona para a
   sessão e renderiza “Olá! (Dica: …)”.
+
+### 🔄 Correção (revisão `web10`)
+
+- **Sincronização TUI ↔ web orientada a foco**: o plugin `ufvai-sync` publica a
+  sessão que o terminal está exibindo a cada 250 ms (e no
+  `session.execution.started`); o proxy lê o arquivo a cada 150 ms e faz
+  *push* SSE (`/__ufvai/live`). A web troca em ~0,3 s.
+- **Sentido inverso**: a web grava `/tmp/ufvai-web-focus.json` ao navegar
+  (400 ms); o plugin navega a TUI para a sessão escolhida (~0,4 s).
+- **Corrida resolvida**: ao abrir uma URL de sessão, a web **ignora o primeiro
+  foco** do live e reporta a própria sessão ao terminal — a URL da web manda
+  ao abrir; depois, as trocas da TUI mandam.
+- Removido o canal redundante `/__ufvai/events`; o fallback de polling só roda
+  se o EventSource não estiver conectado.
+- 64 testes.
+
+### 🛑 Correção (revisão `web13`) — “Working” preso e botão Parar
+
+- **“Working” no fim da resposta**: o status é controlado por evento
+  (`session.execution.started` → conjunto *working*; `succeeded/failed/
+  interrupted` → limpa). Quando o evento final se perde (SSE bufferizado no
+  proxy do Colab, reconexão), o rodapé fica “Working” para sempre. Agora o
+  `boot.js` consulta `GET /__ufvai/run-state?sid=…`, que olha a **última
+  mensagem do assistente** (e não `time.busy > idle`, que fica inconsistente
+  quando um turno morre): se o turno terminou e a UI continua “Working”,
+  revalida e recarrega **uma vez** (máx. 1×/30 s). Nada se perde — o estado
+  está no servidor.
+- **Botão Parar**: a SPA já chama `POST /api/session/<id>/interrupt?resume=true`
+  (verificado: o turno vira `interrupted`). Se essa chamada não sair (handler
+  perdido, botão desabilitado, UI travada), um fallback no `boot.js` envia a
+  interrupção 600 ms depois do clique. Se o turno **já terminou** no servidor,
+  o fallback apenas limpa a UI (reload único) em vez de um interrupt inócuo.
+- **`/__ufvai/run-state`**: `running` = última mensagem do assistente sem
+  `time.completed` e com atividade recente (< 120 s); `stale` = parada há mais
+  de 120 s (turno órfão).
+- Testes: **113 passed** (inclui `compute_run_state` e as redes de segurança).
+
+### 🔁 Correção (revisão `web12`) — pergunta da UFV uma vez só e foco mais rápido
+
+- **A pergunta “Você é aluno(a) da UFV?” voltava a cada acesso.** A decisão era
+  gravada em `~/.config/ufvai/vpn/prefs.json` — no Colab isso é **efêmero**: um
+  runtime novo (ou “Reiniciar sessão”) apagava tudo. Agora as preferências têm
+  espelho persistente em `backups/ufvai_vpn_prefs.json` (Drive; offline em
+  `~/PesquisAI/backups/`) e `load_prefs()` mescla os dois com OU lógico para
+  `ask_dismissed` e `auto_connect`. **A resposta é dada uma vez por Drive.**
+- **Ativação única de verdade**: ao escolher “sou aluno(a) da UFV”, a opção
+  “Lembrar neste Drive (cifrado)” já vem marcada; conexão bem-sucedida com
+  credenciais salvas arma `auto_connect`, e o boot seguinte reconecta a VPN
+  sozinho (thread `ufvai-vpn-autoconnect`, 4 s após a UI subir, sem modal e sem
+  bloquear nada). Desconectar no 🛡 ou apagar as credenciais **desarma** a
+  reconexão — intenção explícita do usuário é respeitada.
+- **Latência do foco TUI → web**: o plugin agora entrega a sessão por
+  `POST /__ufvai/focus` (`source: "tui"`) e o proxy publica no SSE na hora —
+  **14 ms** medidos no proxy (antes: até 150 ms de polling + tick). O arquivo
+  continua sendo escrito como reserva; a checagem da rota caiu de 150 ms para
+  100 ms e o polling de segurança do proxy de 150 ms para 50 ms.
+- **Latência web → TUI**: `pushState`/`replaceState`/`popstate` são
+  interceptados e publicam o foco imediatamente; o intervalo de reserva passou
+  de 800 ms para 1.200 ms. Medido: **90 ms** (antes 720 ms).
+- **Escrita de preferências não “esquece” a decisão**: `save_prefs()` mescla com
+  o arquivo existente (`{**anterior, **novo}`), então uma gravação parcial de
+  versão antiga não faz a pergunta voltar.
+- Testes: **107 passed** (`ocweb` + `onboarding` + `vpn`), incluindo decisão que
+  sobrevive a um runtime novo, auto-connect condicionado a credenciais salvas e
+  o caminho rápido do foco por HTTP.
+
+### 🔄 Correção (revisão `web11`) — sincronização em tempo real TUI ↔ web
+
+- **Causa do “não sincroniza”**: o `boot.js` montava a rota com a URL do
+  **motor** (`/server/<base64(engine)>/session/…`). A SPA só conhece a origem
+  em que está sendo servida, então a rota ficava sem servidor registrado e a
+  sessão abria em branco. A chave agora é `base64url(location.origin)`.
+- **Push de verdade**: a TUI publica a sessão exibida em
+  `/tmp/ufvai-focus.json`; o proxy observa o arquivo e emite em
+  `/__ufvai/live` (SSE). A web troca em **0,15–0,35 s** — sem polling.
+- **Sem recarregar**: `navTo()` usa `history.pushState` + `popstate` e só cai
+  para `location.replace` se o conteúdo de `<main>` não mudar em 700 ms.
+  O estado da SPA sobrevive à troca de sessão.
+- **Sem ping-pong**: navegação originada por push do terminal é marcada em
+  `sessionStorage` (`ufvai-pushed`) e não é republicada como foco.
+- **Foco inicial**: ao abrir uma sessão, a web publica a própria sessão para o
+  terminal seguir (`POST /__ufvai/focus`); o plugin da TUI navega em 0,2–0,8 s.
+- **Rascunho**: a troca só é bloqueada quando o prompt tem texto. A checagem
+  por “Working”/“Trabalhando” no corpo da página dava falso positivo e
+  congelava a sincronização — removida.
+- 68 testes (`tests/test_v0711_ocweb.py` + `tests/test_v0710_onboarding.py`).
+
+### 🔑 Correção (revisão `web9`)
+
+- **Chave Google sem exigência de prefixo**: `validate_key_format` não bloqueia
+  mais chaves que não começam com `AIza` (o prefixo é só heurística de
+  reconhecimento); a validação real é no provedor. Texto/placeholder do
+  onboarding atualizados.
+- **`.deb` em máquina nova (fail-open)**: `run_fast.run()` não aborta se
+  `setup_drive`, dependências, skills ou vault falharem — a interface sobe.
+- **Sem motor, a interface sobe**: se o OpenCode 2.x não estiver instalado, o
+  terminal é pulado (sem shell quebrado) e a página 503 explica
+  `ufvai --engine-install`. O instalador versionado `ufvai-engine` é tentado
+  antes do `curl | bash`.
+- **Dependências do pacote**: `unzip` e `xz-utils` em `Depends`; o `ttyd`
+  empacotado em `/opt/pesquisai/bin` entra no `PATH` mesmo fora do launcher.
+- 58 testes.
+
+### ⚡ Correção (revisão `web8`)
+
+- **Modelos/provedores só apareciam ao abrir Configurações**: a SPA perde o
+  primeiro `server.connected` quando o bundle ainda está carregando; sem o
+  handshake ela não dispara `provider.sync`/`model.sync`. O proxy agora fecha
+  a **primeira** conexão SSE de cada page load (1 s) e a SPA reconecta — o
+  handshake real chega com o listener já registrado.
+- **Cache do catálogo**: `/api/model` e `/api/provider` são pré-buscados no
+  boot e servidos do cache (`X-UFVAI-Cache: hit`), com gzip. O *sync* da SPA
+  tem timeout de 15 s; a resposta instantânea evita a lista em branco.
+- **Sincronização em tempo real da sessão**: o evento
+  `session.execution.started` grava a sessão ativa; a web segue o terminal
+  (janela de 30 s) quando ele começa uma execução. O composer com texto e
+  “Working” bloqueiam a troca.
+- 26 testes.
 
 ### 🧯 Correção (revisão `web7`)
 

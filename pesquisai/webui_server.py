@@ -186,6 +186,28 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
         return 200, focus_state()
     if resource == "focus" and method == "POST":
         return 200, {"focus": set_focus(str(body.get("sid") or ""), "web")}
+    if resource == "commands" and method == "GET":
+        return 200, {"commands": webapi.commands(), "skills": webapi.skills()}
+    if resource == "files" and method == "GET":
+        directory = str(query.get("directory", [""])[0] or "")
+        path = str(query.get("path", [""])[0] or "")
+        search = str(query.get("query", [""])[0] or "")
+        rows = (
+            webapi.files_find(search, directory=directory)
+            if search
+            else webapi.files_list(path=path, directory=directory)
+        )
+        return 200, {"files": rows}
+    if resource == "file" and method == "POST":
+        # anexa um arquivo do projeto (data URI) ao próximo prompt
+        path = str(body.get("path") or "")
+        directory = str(body.get("directory") or "")
+        if not path:
+            return 400, {"error": "caminho vazio"}
+        attachment = webapi.file_data_uri(path, directory=directory)
+        if not attachment:
+            return 404, {"error": "arquivo não encontrado ou ilegível"}
+        return 200, {"file": attachment}
 
     # /api/ufvai/sessions/{sid}
     if resource == "sessions" and len(parts) == 4:
@@ -202,9 +224,33 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
             return 200, {"messages": webapi.messages(sid, limit=limit)}
         if action == "message" and method == "POST":
             text = str(body.get("text") or "").strip()
-            if not text:
+            files = body.get("files") or []
+            if not text and not files:
                 return 400, {"error": "mensagem vazia"}
-            result = webapi.send_prompt(sid, text)
+            result = webapi.send_prompt(
+                sid,
+                text,
+                files=files if isinstance(files, list) else None,
+                agents=body.get("agents") if isinstance(body.get("agents"), list) else None,
+                skills=body.get("skills") if isinstance(body.get("skills"), list) else None,
+            )
+            return (200 if result.get("ok") else 502), result
+        if action == "context" and method == "GET":
+            return 200, webapi.session_context(sid)
+        if action == "fork" and method == "POST":
+            result = webapi.fork_session(sid)
+            return (200 if result.get("ok") else 502), result
+        if action == "compact" and method == "POST":
+            result = webapi.compact_session(sid)
+            return (200 if result.get("ok") else 502), result
+        if action == "background" and method == "POST":
+            result = webapi.background_session(sid)
+            return (200 if result.get("ok") else 502), result
+        if action == "rename" and method == "POST":
+            title = str(body.get("title") or "").strip()
+            if not title:
+                return 400, {"error": "título vazio"}
+            result = webapi.rename_session(sid, title)
             return (200 if result.get("ok") else 502), result
         if action == "interrupt" and method == "POST":
             result = webapi.interrupt(sid)
@@ -260,7 +306,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
+        # v0.7.11-web20: sem cache — o cliente muda a cada iteração e um
+        # index.html antigo no navegador quebrava o JavaScript.
+        self.send_header("Cache-Control", "no-store, must-revalidate")
         self.end_headers()
         self.wfile.write(data)
 
