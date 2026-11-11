@@ -165,26 +165,121 @@ def prefs_path() -> Path:
     return state_dir() / "prefs.json"
 
 
-def load_prefs() -> dict:
+def persistent_prefs_path() -> Path | None:
+    """Espelho persistente das preferências da VPN (Drive ou ``~/PesquisAI``).
+
+    ``state_dir()`` vive em ``~/.config`` — no Colab isso é **efêmero**: cada
+    runtime novo (ou "Reiniciar sessão") perde a decisão e a pergunta "você é
+    aluno(a) da UFV?" voltava a aparecer. O espelho no Drive resolve isso:
+    a resposta é dada **uma vez** por Drive, não por sessão.
+    """
+    custom = os.environ.get("UFVAI_VPN_PREFS_FILE", "").strip()
+    if custom:
+        # testes e instalações com Drive em outro lugar
+        target = Path(custom)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
     try:
-        return json.loads(_read(prefs_path()) or "{}") or {}
+        drive_root = Path("/content/drive") / "My Drive"
+        base = (
+            drive_root / "PesquisAI"
+            if drive_root.is_dir()
+            else Path.home() / "PesquisAI"
+        )
+        if not base.is_dir():
+            return None
+        bdir = base / "backups"
+        bdir.mkdir(parents=True, exist_ok=True)
+        return bdir / "ufvai_vpn_prefs.json"
+    except OSError:
+        return None
+
+
+# O espelho vive no Drive: ler a cada chamada de ``status()`` (a UI consulta a
+# cada 1,5 s durante a conexão) custaria centenas de ms. Cache curto resolve.
+_PREFS_CACHE: dict = {"path": None, "at": 0.0, "value": {}}
+_PREFS_TTL = 2.0
+
+
+def _read_json_file(path: Path | None) -> dict:
+    if path is None:
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) or {}
     except (OSError, ValueError):
         return {}
 
 
+def _read_prefs_mirror(path: Path | None) -> dict:
+    if path is None:
+        return {}
+    now = time.time()
+    if (
+        _PREFS_CACHE.get("path") == str(path)
+        and now - float(_PREFS_CACHE.get("at") or 0) < _PREFS_TTL
+    ):
+        return dict(_PREFS_CACHE.get("value") or {})
+    value = _read_json_file(path)
+    _PREFS_CACHE.update({"path": str(path), "at": now, "value": value})
+    return dict(value)
+
+
+def load_prefs() -> dict:
+    """Preferências locais + espelho do Drive (a decisão vale para os dois).
+
+    ``ask_dismissed`` e ``auto_connect`` são OU lógicos: se qualquer um dos
+    arquivos já registrou a decisão, ela não é desfeita por um ``/tmp`` novo.
+    ``last_choice``/``answered_at`` seguem a cópia local (mais recente).
+    """
+    local = _read_json_file(prefs_path())
+    remote = _read_prefs_mirror(persistent_prefs_path())
+    if not local:
+        return dict(remote)
+    if not remote:
+        return dict(local)
+    merged = dict(remote)
+    merged.update(
+        {k: v for k, v in local.items() if k not in ("ask_dismissed", "auto_connect")}
+    )
+    merged["ask_dismissed"] = bool(local.get("ask_dismissed") or remote.get("ask_dismissed"))
+    merged["auto_connect"] = bool(local.get("auto_connect") or remote.get("auto_connect"))
+    return merged
+
+
 def save_prefs(data: dict) -> None:
+    """Grava as preferências no local e no espelho do Drive.
+
+    Mescla com o que já existe (``{**anterior, **data}``) para que uma escrita
+    parcial — de uma versão antiga ou de outro caminho — não "esqueça" a
+    decisão já registrada e faça a pergunta voltar.
+    """
+    payload = dict(_read_json_file(prefs_path()))
+    payload.update(data)
     try:
-        _write_json(prefs_path(), data)
+        _write_json(prefs_path(), payload)
         os.chmod(prefs_path(), 0o600)
     except OSError:
         pass
+    mirror = persistent_prefs_path()
+    if mirror is not None:
+        try:
+            merged = dict(_read_json_file(mirror))
+            merged.update(payload)
+            _write_json(mirror, merged)
+            os.chmod(mirror, 0o600)
+            _PREFS_CACHE.update({"path": str(mirror), "at": time.time(), "value": merged})
+        except OSError:
+            pass
 
 
 def mark_decision(choice: str) -> dict:
     """Registra a resposta da tela inicial ("ufv" ou "no").
 
-    ``ask_dismissed`` evita repetir a pergunta a cada boot; o botão da
-    topbar continua disponível para abrir o painel quando o usuário quiser.
+    ``ask_dismissed`` evita repetir a pergunta — e agora é gravado também no
+    Drive (``backups/ufvai_vpn_prefs.json``), então **novos acessos não
+    perguntam de novo**. ``auto_connect`` guarda a intenção de reconectar
+    sozinho quando houver credenciais salvas. O botão 🛡 da topbar continua
+    disponível para abrir o painel a qualquer momento.
     """
     choice = "ufv" if str(choice).lower() in ("ufv", "yes", "sim", "aluno") else "no"
     prefs = load_prefs()
@@ -192,6 +287,7 @@ def mark_decision(choice: str) -> dict:
         {
             "ask_dismissed": True,
             "last_choice": choice,
+            "auto_connect": choice == "ufv",
             "answered_at": _iso(_now()),
         }
     )
@@ -199,8 +295,27 @@ def mark_decision(choice: str) -> dict:
     return prefs
 
 
+def set_auto_connect(enabled: bool) -> dict:
+    """Liga/desliga a reconexão automática no próximo boot (persistente)."""
+    prefs = load_prefs()
+    prefs["auto_connect"] = bool(enabled)
+    prefs["auto_connect_at"] = _iso(_now())
+    save_prefs(prefs)
+    return prefs
+
+
+def should_auto_connect(backup_dir: str | None = None) -> bool:
+    """Só reconecta sozinho quem já conectou **e** salvou as credenciais."""
+    if not load_prefs().get("auto_connect"):
+        return False
+    if not has_saved_credentials(backup_dir):
+        return False
+    with _LOCK:
+        return _STATE.get("state") not in ("connected", "connecting")
+
+
 def should_ask(backup_dir: str | None = None) -> bool:
-    """A pergunta inicial só aparece para quem ainda não decidiu."""
+    """A pergunta inicial só aparece para quem ainda não decidiu (uma vez)."""
     if has_saved_credentials(backup_dir):
         return False
     if load_prefs().get("ask_dismissed"):
@@ -577,7 +692,13 @@ def forget_credentials(backup_dir: str | None = None) -> bool:
                 store.pop(key, None)
                 changed = True
         if changed:
-            return bool(sec.save_encrypted_keys(path, store))
+            ok = bool(sec.save_encrypted_keys(path, store))
+            if ok:
+                try:
+                    set_auto_connect(False)
+                except Exception:  # noqa: BLE001
+                    pass
+            return ok
         return True
     except Exception:  # noqa: BLE001
         return False
@@ -998,6 +1119,14 @@ def status(backup_dir: str | None = None) -> dict:
         state["saved_cpf_masked"] = ""
     state["should_ask"] = should_ask(backup_dir)
     state["prefs"] = load_prefs()
+    # v0.7.11-web12: a decisão ("sou aluno" / "continuar sem VPN") fica no
+    # Drive; a UI usa estes campos para não repetir a pergunta e para mostrar
+    # que a reconexão automática está armada.
+    state["auto_connect"] = bool(state["prefs"].get("auto_connect"))
+    state["auto_connect_ready"] = bool(
+        state["auto_connect"] and state["has_saved_credentials"]
+    )
+    state["prefs_persistent"] = persistent_prefs_path() is not None
     state["guide_url"] = "https://vpn.ufvnet.ufv.br/linux_ubuntu.html"
     state["profile_url"] = PROFILE_URL
     state["ok"] = True
@@ -1848,6 +1977,13 @@ def _finish_connect(
 ) -> None:
     if remember:
         save_credentials(cpf, password, backup_dir)
+    # v0.7.11-web12: conexão bem-sucedida com credenciais salvas = o próximo
+    # boot reconecta sozinho (sem repetir a pergunta inicial).
+    try:
+        if remember:
+            set_auto_connect(True)
+    except Exception:  # noqa: BLE001 — preferência não pode derrubar a conexão
+        pass
     with _LOCK:
         _STATE.update(
             {
@@ -1935,8 +2071,16 @@ def connect(
 
 
 def disconnect(backup_dir: str | None = None) -> dict:
-    """Encerra a VPN e o proxy, apagando o arquivo de credenciais."""
+    """Encerra a VPN e o proxy, apagando o arquivo de credenciais.
+
+    Também desliga a reconexão automática: se o usuário desconectou de
+    propósito, o próximo boot não deve reconectar sem ele pedir.
+    """
     _CANCEL.set()
+    try:
+        set_auto_connect(False)
+    except Exception:  # noqa: BLE001
+        pass
     _cleanup_processes()
     with _LOCK:
         _STATE.update(

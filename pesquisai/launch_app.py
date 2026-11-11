@@ -210,16 +210,20 @@ def _recover_stale_sessions(max_idle_ms: int = 900_000) -> int:
 
 
 def _warm_engine_catalog(timeout_s: float = 8.0) -> bool:
-    """Aquece provedores/modelos antes de a SPA abrir a sessão."""
+    """Aquece provedores/modelos antes de a web abrir a sessão.
+
+    v0.7.11-web17: o aquecimento usa o catálogo compacto do gateway novo
+    (``pesquisai.webapi``), o mesmo que alimenta o seletor de modelos.
+    """
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         try:
-            from . import ocweb
-            data = ocweb.catalog(force=True)
-            if data.get("ready"):
+            from . import webapi
+            data = webapi.catalog(force=True)
+            if data.get("total"):
                 logger.info(
                     "Catálogo do motor pronto: %s modelos, %s provedores",
-                    data.get("models"), data.get("providers"),
+                    data.get("total"), len(data.get("providers") or []),
                 )
                 return True
         except Exception:  # noqa: BLE001
@@ -3829,11 +3833,12 @@ def start_wrapper_server():
                 return
 
             if p == "/api/ocweb_ready":
-                # v0.7.11-web: o splash da UI espera este endpoint (proxy 8002)
+                # v0.7.11-web17: o splash da UI espera este endpoint (servidor
+                # web novo na porta 8002).
                 try:
-                    from . import ocweb
-                    _st = ocweb.status()
-                    _ready = bool(_st.get("running")) and ocweb.ready(
+                    from . import webui_server
+                    _st = webui_server.status()
+                    _ready = bool(_st.get("running")) and webui_server.ready(
                         OCWEB_PORT, timeout=0.25
                     )
                 except Exception:
@@ -6855,14 +6860,18 @@ def launch():
             ttyd_url = f"http://localhost:{TERMINAL_PORT}"
             banner_url = f"http://localhost:{WRAPPER_PORT}"
 
-        # v0.7.11-web: a janela principal mostra a SPA do OpenCode (não o ttyd).
-        # O proxy em 8002 injeta Basic auth + tema UFVAI e repassa SSE/assets.
+        # v0.7.11-web17: a janela principal mostra a **web nova** (cliente
+        # UFVAI escrito do zero). O servidor em 8002 serve o cliente, o
+        # contrato /api/ufvai/* e o stream SSE do motor — a senha do motor
+        # nunca chega ao navegador.
         try:
-            from . import ocweb
-            if not ocweb.start(OCWEB_PORT):
-                logger.warning("ocweb: porta %s indisponível; a interface web não subiu", OCWEB_PORT)
+            from . import webui_server
+            if not webui_server.start(OCWEB_PORT):
+                logger.warning(
+                    "webui: porta %s indisponível; a interface web não subiu", OCWEB_PORT
+                )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ocweb: falha ao iniciar o proxy (%s)", exc)
+            logger.warning("webui: falha ao iniciar o servidor web (%s)", exc)
 
         boot.active("Preparando a interface web", 98)
         global _SESSION_TOKEN

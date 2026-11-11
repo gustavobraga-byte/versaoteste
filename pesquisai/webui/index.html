@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="pesquisai">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>UFVAI · Web</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d0f10'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' fill='%236ee7a8' text-anchor='middle'%3EU%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ── barra lateral ─────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="side-head">
+      <div class="brand">
+        <span class="brand-mark">U</span>
+        <div class="brand-text">
+          <strong>UFVAI</strong>
+          <small id="brand-sub">carregando…</small>
+        </div>
+      </div>
+      <button class="icon-btn side-close" id="side-close" title="Fechar menu" aria-label="Fechar menu">✕</button>
+    </div>
+
+    <button class="new-session" id="new-session">
+      <span class="plus">＋</span> Nova sessão
+    </button>
+
+    <div class="search-wrap">
+      <input id="session-search" type="search" placeholder="Buscar sessão…" autocomplete="off">
+    </div>
+
+    <nav class="sessions" id="sessions" aria-label="Sessões"></nav>
+
+    <div class="side-foot">
+      <div class="engine-line">
+        <span class="dot" id="engine-dot"></span>
+        <span id="engine-text">motor…</span>
+      </div>
+      <div class="engine-sub" id="engine-sub"></div>
+    </div>
+  </aside>
+
+  <!-- ── painel principal ──────────────────────────────────────────── -->
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menu-btn" title="Sessões" aria-label="Abrir lista de sessões">☰</button>
+      <div class="top-title">
+        <h1 id="session-title">UFVAI</h1>
+        <div class="top-sub">
+          <button class="pill model-pill" id="model-pill" title="Trocar modelo">
+            <span id="model-label">modelo…</span>
+          </button>
+          <button class="pill agent-pill" id="agent-pill" title="Trocar agente">
+            <span id="agent-label">agente…</span>
+          </button>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="refresh-btn" title="Atualizar" aria-label="Atualizar">↻</button>
+        <button class="icon-btn" id="theme-btn" title="Tema" aria-label="Alternar tema">◐</button>
+      </div>
+    </header>
+
+    <div class="thread" id="thread">
+      <div id="messages"></div>
+      <div class="empty" id="empty-state">
+        <div class="empty-mark">🔎</div>
+        <h2>UFVAI · agente de pesquisa científica</h2>
+        <p>
+          Escreva sua pergunta. As fontes são consultadas em bases reais e cada
+          afirmação quantitativa vem marcada como
+          <code>[DADO CONFIRMADO]</code>, <code>[ESTIMATIVA FUNDAMENTADA]</code>
+          ou <code>[SEM DADOS SUFICIENTES]</code>.
+        </p>
+        <p class="empty-hint">Enter envia · Shift+Enter quebra a linha</p>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-inner">
+        <textarea id="input" rows="1" placeholder="Pergunte ao UFVAI…" autocomplete="off"></textarea>
+        <button class="send" id="send-btn" title="Enviar (Enter)" aria-label="Enviar">➤</button>
+        <button class="stop" id="stop-btn" title="Interromper" aria-label="Interromper" hidden>■</button>
+      </div>
+      <div class="status" id="status" hidden><span class="spinner"></span><span id="status-text">Trabalhando…</span></div>
+    </div>
+  </main>
+
+  <div class="scrim" id="scrim" hidden></div>
+</div>
+
+<!-- ── seletor de modelo ────────────────────────────────────────────── -->
+<div class="modal" id="model-modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>Modelo</h2>
+      <button class="icon-btn" id="model-close" aria-label="Fechar">✕</button>
+    </div>
+    <input id="model-search" type="search" placeholder="Buscar modelo…" autocomplete="off">
+    <div class="model-list" id="model-list"></div>
+    <div class="modal-foot" id="model-foot"></div>
+  </div>
+</div>
+
+<!-- ── seletor de agente ────────────────────────────────────────────── -->
+<div class="modal" id="agent-modal" hidden>
+  <div class="modal-card modal-sm">
+    <div class="modal-head">
+      <h2>Agente</h2>
+      <button class="icon-btn" id="agent-close" aria-label="Fechar">✕</button>
+    </div>
+    <div class="model-list" id="agent-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

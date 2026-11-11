@@ -1,0 +1,476 @@
+"""webui_server.py — servidor da **nova** versão web do UFVAI (v0.7.11-web17).
+
+Substitui a pilha antiga (SPA do OpenCode injetada + ``boot.js`` + watchdog de
+recarregamento) por três peças simples e explícitas:
+
+1. **Cliente novo** (``pesquisai/webui/``) — HTML/CSS/JS escritos do zero, sem
+   dependências externas e sem build.
+2. **Contrato** (``pesquisai/webapi.py``) — tradução da API do motor para um
+   formato pequeno e estável.
+3. **Este servidor** — serve o cliente, expõe o contrato em ``/api/ufvai/*`` e
+   reencaminha o stream de eventos do motor (SSE) já normalizado.
+
+O navegador nunca recebe a senha do motor: a autenticação Basic é feita aqui.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
+
+from . import webapi
+from .constants import FOCUS_FILE, WEB_FOCUS_FILE
+
+WEBUI_DIR = Path(__file__).resolve().parent / "webui"
+DEFAULT_PORT = 8002
+STATIC_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".json": "application/json; charset=utf-8",
+    ".ico": "image/x-icon",
+    ".png": "image/png",
+    ".woff2": "font/woff2",
+}
+
+_SERVER: ThreadingHTTPServer | None = None
+_THREAD: threading.Thread | None = None
+_LOCK = threading.Lock()
+
+# Foco compartilhado entre TUI e web (mesmo formato de arquivo do plugin TUI).
+_FOCUS: dict[str, Any] = {"seq": int(time.time() * 1000), "sid": "", "source": "", "ts": 0}
+_FOCUS_LOCK = threading.Lock()
+_FOCUS_SUBS: set = set()
+
+
+# ── foco (TUI ↔ web) ─────────────────────────────────────────────────────────
+
+def _read_json_file(path: str) -> dict:
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_json_file(path: str, payload: dict) -> bool:
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        return False
+
+
+def focus_state() -> dict:
+    """Foco atual (TUI tem prioridade; web é a reserva)."""
+    with _FOCUS_LOCK:
+        snap = dict(_FOCUS)
+    tui = _read_json_file(FOCUS_FILE)
+    if tui.get("sid") and int(tui.get("ts") or 0) >= int(snap.get("ts") or 0):
+        snap["sid"] = str(tui.get("sid"))
+        snap["source"] = "tui"
+        snap["ts"] = int(tui.get("ts") or 0)
+    return snap
+
+
+def set_focus(sid: str, source: str) -> dict:
+    """Registra uma troca de sessão e propaga aos assinantes."""
+    sid = str(sid or "").strip()
+    if not sid:
+        return {}
+    with _FOCUS_LOCK:
+        _FOCUS["seq"] = int(_FOCUS["seq"]) + 1
+        _FOCUS["sid"] = sid
+        _FOCUS["source"] = source
+        _FOCUS["ts"] = int(time.time() * 1000)
+        snap = dict(_FOCUS)
+    if source == "web":
+        _write_json_file(
+            WEB_FOCUS_FILE,
+            {"sid": sid, "seq": snap["seq"], "ts": snap["ts"], "source": "web"},
+        )
+    else:
+        _write_json_file(
+            FOCUS_FILE,
+            {"sid": sid, "ts": snap["ts"], "route": "session", "source": "tui"},
+        )
+    return snap
+
+
+# ── rotas ────────────────────────────────────────────────────────────────────
+
+def _bootstrap() -> dict:
+    """Estado inicial do cliente: agentes, modelos, sessões, motor."""
+    agents = webapi.agents()
+    catalog = webapi.catalog()
+    sess = webapi.sessions()
+    active = webapi.active_sessions()
+    directory = sess[0]["directory"] if sess else ""
+    current = None
+    for row in sess:
+        if row["id"] in active:
+            current = row
+            break
+    default_agent = ""
+    for agent in agents:
+        if agent["id"].upper() == "UFVAI":
+            default_agent = agent["id"]
+            break
+    if not default_agent and agents:
+        default_agent = agents[0]["id"]
+    version = ""
+    info = webapi.engine_json("/api/info", timeout=8)
+    if isinstance(info, dict):
+        version = str(info.get("version") or "")
+    return {
+        "engine": {"version": version, "ready": bool(webapi.engine()[1])},
+        "directory": directory,
+        "agents": agents,
+        "commands": webapi.commands(),
+        "sessions": sess,
+        "active": active,
+        "current": current,
+        "defaultAgent": default_agent,
+        "models": {
+            "providers": catalog.get("providers", []),
+            "models": catalog.get("models", []),
+            "total": catalog.get("total", 0),
+            "available": catalog.get("available", 0),
+        },
+        "serverTime": int(time.time() * 1000),
+    }
+
+
+def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, Any]:
+    """Roteia ``/api/ufvai/*``. Devolve ``(status, payload)``."""
+    parts = [p for p in path.split("/") if p]
+
+    # /api/ufvai/<recurso>
+    if len(parts) < 3 or parts[0] != "api" or parts[1] != "ufvai":
+        return 404, {"error": "rota desconhecida"}
+    resource = parts[2]
+
+    if resource == "bootstrap" and method == "GET":
+        return 200, _bootstrap()
+    if resource == "models" and method == "GET":
+        force = query.get("force", ["0"])[0] in ("1", "true")
+        return 200, webapi.catalog(force=force)
+    if resource == "sessions" and method == "GET" and len(parts) == 3:
+        return 200, {"sessions": webapi.sessions(), "active": webapi.active_sessions()}
+    if resource == "sessions" and method == "POST" and len(parts) == 3:
+        row = webapi.create_session(
+            title=body.get("title"),
+            agent=body.get("agent"),
+            model=body.get("model"),
+            directory=body.get("directory"),
+        )
+        if not row:
+            return 502, {"error": "não foi possível criar a sessão"}
+        return 200, {"session": row}
+    if resource == "focus" and method == "GET":
+        return 200, focus_state()
+    if resource == "focus" and method == "POST":
+        return 200, {"focus": set_focus(str(body.get("sid") or ""), "web")}
+
+    # /api/ufvai/sessions/{sid}
+    if resource == "sessions" and len(parts) == 4:
+        sid = unquote(parts[3])
+        row = webapi.session(sid)
+        return (200 if row else 404), (row or {"error": "sessão inexistente"})
+
+    # /api/ufvai/sessions/{sid}/<ação>
+    if resource == "sessions" and len(parts) >= 5:
+        sid = unquote(parts[3])
+        action = parts[4]
+        if action == "messages" and method == "GET":
+            limit = int(query.get("limit", ["120"])[0] or 120)
+            return 200, {"messages": webapi.messages(sid, limit=limit)}
+        if action == "message" and method == "POST":
+            text = str(body.get("text") or "").strip()
+            if not text:
+                return 400, {"error": "mensagem vazia"}
+            result = webapi.send_prompt(sid, text)
+            return (200 if result.get("ok") else 502), result
+        if action == "interrupt" and method == "POST":
+            result = webapi.interrupt(sid)
+            return (200 if result.get("ok") else 502), result
+        if action == "model" and method == "POST":
+            model = body.get("model") or {}
+            result = webapi.set_model(sid, model)
+            return (200 if result.get("ok") else 502), result
+        if action == "agent" and method == "POST":
+            agent = str(body.get("agent") or "").strip()
+            if not agent:
+                return 400, {"error": "agente vazio"}
+            result = webapi.set_agent(sid, agent)
+            return (200 if result.get("ok") else 502), result
+        if action == "session" and method == "GET":
+            row = webapi.session(sid)
+            return (200 if row else 404), (row or {"error": "sessão inexistente"})
+
+    return 404, {"error": "rota desconhecida"}
+
+
+# ── handler HTTP ─────────────────────────────────────────────────────────────
+
+class _Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "UFVAI-web/0.7.11"
+
+    def log_message(self, *_args):  # silencioso
+        return
+
+    # -- utilidades --
+    def _json(self, status: int, payload: Any) -> None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _static(self, name: str) -> None:
+        target = (WEBUI_DIR / name).resolve()
+        try:
+            target.relative_to(WEBUI_DIR.resolve())
+        except ValueError:
+            self._json(403, {"error": "caminho bloqueado"})
+            return
+        if not target.exists() or not target.is_file():
+            self._json(404, {"error": "não encontrado"})
+            return
+        data = target.read_bytes()
+        ctype = STATIC_TYPES.get(target.suffix.lower(), "application/octet-stream")
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _read_body(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            return {}
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            data = json.loads(raw.decode("utf-8", errors="replace"))
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    # -- rotas --
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+        query = parse_qs(parsed.query)
+
+        if path in ("/", "/index.html", "/web", "/web/"):
+            self._static("index.html")
+            return
+        if path == "/health":
+            self._json(200, status())
+            return
+        if path == "/api/ufvai/events":
+            self._events(query)
+            return
+        if path == "/__ufvai/focus/stream":
+            self._focus_stream()
+            return
+        if path == "/api/ufvai/focus" and query.get("stream", ["0"])[0] in ("1", "true"):
+            self._focus_stream()
+            return
+        if path.startswith("/api/ufvai/"):
+            try:
+                status_code, payload = _handle_api("GET", path, query, {})
+            except Exception as exc:  # noqa: BLE001
+                status_code, payload = 500, {"error": str(exc)}
+            self._json(status_code, payload)
+            return
+        if path.startswith("/__ufvai/"):
+            # compatibilidade com o plugin de sincronia do TUI
+            if path == "/__ufvai/focus":
+                self._json(200, focus_state())
+                return
+            self._json(404, {"error": "rota desconhecida"})
+            return
+        # estáticos do cliente
+        if "/" not in path.strip("/"):
+            self._static(path.strip("/"))
+            return
+        self._json(404, {"error": "não encontrado"})
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+        body = self._read_body()
+        if path == "/__ufvai/focus":
+            set_focus(str(body.get("sid") or ""), "tui")
+            self._json(200, {"ok": True})
+            return
+        if path.startswith("/api/ufvai/"):
+            try:
+                status_code, payload = _handle_api("POST", path, {}, body)
+            except Exception as exc:  # noqa: BLE001
+                status_code, payload = 500, {"error": str(exc)}
+            self._json(status_code, payload)
+            return
+        self._json(404, {"error": "não encontrado"})
+
+    # -- SSE --
+    def _events(self, query: dict) -> None:
+        """Stream de eventos do motor, normalizado e filtrado por sessão."""
+        sid = str((query.get("sid") or [""])[0] or "")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        last_ping = time.time()
+        try:
+            while True:
+                for event in webapi.engine_events():
+                    normalized = webapi.normalize_event(event)
+                    if not normalized:
+                        continue
+                    event_sid = str(normalized.get("sid") or "")
+                    if sid and event_sid and event_sid != sid:
+                        continue
+                    payload = json.dumps(normalized, ensure_ascii=False)
+                    self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                # o motor caiu ou reiniciou: reconecta
+                time.sleep(1.0)
+                if time.time() - last_ping > 10:
+                    last_ping = time.time()
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+
+    def _focus_stream(self) -> None:
+        """Stream de trocas de sessão (TUI → web)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        last_seq = -1
+        last_ping = time.time()
+        try:
+            while True:
+                snap = focus_state()
+                seq = int(snap.get("seq") or 0)
+                if seq != last_seq:
+                    last_seq = seq
+                    payload = json.dumps(snap, ensure_ascii=False)
+                    self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                if time.time() - last_ping > 10:
+                    last_ping = time.time()
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                time.sleep(0.4)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 128
+
+
+# ── ciclo de vida ────────────────────────────────────────────────────────────
+
+def start(port: int = DEFAULT_PORT) -> bool:
+    """Sobe o servidor da nova web (idempotente)."""
+    global _SERVER, _THREAD
+    with _LOCK:
+        if _SERVER is not None:
+            return True
+        try:
+            server = _Server(("0.0.0.0", int(port)), _Handler)
+        except OSError:
+            return False
+        thread = threading.Thread(
+            target=server.serve_forever, name="ufvai-webui", daemon=True
+        )
+        thread.start()
+        _SERVER, _THREAD = server, thread
+        return True
+
+
+def stop() -> None:
+    global _SERVER, _THREAD
+    with _LOCK:
+        server, _SERVER = _SERVER, None
+        _THREAD = None
+    if server is not None:
+        try:
+            server.shutdown()
+            server.server_close()
+        except OSError:
+            pass
+
+
+def status() -> dict:
+    host, port, _ = webapi.engine()
+    server = _SERVER
+    return {
+        "running": bool(server),
+        "port": int(server.server_address[1]) if server else 0,
+        "engine": f"http://{host}:{port}" if port else "",
+        "engine_ready": bool(port),
+        "ui": "webui-v1",
+    }
+
+
+def ready(port: int = DEFAULT_PORT, timeout: float = 0.4) -> bool:
+    """Servidor no ar **e** motor respondendo."""
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout):
+            pass
+    except OSError:
+        return False
+    _, upstream, _ = webapi.engine()
+    if not upstream:
+        return False
+    try:
+        with socket.create_connection(("127.0.0.1", int(upstream)), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import sys
+
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
+    start(port)
+    print(f"UFVAI web (webui-v1) em http://0.0.0.0:{port}", flush=True)
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        stop()
