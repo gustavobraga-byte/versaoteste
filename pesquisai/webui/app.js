@@ -168,6 +168,15 @@
   window.addEventListener('message', (event) => {
     const data = event.data || {};
     if (data.type === 'ufvai-theme') applyTheme(data.theme);
+    // Resposta ao "ping" do wrapper: confirma que a web está viva e é a
+    // URL certa (usado como fallback quando a porta da web não responde).
+    if (data.type === 'ufvai-ping') {
+      try {
+        if (event.source) {
+          event.source.postMessage({ type: 'ufvai-pong', url: location.href }, '*');
+        }
+      } catch (e) { /* cross-origin bloqueado */ }
+    }
   });
 
   /* ── toast ────────────────────────────────────────────────────────── */
