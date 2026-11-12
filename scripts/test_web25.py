@@ -176,7 +176,7 @@ async def main() -> int:
         # chegaria à gaveta.
         movel = await browser.new_page(viewport={"width": 390, "height": 780},
                                        is_mobile=True, has_touch=True)
-        await movel.goto("http://127.0.0.1:8003/", wait_until="networkidle")
+        await movel.goto("http://127.0.0.1:8003/", wait_until="domcontentloaded")
         await movel.wait_for_timeout(3500)
         await movel.evaluate("() => document.getElementById('menu-btn').click()")
         await movel.wait_for_timeout(700)

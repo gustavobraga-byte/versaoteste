@@ -27,7 +27,7 @@ async def main() -> int:
         browser = await p.chromium.launch(args=["--no-sandbox"])
         page = await browser.new_page(viewport={"width": 1440, "height": 900})
         page.on("pageerror", lambda e: errors.append(f"[pageerror] {e}"))
-        await page.goto(WEB, wait_until="networkidle")
+        await page.goto(WEB, wait_until="domcontentloaded")
         await page.wait_for_timeout(3500)
 
         # ── 1) abrir / fechar ──────────────────────────────────────────────

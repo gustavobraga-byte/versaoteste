@@ -79,6 +79,16 @@
       </div>
     </header>
 
+    <!-- v0.7.11-web26: aviso de gateway antigo (fora do proxy do Colab) -->
+    <div class="engine-dead" id="gateway-old" hidden>
+      <div class="dead-icon">⚠️</div>
+      <div class="dead-text">
+        <strong data-i18n="warn.gatewayOld">Esta página está servida por uma versão antiga</strong>
+        <p data-i18n="warn.gatewayOldBody"></p>
+        <p><a id="gateway-old-link" href="#" target="_blank" rel="noopener"></a></p>
+      </div>
+    </div>
+
     <!-- v0.7.11-web23: aviso de ambiente encerrado (Colab morto) -->
     <div class="engine-dead" id="engine-dead" hidden>
       <div class="dead-icon">⚠️</div>
@@ -105,6 +115,19 @@
 
     <!-- ── compositor ─────────────────────────────────────────────── -->
     <div class="composer">
+      <!-- v0.7.11-web27: servidor sobrecarregado — o retry está em curso -->
+      <div class="retry-banner" id="retry-banner" hidden>
+        <span class="rb-icon">⚠️</span>
+        <div class="rb-text">
+          <strong id="retry-title"></strong>
+          <span id="retry-detail"></span>
+        </div>
+        <span class="rb-count" id="retry-count"></span>
+      </div>
+
+      <!-- v0.7.11-web27: erros comuns (vermelhos), distintos da sobrecarga -->
+      <div class="errors" id="errors" hidden></div>
+
       <!-- v0.7.11-web24: pedidos de permissão do motor (as "decisões" que
            não apareciam na versão web) -->
       <div class="permissions" id="permissions" hidden></div>

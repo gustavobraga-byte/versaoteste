@@ -37,7 +37,15 @@
     "session.finalizeArchive": "Finalizar e arquivar",
     "session.finalizeDelete": "Excluir do histórico",
     "session.finalizeDone": "sessão finalizada",
-    "key.cancel": "Cancelar"
+    "key.cancel": "Cancelar",
+    "warn.gatewayOld": "Esta página está servida por uma versão antiga",
+    "warn.gatewayOldBody": "O servidor que responde aqui é de uma versão anterior e não tem as rotas novas (explorador de arquivos, finalizar sessão). Abra a versão atualizada no endereço abaixo.",
+    "retry.overloaded": "Servidor sobrecarregado — nova tentativa em andamento",
+    "retry.detail": "O provedor está saturado (cota ou demanda alta). Nada foi perdido: o UFVAI vai tentar de novo automaticamente.",
+    "retry.waiting": "Nova tentativa a cada instante…",
+    "error.title": "Ocorreu um erro",
+    "retry.attempt": "Tentativa {attempt} — nova tentativa em {seconds}s.",
+    "retry.attemptNoDelay": "Tentativa {attempt} — o motor vai tentar de novo."
   },
   "en": {
     "settings.tab.autosave": "Autosave",
@@ -77,7 +85,15 @@
     "session.finalizeArchive": "Finalize and archive",
     "session.finalizeDelete": "Delete from history",
     "session.finalizeDone": "session finalized",
-    "key.cancel": "Cancel"
+    "key.cancel": "Cancel",
+    "warn.gatewayOld": "This page is served by an older version",
+    "warn.gatewayOldBody": "The server answering here is from an earlier version and lacks the new routes (file explorer, finalize session). Open the current version at the address below.",
+    "retry.overloaded": "Server overloaded — retry in progress",
+    "retry.detail": "The provider is saturated (quota or high demand). Nothing was lost: UFVAI will try again automatically.",
+    "retry.waiting": "Retrying at any moment…",
+    "error.title": "An error occurred",
+    "retry.attempt": "Attempt {attempt} — retrying in {seconds}s.",
+    "retry.attemptNoDelay": "Attempt {attempt} — the engine will try again."
   },
   "es": {
     "settings.tab.autosave": "Autosave",
@@ -117,7 +133,15 @@
     "session.finalizeArchive": "Finalizar y archivar",
     "session.finalizeDelete": "Eliminar del historial",
     "session.finalizeDone": "sesión finalizada",
-    "key.cancel": "Cancelar"
+    "key.cancel": "Cancelar",
+    "warn.gatewayOld": "Esta página la sirve una versión antigua",
+    "warn.gatewayOldBody": "El servidor que responde aquí es de una versión anterior y no tiene las rutas nuevas (explorador de archivos, finalizar sesión). Abra la versión actualizada en la dirección de abajo.",
+    "retry.overloaded": "Servidor sobrecargado — nuevo reintento en curso",
+    "retry.detail": "El proveedor está saturado (cuota o demanda alta). No se perdió nada: UFVAI lo intentará de nuevo automáticamente.",
+    "retry.waiting": "Nuevo reintento en cualquier momento…",
+    "error.title": "Se produjo un error",
+    "retry.attempt": "Intento {attempt} — nuevo reintento en {seconds}s.",
+    "retry.attemptNoDelay": "Intento {attempt} — el motor lo intentará de nuevo."
   },
   "fr": {
     "settings.tab.autosave": "Autosave",
@@ -157,7 +181,15 @@
     "session.finalizeArchive": "Finaliser et archiver",
     "session.finalizeDelete": "Supprimer de l'historique",
     "session.finalizeDone": "session finalisée",
-    "key.cancel": "Annuler"
+    "key.cancel": "Annuler",
+    "warn.gatewayOld": "Cette page est servie par une ancienne version",
+    "warn.gatewayOldBody": "Le serveur qui répond ici vient d'une version antérieure et n'a pas les nouvelles routes (explorateur de fichiers, finaliser la session). Ouvrez la version à jour à l'adresse ci-dessous.",
+    "retry.overloaded": "Serveur saturé — nouvelle tentative en cours",
+    "retry.detail": "Le fournisseur est saturé (quota ou forte demande). Rien n'a été perdu : UFVAI réessaiera automatiquement.",
+    "retry.waiting": "Nouvelle tentative d'ici un instant…",
+    "error.title": "Une erreur est survenue",
+    "retry.attempt": "Tentative {attempt} — nouvel essai dans {seconds}s.",
+    "retry.attemptNoDelay": "Tentative {attempt} — le moteur réessaiera."
   },
   "zh": {
     "settings.tab.autosave": "自动保存",
@@ -197,6 +229,14 @@
     "session.finalizeArchive": "结束并归档",
     "session.finalizeDelete": "从历史中删除",
     "session.finalizeDone": "会话已结束",
-    "key.cancel": "取消"
+    "key.cancel": "取消",
+    "warn.gatewayOld": "此页面由旧版本提供",
+    "warn.gatewayOldBody": "此处的服务器是旧版本，缺少新路由（文件浏览器、结束会话）。请在下方地址打开最新版本。",
+    "retry.overloaded": "服务器过载——正在重试",
+    "retry.detail": "提供方已饱和（配额或高需求）。没有丢失任何内容：UFVAI 将自动重试。",
+    "retry.waiting": "随时将重试…",
+    "error.title": "发生错误",
+    "retry.attempt": "第 {attempt} 次尝试——{seconds} 秒后重试。",
+    "retry.attemptNoDelay": "第 {attempt} 次尝试——引擎将重新尝试。"
   }
 }

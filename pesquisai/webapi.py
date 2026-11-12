@@ -517,6 +517,11 @@ def normalize_message(row: dict) -> dict:
             reasoning.append(str(part["text"]))
     model = row.get("model") or {}
     error = row.get("error")
+    # v0.7.11-web27: o motor anexa à mensagem o erro (com status) e a
+    # informação de retry (tentativa + atraso) — a interface distingue
+    # "servidor sobrecarregado, tentando de novo" de "erro comum".
+    retry = row.get("retry") if isinstance(row.get("retry"), dict) else {}
+    retry_error = retry.get("error") if isinstance(retry.get("error"), dict) else {}
     return {
         "id": str(row.get("id") or ""),
         "role": "assistant" if kind == "assistant" else ("user" if kind == "user" else "system"),
@@ -536,6 +541,20 @@ def normalize_message(row: dict) -> dict:
         "cost": row.get("cost") or 0,
         "outcome": row.get("outcome"),
         "error": str(error.get("message") if isinstance(error, dict) else error or ""),
+        "errorStatus": int(error.get("status") or 0) if isinstance(error, dict) else 0,
+        "errorType": str(error.get("type") or "") if isinstance(error, dict) else "",
+        "errorReason": _error_reason(error) if isinstance(error, dict) else "error",
+        "retry": (
+            {
+                "attempt": int(retry.get("attempt") or 0),
+                "delayMs": int(retry_error.get("retryAfterMs") or 0),
+                "status": int(retry_error.get("status") or 0),
+                "message": str(retry_error.get("message") or ""),
+                "reason": _error_reason(retry_error) if retry_error else "error",
+            }
+            if retry
+            else {}
+        ),
     }
 
 
@@ -1244,6 +1263,28 @@ def _line_diff(before: str, after: str) -> dict[str, Any]:
     return {"added": added[:400], "removed": removed[:400]}
 
 
+def _error_reason(error: dict) -> str:
+    """Classifica o erro do motor: ``overloaded`` (saturado) ou ``error``.
+
+    O motor distingue a sobrecarga do provedor (HTTP 429/503, “overloaded”,
+    “high demand”, “quota”) dos demais erros — a interface precisa mostrar
+    a situação de forma diferente (saturação + nova tentativa ≠ falha).
+    """
+    error = error if isinstance(error, dict) else {}
+    message = str(error.get("message") or "")
+    status = int(error.get("status") or 0)
+    etype = str(error.get("type") or "").lower()
+    blob = f"{etype} {message}".lower()
+    overload_markers = (
+        "overload", "high demand", "temporarily unavailable", "try again later",
+        "service unavailable", "capacity", "too many requests", "rate limit",
+        "rate_limit", "quota", "resource_exhausted", "429", "503", "529",
+    )
+    if status in (429, 503, 529) or any(mark in blob for mark in overload_markers):
+        return "overloaded"
+    return "error"
+
+
 def normalize_event(event: dict) -> dict | None:
     """Traduz um evento do motor para o contrato do cliente.
 
@@ -1364,6 +1405,22 @@ def normalize_event(event: dict) -> dict | None:
         if diff:
             payload["diff"] = diff
         return payload
+    if kind == "session.retry.scheduled":
+        # v0.7.11-web27: o motor agendou uma nova tentativa (cota/saturação).
+        # A interface mostra que o servidor está sobrecarregado e que o
+        # retry está em curso — nada foi perdido.
+        error = data.get("error") or {}
+        return {
+            "type": "retry.scheduled",
+            "sid": sid or str(data.get("sessionID") or ""),
+            "messageID": message_id or str(data.get("assistantMessageID") or ""),
+            "attempt": int(data.get("attempt") or 0),
+            "delayMs": int(error.get("retryAfterMs") or 0),
+            "status": int(error.get("status") or 0),
+            "errorType": str(error.get("type") or ""),
+            "message": str(error.get("message") or ""),
+            "reason": _error_reason(error),
+        }
     if kind == "permission.asked":
         # v0.7.11-web24: o motor pede licença para agir — a web precisa
         # mostrar as opções (permitir uma vez / sempre / rejeitar).
@@ -1404,7 +1461,16 @@ def normalize_event(event: dict) -> dict | None:
     if kind == "session.updated":
         return {"type": "session.updated", "sid": sid, "title": str(data.get("title") or "")}
     if kind == "session.error" or kind == "message.error":
-        error = data.get("error")
+        error = event.get("error")
         text = error.get("message") if isinstance(error, dict) else error
-        return {"type": "error", "sid": sid, "error": str(text or "erro desconhecido")}
+        payload = {
+            "type": "error",
+            "sid": sid,
+            "error": str(text or "erro desconhecido"),
+        }
+        if isinstance(error, dict):
+            payload["status"] = int(error.get("status") or 0)
+            payload["reason"] = _error_reason(error)
+            payload["retryAfterMs"] = int(error.get("retryAfterMs") or 0)
+        return payload
     return None

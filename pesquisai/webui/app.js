@@ -141,11 +141,17 @@
     } catch (e) { return null; }
   }
 
-  function t(key, fallback) {
+  /** Texto traduzido; `vars` substitui marcadores ``{chave}``. */
+  function t(key, vars) {
     const table = I18N.locales[state.locale] || I18N.locales[I18N.default] || {};
-    if (table[key]) return table[key];
-    if (fallback !== undefined) return fallback;
-    return key;
+    let value = table[key];
+    if (value === undefined) value = key;
+    if (vars && typeof vars === 'object') {
+      Object.keys(vars).forEach((name) => {
+        value = String(value).split(`{${name}}`).join(String(vars[name]));
+      });
+    }
+    return value;
   }
 
   /** Aplica o idioma: textos, placeholders, títulos e o `lang` do documento. */
@@ -363,7 +369,7 @@
   function toast(message, kind) {
     const node = $('#toast');
     node.textContent = message;
-    node.className = kind === 'err' ? 'toast err' : 'toast';
+    node.className = 'toast' + (kind ? ' ' + kind : '');
     node.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { node.hidden = true; }, 4200);
@@ -804,6 +810,73 @@
     }
   }
 
+  /* ── sobrecarga do servidor / retry (v0.7.11-web27) ──────────────── */
+
+  // Quando o provedor está saturado (429/503/“overloaded”/cota), o motor
+  // agenda uma nova tentativa e emite `session.retry.scheduled`. A interface
+  // mostra isso de forma **distinta** (âmbar, com contagem regressiva): não é
+  // falha — é o servidor sobrecarregado e o retry está em curso. Os outros
+  // erros aparecem em **vermelho**, com o detalhe técnico.
+
+  let retryTimer = null;
+  let retryEndsAt = 0;
+
+  function showRetryNotice(info) {
+    const banner = $('#retry-banner');
+    if (!banner) return;
+    const delay = Math.max(0, Number(info.delayMs || 0));
+    const attempt = Number(info.attempt || 0);
+    $('#retry-title').textContent = t('retry.overloaded');
+    const detail = String(info.message || '').trim();
+    $('#retry-detail').textContent = detail || t('retry.detail');
+    banner.hidden = false;
+    retryEndsAt = Date.now() + delay;
+    updateRetryCount();
+    if (retryTimer) clearInterval(retryTimer);
+    retryTimer = setInterval(updateRetryCount, 1000);
+  }
+
+  function updateRetryCount() {
+    const box = $('#retry-banner');
+    if (!box || box.hidden) return;
+    const restante = Math.max(0, retryEndsAt - Date.now());
+    const seg = Math.ceil(restante / 1000);
+    const count = $('#retry-count');
+    if (count) count.textContent = seg > 0 ? `${seg}s` : '…';
+    if (restante <= 0) {
+      if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+      const detail = $('#retry-detail');
+      if (detail) detail.textContent = t('retry.waiting');
+    }
+  }
+
+  function hideRetryNotice() {
+    const banner = $('#retry-banner');
+    if (banner) banner.hidden = true;
+    if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+    retryEndsAt = 0;
+  }
+
+  /** Erro comum (vermelho) — diferente da sobrecarga. */
+  function showErrorNotice(info) {
+    const box = $('#errors');
+    if (!box) return;
+    const card = el('div', 'error-card');
+    card.appendChild(el('span', 'ec-title', t('error.title')));
+    const detail = String(info.error || '').trim();
+    if (detail) card.appendChild(el('span', 'ec-detail', detail));
+    const status = Number(info.status || 0);
+    if (status) card.appendChild(el('span', 'ec-detail', `HTTP ${status}`));
+    box.appendChild(card);
+    box.hidden = false;
+    scrollToEnd(false);
+  }
+
+  function clearErrorNotices() {
+    const box = $('#errors');
+    if (box) { box.innerHTML = ''; box.hidden = true; }
+  }
+
   /* ── sessões ──────────────────────────────────────────────────────── */
 
   function relativeTime(ms) {
@@ -1162,8 +1235,29 @@
         wrap.appendChild(block);
       });
     }
+    if (message.retry && message.retry.attempt) {
+      // v0.7.11-web27: a mensagem carrega a tentativa — servidor saturado
+      const info = el('div', 'retry-inline');
+      info.appendChild(el('span', 'ri-icon', '⚠️'));
+      const txt = el('div', 'ri-text');
+      txt.appendChild(el('strong', null, t('retry.overloaded')));
+      const delay = Number(message.retry.delayMs || 0);
+      txt.appendChild(el('span', null, delay
+        ? t('retry.attempt', { attempt: message.retry.attempt, seconds: Math.round(delay / 1000) })
+        : t('retry.attemptNoDelay', { attempt: message.retry.attempt })));
+      info.appendChild(txt);
+      wrap.appendChild(info);
+    }
     if (message.error) {
-      wrap.appendChild(el('div', 'msg-error', message.error));
+      // erro comum: VERMELHO, distinto da sobrecarga
+      const card = el('div', 'error-card');
+      card.appendChild(el('span', 'ec-title', t('error.title')));
+      if (message.errorStatus) {
+        card.appendChild(el('span', 'ec-detail', `HTTP ${message.errorStatus}`
+          + (message.errorType ? ` · ${message.errorType}` : '')));
+      }
+      card.appendChild(el('span', 'ec-detail', message.error));
+      wrap.appendChild(card);
     }
     wrap.appendChild(copyButton(() => message.text || '', t('session.copyResponse')));
     return wrap;
@@ -1305,10 +1399,13 @@
       }
       case 'text.started':
         streamSlot(ev.messageID);
+        // v0.7.11-web27: a resposta voltou — a sobrecarga acabou
+        hideRetryNotice();
         break;
       case 'text.delta': {
         const slot = streamSlot(ev.messageID);
         slot.text += ev.delta || '';
+        hideRetryNotice();
         scheduleRender(slot);
         break;
       }
@@ -1376,6 +1473,10 @@
           scrollToEnd(false);
         }
         break;
+      case 'retry.scheduled':
+        // v0.7.11-web27: servidor sobrecarregado — o retry está em curso
+        showRetryNotice(ev);
+        break;
       case 'permission.asked':
         renderPermission(ev);
         break;
@@ -1383,7 +1484,18 @@
         clearPermission(ev.id);
         break;
       case 'error':
-        toast(ev.error || 'erro do motor', 'err');
+        // v0.7.11-web27: sobrecarga → avisa com retry; demais erros → vermelho
+        if (ev.reason === 'overloaded') {
+          showRetryNotice({
+            delayMs: ev.retryAfterMs || 0,
+            attempt: 0,
+            message: ev.error || '',
+          });
+          toast(t('retry.overloaded'), 'warn');
+        } else {
+          showErrorNotice(ev);
+          toast(String(ev.error || t('error.title')), 'err');
+        }
         break;
       default:
         break;
@@ -1697,6 +1809,10 @@
     const text = input.value.trim();
     if (!text && !state.attachments.length) return;
     if (!state.sessionId) { await newSession(); }
+
+    // v0.7.11-web27: novo turno → limpa os avisos do anterior
+    clearErrorNotices();
+    hideRetryNotice();
 
     input.value = '';
     input.style.height = 'auto';
@@ -2696,9 +2812,97 @@
 
   /* ── inicialização ────────────────────────────────────────────────── */
 
+  /**
+   * URL da versão atualizada da web, quando ela está em OUTRA porta.
+   *
+   * v0.7.11-web26: o servidor que o **boot** sobe (8002) carrega o gateway
+   * antigo em memória, enquanto o HTML do cliente é lido do disco a cada
+   * requisição — ou seja: o cliente novo aparecia, mas as rotas novas
+   * (`/api/ufvai/explorer`, `…/finalize`) respondiam 404. Se o gateway
+   * Servido não tem a rota, o cliente redireciona para a porta que tem
+   * (8003, mantida pelo supervisor).
+   */
+  function newerWebUrl() {
+    try {
+      const url = new URL(location.href);
+      if (/^8002-/.test(url.host)) {
+        url.host = url.host.replace(/^8002-/, '8003-');
+      } else if (url.port === '8002') {
+        url.port = '8003';
+      } else {
+        return null;
+      }
+      return url.toString();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** Confere se o gateway desta origem tem as rotas da versão atual.
+
+   * Tenta **3 vezes**: logo após o boot o servidor pode estar reiniciando
+   * (o supervisor da web nova) e responder 404 por um instante — um 404
+   * isolado não significa “gateway antigo”.
+   */
+  async function gatewayIsCurrent() {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const res = await fetch(api('/explorer?path='), { cache: 'no-store' });
+        if (res.ok) return true;
+        if (res.status !== 404) return true;   // outro erro: não é falta de rota
+      } catch (e) {
+        return true; // erro de rede: não redireciona (pode ser o Colab morrendo)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
+    return false;
+  }
+
+  /**
+   * Aviso de gateway antigo: a página servida por um servidor com o
+   * *gateway* antigo (mas com o HTML novo, lido do disco) não tem as rotas
+   * novas. No proxy do Colab a porta 8003 é o supervisor da versão
+   * atualizada → redireciona; fora dele, mostra o aviso com o link.
+   */
+  function showGatewayOldNotice(target) {
+    const box = $('#gateway-old');
+    if (!box) return;
+    box.hidden = false;
+    const link = $('#gateway-old-link');
+    if (link && target) {
+      link.href = target;
+      link.textContent = target;
+    }
+  }
+
   async function boot() {
     loadPrefs();
     applyTheme(currentTheme());
+    // v0.7.11-web26: se o gateway desta origem for antigo, vai para a
+    // porta que serve a versão completa.
+    if (!(await gatewayIsCurrent())) {
+      const target = newerWebUrl();
+      let isProxy = false;
+      try {
+        isProxy = /^8002-/.test(new URL(location.href).host);
+      } catch (e) { isProxy = false; }
+      if (target && isProxy) {
+        // no proxy do Colab a 8003 é o supervisor da versão nova
+        location.replace(target);
+        return;
+      }
+      // fora do proxy: sonda a outra porta em `no-cors` — uma resposta opaca
+      // (status 0) prova que o servidor existe; se a porta estiver fechada
+      // o fetch é rejeitado e o aviso é mostrado.
+      if (target) {
+        try {
+          await fetch(target, { mode: 'no-cors', cache: 'no-store' });
+          location.replace(target);
+          return;
+        } catch (e) { /* porta fechada: mostra o aviso */ }
+      }
+      showGatewayOldNotice(target);
+    }
     // v0.7.11-web23: i18n — dicionário local + idioma do wrapper/motor
     await loadI18n();
     const cookieLang = localeFromCookie();
@@ -2994,7 +3198,11 @@
   // para depurar no console do navegador). Não expõe nada sensível.
   window.__ufvai = {
     state,
+    handleEvent,
+    gatewayIsCurrent,
     setRunning,
+    showRetryNotice,
+    showErrorNotice,
     syncTail,
     renderPermission,
     replyPermission,

@@ -1,5 +1,86 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web27] — 2026-11-12 — servidor sobrecarregado com retry visível, e os outros erros em vermelho
+
+### O que o motor entrega
+
+O OpenCode sinaliza a saturação do provedor em dois lugares:
+
+- **evento** `session.retry.scheduled` → `{sessionID, assistantMessageID, attempt, at, error}`
+  com `error` = `{type, message, status, response, retryAfterMs}`;
+- **mensagem do assistente** → campos `error` (`Session.StructuredError`) e
+  `retry` (`{attempt, at, error}`).
+
+O motivo do provedor distingue **sobrecarga** de falha comum — o enum
+`ProviderRequestError.reason` tem `overloaded` e `rate_limit`, e as mensagens
+citam “overloaded”, “high demand”, “quota”, “rate limit”, 429/503/529.
+
+### O que a interface passou a mostrar
+
+| Situação | Apresentação |
+|---|---|
+| **Servidor sobrecarregado** (o retry está em curso) | faixa **âmbar** acima do compositor: “Servidor sobrecarregado — nova tentativa em andamento”, com a **contagem regressiva** e o detalhe do provedor; some assim que a resposta volta. Nas mensagens já carregadas, o bloco de retry aparece na própria mensagem, também em âmbar. |
+| **Outros erros** | cartão **vermelho** com o título, o **status HTTP** e o detalhe técnico — visualmente distinto da sobrecarga. |
+
+A distinção é feita no **gateway** (`_error_reason`): sobrecarga = HTTP
+429/503/529 ou mensagem com “overloaded / high demand / temporarily
+unavailable / too many requests / rate limit / quota / resource_exhausted /
+capacity”; todo o resto é erro comum.
+
+O texto diz o que está acontecendo — **não é falha**: a tentativa é refeita
+automaticamente (o plugin `ufvai-retry` espera a janela de cota do provedor) e
+**nada é perdido**.
+
+### Other
+
+- `t()` agora aceita variáveis (`{tentativa}`, `{segundos}`).
+- O `toast` subiu acima do compositor (antes cobria o campo de mensagem).
+- **Dicionário**: 217 chaves × 5 idiomas.
+- **Testes**: `scripts/test_web27.py` → **9/9** ✓ (faixa âmbar, contagem,
+  sumiço ao voltar a resposta, erro vermelho, classificação no gateway
+  6/6, retry normalizado e histórico) · `test_web26.py` 10/10 ·
+  `test_web25.py` 14/14 · `test_acceptance.py` 33/33; 0 erros de console.
+
+## [0.7.11-web26c] — 2026-11-12 — a web servida por um gateway antigo volta sozinha para a versão atual
+
+### O sintoma
+
+Na sessão **viva** (sem reiniciar), o explorador respondia **HTTP 404** e
+“finalizar sessão” devolvia **“rota desconhecida”**.
+
+### Causa
+
+O servidor que o *boot* sobe (porta **8002**) roda **dentro do processo do
+kernel** e importa o gateway **no momento em que sobe**. O HTML do cliente,
+por outro lado, é **lido do disco a cada requisição** — ou seja:
+
+- o cliente **novo** (com o botão do explorador) era servido normalmente;
+- mas as **rotas novas** do gateway (`/api/ufvai/explorer`,
+  `/api/ufvai/sessions/{id}/finalize`) não existiam na versão do gateway que
+  estava carregada em memória → **404** e **“rota desconhecida”**.
+
+### Correção
+
+No boot, o cliente confere se o gateway da própria origem tem as rotas da
+versão atual (`GET /api/ufvai/explorer?path=`):
+
+- **no proxy do Colab** (host `8002-…`) → redireciona para a porta **8003**,
+  que é o supervisor da versão atualizada;
+- **fora do proxy** (instalação local) → sonda a outra porta em `no-cors`
+  (resposta opaca = servidor vivo) e redireciona; se a porta estiver fechada,
+  mostra um **aviso** com o link da versão atualizada.
+
+Resultado verificado: abrindo `8002` a página vai sozinha para `8003` e o
+explorador e a finalização passam a funcionar (377 itens listados, confirmação
+com as três opções).
+
+### Other
+
+- **Dicionário**: 211 chaves × 5 idiomas (`warn.gatewayOld*`).
+- **Testes**: `test_web26.py` **10/10** ✓ · `test_web25.py` **14/14** ✓ ·
+  `test_acceptance.py` **33/33** ✓; 0 erros de console. (Os testes passaram a
+  usar `domcontentloaded` — a conexão SSE nunca fica “idle”.)
+
 ## [0.7.11-web26b] — 2026-11-12 — prévia formatada e “finalizar sessão” com confirmação
 
 ### Prévia formatada (sem peso extra)
