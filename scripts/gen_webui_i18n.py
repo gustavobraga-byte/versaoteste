@@ -50,6 +50,8 @@ KEYS: list[str] = [
     "session.finalizeDelete", "session.finalizeDone",
     "explorer.title", "explorer.up", "explorer.refresh", "explorer.loading",
     "explorer.empty", "explorer.download", "explorer.drive", "explorer.truncated",
+    "explorer.search", "explorer.clearSearch", "explorer.resize",
+    "explorer.noResults", "explorer.results", "explorer.closePreview",
     "about.version", "about.codename", "about.release", "about.author", "about.email",
     "about.institution", "about.registry", "about.license", "about.languages", "about.agencies",
     "settings.expandReasoning", "settings.expandTools", "settings.expandAll",

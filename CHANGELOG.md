@@ -1,5 +1,36 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web28] — 2026-11-12 — tabelas com links, sincronismo com fallback, explorador redimensionável com busca e PDF, e o indicador de atividade
+
+### 1. Tabelas nas respostas (com links)
+
+| Sintoma | Causa real | Entregue |
+|---|---|---|
+| as tabelas saíam como texto com pipes e os links apareciam crus | **o `md()` nunca gerou `<table>`** — não havia nenhuma regra de tabela no renderizador (só o CSS existia) | o `md()` agora reconhece cabeçalho + separador (`\| --- \| :---: \|`) e monta `<table>/<thead>/<tbody>`; as células passam por `inline()`, então o **link vira `<a href>` de verdade**; o `\|` escapado e o `\|` dentro de código inline não separam mais células; o alinhamento (`:---`, `:---:`, `---:`) é respeitado; o link aceita parênteses balanceados (URL da Wikipédia) |
+
+### 2. Sincronismo das mensagens + fallback
+
+- **O que estava errado [DADO CONFIRMADO]:** só a **última** mensagem era conferida; uma diferença de texto chamava `renderMessages()`, que **apagava o texto que estava chegando por streaming** (a resposta voltava ao estado antigo e ficava truncada); não existia **fallback** — sem SSE, a tela ficava congelada.
+- **Entregue:** `syncMessages()` reconcilia **toda** a cauda; a mensagem em streaming é atualizada **no lugar** (o nó vivo nunca é recriado); a mensagem do histórico é corrigida no próprio nó (preserva o que o usuário expandiu e a rolagem); **fallback** por sondagem a cada 3 s (enquanto o motor trabalha ou com o SSE caído) + reconciliação ao voltar o foco/visibilidade da aba; a mensagem do usuário enviada otimisticamente é **trocada** pela oficial (sem duplicar).
+
+### 3. Explorador de arquivos
+
+- **Arrastar para redimensionar**: alça na borda esquerda do painel (cursor `col-resize`); largura gravada no `localStorage`; duplo clique restaura 360 px; setas do teclado ajustam em passos de 24 px (240–720 px).
+- **Fechar a visualização**: botão **✕** no cabeçalho da prévia (limpa o painel e a seleção).
+- **Visualização de PDF**: o PDF é renderizado **dentro da web** (`<iframe>` com `Content-Disposition: inline`) — antes só havia o link para o Drive.
+- **Filtro de busca**: campo no cabeçalho; a busca é **recursiva** no servidor (`GET /api/ufvai/explorer?q=`), com contador de resultados e o caminho do item encontrado; `Esc` limpa o filtro.
+- **Link do Drive corrigido**: a busca passou de `https://drive.google.com/drive/u/0/my-drive?q=` (que **ignorava** a consulta) para `https://drive.google.com/drive/u/0/search?q=`.
+
+### 4. Indicador de atividade
+
+- **Raciocínio** em curso → **espiral amarela girando** no cabeçalho do bloco; quando termina, a espiral some e o rótulo fica **verde** (“concluído”).
+- **Ferramentas (Shell e demais)** → **espiral amarela** enquanto executam, **verde** ao concluir, **vermelho** no erro.
+
+### Também nesta rodada
+
+- **Dicionário**: **223 chaves × 5 idiomas** (`pesquisai/webui/i18n.json`).
+- **Testes**: `scripts/test_web28.py` → **18/18** ✓; `scripts/test_acceptance.py` → **33/33** ✓; `scripts/test_web25.py` → **14/14** ✓; 0 erros de console.
+
 ## [0.7.11-web27] — 2026-11-12 — servidor sobrecarregado com retry visível, e os outros erros em vermelho
 
 ### O que o motor entrega

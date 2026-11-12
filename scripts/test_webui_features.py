@@ -31,7 +31,7 @@ async def main():
         page = await browser.new_page(viewport={"width": 1440, "height": 900})
         page.on("pageerror", lambda e: errors.append(f"[pageerror] {e}"))
 
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(BASE, wait_until="domcontentloaded")
         await page.wait_for_timeout(1800)
 
         # 1) agente: apenas UFVAI

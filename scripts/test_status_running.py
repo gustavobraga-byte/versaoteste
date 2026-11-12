@@ -17,7 +17,7 @@ async def main():
         browser = await p.chromium.launch(args=["--no-sandbox"])
         page = await browser.new_page(viewport={"width": 1440, "height": 900})
         page.on("pageerror", lambda e: errors.append(f"[pageerror] {e}"))
-        await page.goto(BASE, wait_until="networkidle")
+        await page.goto(BASE, wait_until="domcontentloaded")
         await page.wait_for_timeout(2000)
 
         # sessão nova (idle) — evita o enfileiramento no meio de outro turno

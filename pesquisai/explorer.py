@@ -34,14 +34,20 @@ __all__ = [
     "allowed_roots",
     "safe_path",
     "listing",
+    "search",
     "preview",
     "read_bytes",
     "drive_link",
     "DRIVE_HOME",
+    "DRIVE_SEARCH",
 ]
 
 #: Página inicial do Drive usada nos links.
 DRIVE_HOME = "https://drive.google.com/drive/u/0/my-drive"
+
+#: v0.7.11-web28: a **busca** no Drive é em ``/search?q=`` — o link antigo
+#: (``/my-drive?q=``) ignorava o parâetro e caía na tela inicial do Drive.
+DRIVE_SEARCH = "https://drive.google.com/drive/u/0/search"
 
 TEXT_SUFFIXES = {
     ".md", ".markdown", ".txt", ".csv", ".tsv", ".json", ".yaml", ".yml",
@@ -91,6 +97,11 @@ def allowed_roots() -> list[Path]:
     for root in roots:
         if root not in uniq:
             uniq.append(root)
+    # v0.7.11-web28: com várias sessões, o motor devolve diretórios
+    # diferentes (às vezes ``/root``). A pasta do PROJETO no Google Drive tem
+    # a preferência — antes a primeira sessão da lista era usada e o
+    # explorador abria no lugar errado (sem os arquivos do projeto).
+    uniq.sort(key=lambda p: 0 if str(p).startswith("/content/drive") else 1)
     return uniq
 
 
@@ -138,12 +149,13 @@ def _kind_of(path: Path) -> str:
 
 
 def drive_link(name: str) -> str:
-    """Link para o arquivo no Google Drive.
+    """Link para **pesquisar** o arquivo no Google Drive.
 
     A montagem FUSE do Drive não expõe o *file id*, então o link vai para a
-    **busca no My Drive** pelo nome exato — abre o arquivo em uma etapa.
+    **busca** (``/drive/u/0/search?q=``) pelo nome exato — abre o arquivo em
+    uma etapa. Antes apontava para ``/my-drive?q=``, que ignorava a consulta.
     """
-    return f"{DRIVE_HOME}?q={quote(str(name or ''), safe='')}"
+    return f"{DRIVE_SEARCH}?q={quote(str(name or ''), safe='')}"
 
 
 def listing(relative: str = "") -> dict[str, Any]:
@@ -166,7 +178,7 @@ def listing(relative: str = "") -> dict[str, Any]:
     if rel:
         parent = rel.rsplit("/", 1)[0] if "/" in rel else ""
     for entry in entries:
-        if entry.name.startswith("."):
+        if entry.name.startswith(".") or entry.name == "__pycache__":
             continue
         path = Path(entry.path)
         is_dir = entry.is_dir()
@@ -194,6 +206,95 @@ def listing(relative: str = "") -> dict[str, Any]:
         "parent": parent,
         "root": str(target),
         "items": items,
+        "driveHome": DRIVE_HOME,
+        "error": "",
+    }
+
+
+#: Pastas que a busca **não** entra (ruído e peso).
+SKIP_DIRS = {
+    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", "site-packages",
+    ".ipynb_checkpoints", ".next", ".cache", ".tox", ".idea", ".vscode",
+}
+
+MAX_SEARCH_RESULTS = 300
+MAX_SEARCH_DEPTH = 5
+
+
+def search(relative: str = "", query: str = "", max_depth: int = MAX_SEARCH_DEPTH) -> dict[str, Any]:
+    """Busca **recursiva** por nome, dentro da pasta do agente.
+
+    v0.7.11-web28: o filtro do explorador. Devolve os arquivos e pastas cujo
+    nome contém o termo (sem distinção de maiúsculas), com o caminho
+    completo relativo — para que o clique abra o item certo.
+    """
+    roots = allowed_roots()
+    base = safe_path(relative, roots)
+    if base is None:
+        return {"error": "caminho fora da pasta do agente", "path": relative, "items": []}
+    if not base.is_dir():
+        return {"error": "não é uma pasta", "path": relative, "items": []}
+    needle = str(query or "").strip().lower()
+    if not needle:
+        return {"error": "", "path": str(relative or ""), "items": [], "query": ""}
+
+    rel_base = str(relative or "").strip("/")
+    found: list[dict[str, Any]] = []
+    truncated = False
+
+    def walk(directory: Path, prefix: str, depth: int) -> bool:
+        """Devolve ``True`` enquanto houver espaço para mais resultados."""
+        nonlocal truncated
+        if depth > max_depth:
+            return True
+        try:
+            entries = sorted(os.scandir(directory), key=lambda e: (not e.is_dir(), e.name.lower()))
+        except OSError:
+            return True
+        for entry in entries:
+            if entry.name.startswith(".") or entry.name == "__pycache__":
+                continue
+            path = Path(entry.path)
+            is_dir = entry.is_dir()
+            item_rel = f"{prefix}/{entry.name}" if prefix else entry.name
+            if needle in entry.name.lower():
+                try:
+                    stat = entry.stat()
+                    size = 0 if is_dir else int(stat.st_size)
+                    modified = int(stat.st_mtime * 1000)
+                except OSError:
+                    size, modified = 0, 0
+                found.append(
+                    {
+                        "name": entry.name,
+                        "path": item_rel,
+                        "parent": prefix,
+                        "type": "directory" if is_dir else "file",
+                        "size": size,
+                        "modified": modified,
+                        "mime": "" if is_dir else _mime_of(path),
+                        "kind": _kind_of(path),
+                        "driveUrl": drive_link(entry.name),
+                        "depth": depth,
+                    }
+                )
+                if len(found) >= MAX_SEARCH_RESULTS:
+                    truncated = True
+                    return False
+            if is_dir and entry.name not in SKIP_DIRS:
+                if not walk(path, item_rel, depth + 1):
+                    return False
+        return True
+
+    walk(base, rel_base, 0)
+    return {
+        "path": rel_base,
+        "parent": "",
+        "root": str(base),
+        "items": found,
+        "query": query,
+        "truncated": truncated,
         "driveHome": DRIVE_HOME,
         "error": "",
     }
@@ -370,7 +471,12 @@ def preview(relative: str) -> dict[str, Any]:
         info["truncated"] = len(text) > MAX_TEXT_BYTES
         return info
     if kind == "pdf":
-        info["error"] = "PDF: abra no Google Drive ou baixe o arquivo"
+        # v0.7.11-web28: o PDF é exibido **dentro** da web (o navegador
+        # renderiza o `application/pdf` inline) — antes só havia o link
+        # para o Drive.
+        info["inlineUrl"] = (
+            f"api/ufvai/explorer/download?path={quote(str(relative), safe='')}&inline=1"
+        )
         return info
     if kind == "binary":
         info["error"] = "arquivo binário — baixe ou abra no Google Drive"

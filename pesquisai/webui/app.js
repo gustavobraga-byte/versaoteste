@@ -82,6 +82,9 @@
     about: {},               // ficha do UFVAI (aba "Sobre")
     autosave: null,          // configuração de autosave (vinda do wrapper)
     explorerPath: '',         // pasta atual do explorador de arquivos
+    explorerQuery: '',        // filtro de busca do explorador (web28)
+    explorerWidth: 360,       // largura do explorador (arrastável — web28)
+    pendingUsers: [],         // mensagens do usuário ainda provisórias (web28)
     usage: null,           // {used, limit, percent} — janela de contexto
     uploads: [],           // anexos já gravados em disco pelo gateway
     prefs: {
@@ -212,12 +215,90 @@
       codes.push(code);
       return `${codes.length - 1}`;
     });
-    out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    // v0.7.11-web28: o link aceita parênteses balanceados na URL (o caso
+    // da Wikipédia) — sem isso o `)` fechava o link no meio do caminho.
+    out = out.replace(/\[([^\]\n]+)\]\(((?:https?:\/\/)[^\s)]*(?:\([^\s)]*\)[^\s)]*)*)\)/g,
       (_, label, url) => `<a href="${url}" target="_blank" rel="noopener">${label}</a>`);
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     out = out.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
     out = out.replace(/(\d+)/g, (_, i) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
     return out;
+  }
+
+  /* ── tabelas markdown (v0.7.11-web28) ─────────────────────────────── */
+
+  /**
+   * Divide uma linha de tabela em células.
+   *
+   * O `|` **escapado** (`\|`) e o `|` dentro de código inline (`` `a|b` ``)
+   * NÃO separam células. Era exatamente aí que as tabelas com links
+   * quebravam: a coluna do link era cortada e o texto vazava para fora.
+   */
+  function splitTableRow(line) {
+    const cells = [];
+    let cur = '';
+    let inCode = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === '\\' && line[i + 1] === '|') { cur += '|'; i += 1; continue; }
+      if (ch === '`') { inCode = !inCode; cur += ch; continue; }
+      if (ch === '|' && !inCode) { cells.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    cells.push(cur);
+    // pipes das bordas (`| a | b |` → `a`, `b`)
+    if (cells.length > 1 && cells[0].trim() === '') cells.shift();
+    if (cells.length > 1 && cells[cells.length - 1].trim() === '') cells.pop();
+    return cells.map((c) => c.trim());
+  }
+
+  /** A linha tem forma de linha de tabela? (tem `|` e não está vazia) */
+  function isTableRow(line) {
+    const s = String(line || '');
+    return s.includes('|') && s.trim() !== '';
+  }
+
+  /** Linha separadora de cabeçalho? (`| --- | :---: |`) */
+  function isTableSeparator(line) {
+    const s = String(line || '').trim();
+    if (!s || !s.includes('|') || !s.includes('-')) return false;
+    const cells = splitTableRow(s);
+    if (!cells.length) return false;
+    return cells.every((c) => /^:?-+:?$/.test(c.trim()));
+  }
+
+  /** Alinhamento declarado no separador (left / center / right). */
+  function tableAligns(separator) {
+    return splitTableRow(separator).map((c) => {
+      const s = c.trim();
+      const left = s.startsWith(':');
+      const right = s.endsWith(':');
+      if (left && right) return 'center';
+      if (right) return 'right';
+      if (left) return 'left';
+      return '';
+    });
+  }
+
+  /**
+   * Monta o ``<table>``. As células passam por ``inline()`` — é o que faz o
+   * **link** dentro da tabela virar ``<a href>`` de verdade (antes o texto
+   * do link era escapado e saía cru).
+   */
+  function renderTable(head, aligns, body) {
+    const alignAttr = (i) => (aligns[i] ? ` style="text-align:${aligns[i]}"` : '');
+    const ths = head
+      .map((cell, i) => `<th${alignAttr(i)}>${inline(cell)}</th>`)
+      .join('');
+    const rows = body
+      .map((cells) => {
+        const tds = head
+          .map((_, i) => `<td${alignAttr(i)}>${inline(cells[i] === undefined ? '' : cells[i])}</td>`)
+          .join('');
+        return `<tr>${tds}</tr>`;
+      })
+      .join('');
+    return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function md(src) {
@@ -254,6 +335,23 @@
       if (/^(-{3,}|\*{3,})$/.test(raw.trim())) {
         flushPara(); flushList();
         out.push('<hr>');
+        continue;
+      }
+      // v0.7.11-web28: tabela markdown (cabeçalho + linha separadora).
+      // Fica ANTES da regra do `<hr>` — sem isso a linha `|---|---|` era
+      // tratada como texto e a tabela nunca virava uma tabela.
+      if (isTableRow(raw) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+        flushPara(); flushList();
+        const head = splitTableRow(raw);
+        const aligns = tableAligns(lines[i + 1]);
+        i += 2;
+        const body = [];
+        while (i < lines.length && isTableRow(lines[i])) {
+          body.push(splitTableRow(lines[i]));
+          i += 1;
+        }
+        i -= 1;
+        out.push(renderTable(head, aligns, body));
         continue;
       }
       const quote = raw.match(/^>\s?(.*)$/);
@@ -567,7 +665,8 @@
   async function openExplorer() {
     document.body.classList.add('explorer-open');
     $('#explorer').hidden = false;
-    await loadExplorer(state.explorerPath || '');
+    applyExplorerWidth();
+    await loadExplorer(state.explorerPath || '', state.explorerQuery || '');
   }
 
   function closeExplorer() {
@@ -575,14 +674,27 @@
     $('#explorer').hidden = true;
   }
 
-  async function loadExplorer(path) {
+  /**
+   * Carrega a lista do explorador.
+   *
+   * v0.7.11-web28: com ``query`` o gateway devolve a **busca recursiva**
+   * (o filtro do usuário); sem ela, a listagem da pasta.
+   */
+  async function loadExplorer(path, query) {
     const list = $('#exp-list');
+    const needle = String(query || '').trim();
     state.explorerPath = path || '';
-    $('#exp-path').textContent = '/' + (path || '');
+    state.explorerQuery = needle;
+    $('#exp-path').textContent = needle ? `⌕ ${needle}` : '/' + (path || '');
+    const clear = $('#exp-search-clear');
+    if (clear) clear.hidden = !needle;
     list.innerHTML = '';
     list.appendChild(el('div', 'exp-empty', t('explorer.loading')));
     try {
-      const data = await apiGet(`/explorer?path=${encodeURIComponent(path || '')}`);
+      const url = needle
+        ? `/explorer?path=${encodeURIComponent(path || '')}&q=${encodeURIComponent(needle)}`
+        : `/explorer?path=${encodeURIComponent(path || '')}`;
+      const data = await apiGet(url);
       list.innerHTML = '';
       if (data.error) {
         list.appendChild(el('div', 'exp-empty', data.error));
@@ -590,29 +702,136 @@
       }
       const items = data.items || [];
       if (!items.length) {
-        list.appendChild(el('div', 'exp-empty', t('explorer.empty')));
+        list.appendChild(el('div', 'exp-empty',
+          needle ? t('explorer.noResults') : t('explorer.empty')));
+        return;
+      }
+      if (needle) {
+        // cabeçalho com o número de resultados
+        list.appendChild(el('div', 'exp-count',
+          t('explorer.results', { n: items.length })));
       }
       items.forEach((item) => {
         const row = el('button', 'exp-item');
         row.type = 'button';
         row.appendChild(el('span', 'exp-icon', explorerIcon(item)));
-        row.appendChild(el('span', 'exp-name', item.name));
+        const nameBox = el('span', 'exp-name');
+        nameBox.appendChild(el('span', null, item.name));
+        // v0.7.11-web28: na busca, o caminho do item aparece (o arquivo pode
+        // estar em uma subpasta) — sem isso o usuário não sabia onde abrir.
+        if (needle && item.parent) {
+          nameBox.appendChild(el('span', 'exp-where', `/${item.parent}`));
+        }
+        row.appendChild(nameBox);
         if (item.type !== 'directory') {
           row.appendChild(el('span', 'exp-size', humanSize(item.size)));
         }
         row.addEventListener('click', () => {
           if (item.type === 'directory') {
-            loadExplorer(item.path);
+            loadExplorer(item.path, '');
           } else {
+            document.querySelectorAll('#exp-list .exp-item').forEach((n) => n.classList.remove('on'));
+            row.classList.add('on');
             previewExplorerFile(item);
           }
         });
         list.appendChild(row);
       });
+      if (data.truncated) {
+        list.appendChild(el('div', 'exp-empty', t('explorer.truncated')));
+      }
     } catch (e) {
       list.innerHTML = '';
       list.appendChild(el('div', 'exp-empty', String(e.message || e)));
     }
+  }
+
+  /* ── filtro de busca do explorador (v0.7.11-web28) ────────────────── */
+
+  let searchTimer = null;
+
+  function onExplorerSearch(value) {
+    const needle = String(value || '');
+    clearTimeout(searchTimer);
+    // v0.7.11-web28: enquanto o usuário digita, a lista da pasta atual é
+    // filtrada na hora (resposta instantânea); a busca recursiva do
+    // servidor entra 350 ms depois (sem travar a digitação).
+    searchTimer = setTimeout(() => {
+      loadExplorer(state.explorerPath || '', needle);
+    }, 350);
+  }
+
+  function clearExplorerSearch() {
+    const input = $('#exp-search');
+    if (input) input.value = '';
+    loadExplorer(state.explorerPath || '', '');
+    if (input) input.focus();
+  }
+
+  /* ── largura do explorador (arrastável — v0.7.11-web28) ──────────── */
+
+  const EXPLORER_W_KEY = 'ufvai_explorer_width';
+  const EXPLORER_MIN_W = 240;
+  const EXPLORER_MAX_W = 720;
+
+  function applyExplorerWidth() {
+    const width = Math.max(EXPLORER_MIN_W, Math.min(EXPLORER_MAX_W, Number(state.explorerWidth || 360)));
+    document.documentElement.style.setProperty('--explorer-w', `${width}px`);
+    const resizer = $('#exp-resizer');
+    if (resizer) resizer.setAttribute('aria-valuenow', String(width));
+  }
+
+  function setExplorerWidth(width) {
+    state.explorerWidth = Math.max(EXPLORER_MIN_W, Math.min(EXPLORER_MAX_W, Math.round(width)));
+    applyExplorerWidth();
+    try { localStorage.setItem(EXPLORER_W_KEY, String(state.explorerWidth)); } catch (e) { /* ignora */ }
+  }
+
+  function loadExplorerWidth() {
+    try {
+      const saved = parseInt(localStorage.getItem(EXPLORER_W_KEY) || '', 10);
+      if (saved) state.explorerWidth = saved;
+    } catch (e) { /* ignora */ }
+    applyExplorerWidth();
+  }
+
+  /**
+   * Arrastar a borda esquerda do explorador para mudar a largura.
+   *
+   * O explorador fica à **direita**: a largura é a distância entre o
+   * cursor e a borda direita da janela.
+   */
+  function bindExplorerResizer() {
+    const resizer = $('#exp-resizer');
+    if (!resizer) return;
+    let arrastando = false;
+
+    const mover = (event) => {
+      if (!arrastando) return;
+      const x = (event.touches && event.touches[0] ? event.touches[0].clientX : event.clientX);
+      setExplorerWidth(window.innerWidth - x);
+    };
+    const soltar = () => {
+      if (!arrastando) return;
+      arrastando = false;
+      document.body.classList.remove('resizing');
+    };
+
+    resizer.addEventListener('pointerdown', (event) => {
+      arrastando = true;
+      document.body.classList.add('resizing');
+      try { resizer.setPointerCapture(event.pointerId); } catch (e) { /* ignora */ }
+      event.preventDefault();
+    });
+    resizer.addEventListener('pointermove', mover);
+    resizer.addEventListener('pointerup', soltar);
+    resizer.addEventListener('pointercancel', soltar);
+    resizer.addEventListener('dblclick', () => setExplorerWidth(360));
+    // teclado: as setas redimensionam em passos de 24 px
+    resizer.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowLeft') { setExplorerWidth(state.explorerWidth + 24); event.preventDefault(); }
+      if (event.key === 'ArrowRight') { setExplorerWidth(state.explorerWidth - 24); event.preventDefault(); }
+    });
   }
 
   /* ── prévisualização formatada (leve) ──────────────────────────────── */
@@ -722,6 +941,15 @@
     box.appendChild(pre);
   }
 
+  /** v0.7.11-web28: fecha a visualização (a prévia) do arquivo. */
+  function closePreview() {
+    const box = $('#exp-preview');
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = '';
+    document.querySelectorAll('#exp-list .exp-item.on').forEach((n) => n.classList.remove('on'));
+  }
+
   async function previewExplorerFile(item) {
     const box = $('#exp-preview');
     box.hidden = false;
@@ -742,6 +970,13 @@
       drive.target = '_blank';
       drive.rel = 'noopener';
       actions.appendChild(drive);
+      // v0.7.11-web28: botão de fechar a visualização
+      const close = el('button', 'mini-btn exp-prev-close', '✕');
+      close.type = 'button';
+      close.title = t('explorer.closePreview');
+      close.setAttribute('aria-label', t('explorer.closePreview'));
+      close.addEventListener('click', closePreview);
+      actions.appendChild(close);
       head.appendChild(actions);
       box.appendChild(head);
 
@@ -753,6 +988,14 @@
         img.alt = data.name || '';
         img.src = data.inlineUrl;
         body.appendChild(img);
+      } else if (data.kind === 'pdf' && data.inlineUrl) {
+        // v0.7.11-web28: o PDF é renderizado pelo navegador dentro da web
+        const frame = document.createElement('iframe');
+        frame.className = 'exp-prev-pdf';
+        frame.src = data.inlineUrl;
+        frame.title = data.name || 'PDF';
+        frame.setAttribute('loading', 'lazy');
+        body.appendChild(frame);
       } else if (data.text) {
         renderPreviewContent(body, data);
       }
@@ -1131,14 +1374,58 @@
     return btn;
   }
 
-  function textBlock(label, body, cls) {
+  /**
+   * Indicador de atividade de um bloco (raciocínio ou ferramenta).
+   *
+   * v0.7.11-web28: enquanto o bloco está **em execução**, aparece uma
+   * **espiral amarela girando**; quando **conclui**, o rótulo fica **verde**;
+   * quando **falha**, **vermelho**.
+   *
+   * ``kind``: ``running`` | ``done`` | ``error``.
+   */
+  function setBlockStatus(details, kind, label) {
+    if (!details) return;
+    const wrap = details.__statusWrap || details.__status;
+    const spin = details.__spin;
+    const labelNode = details.__label;
+    const state = kind === 'done' ? 'done' : (kind === 'error' ? 'error' : 'busy');
+    if (spin) spin.hidden = state !== 'busy';
+    if (labelNode) {
+      labelNode.textContent = (label === undefined || label === null) ? (
+        state === 'error' ? t('tool.error')
+          : state === 'done' ? t('tool.done')
+            : t('tool.running')
+      ) : label;
+    }
+    if (wrap) {
+      wrap.className = `status-run status-${state}`;
+      wrap.hidden = false;
+    }
+  }
+
+  function textBlock(label, body, cls, state) {
     const details = el('details', 'block' + (cls ? ' ' + cls : ''));
     const summary = el('summary');
     summary.appendChild(el('span', 'block-label', label));
+    // v0.7.11-web28: indicador de raciocínio em andamento (espiral
+    // amarela) — vira verde quando o raciocínio termina.
+    const running = state === 'running';
+    const statusWrap = el('span', 'status-run ' + (running ? 'status-busy' : 'status-done'));
+    const spin = el('span', 'spin');
+    spin.setAttribute('aria-hidden', 'true');
+    spin.hidden = !running;
+    const labelNode = el('span', 'status-label', running ? t('tool.running') : t('tool.done'));
+    statusWrap.appendChild(spin);
+    statusWrap.appendChild(labelNode);
+    summary.appendChild(statusWrap);
     details.appendChild(summary);
     const bodyNode = el('div', 'block-body', body || '');
     details.appendChild(bodyNode);
     details.__body = bodyNode;
+    details.__status = statusWrap;
+    details.__statusWrap = statusWrap;
+    details.__spin = spin;
+    details.__label = labelNode;
     // v0.7.11-web23: copiar o raciocínio
     summary.appendChild(miniCopy(() => bodyNode.textContent || ''));
     return details;
@@ -1149,7 +1436,14 @@
     const summary = el('summary');
     const head = el('span', 'tool-head');
     head.appendChild(el('span', 'tool-name', toolLabel(name)));
-    const statusNode = el('span', 'status-run', status || t('tool.running'));
+    // v0.7.11-web28: espiral amarela enquanto a ferramenta roda; verde quando
+    // conclui; vermelho quando dá erro.
+    const statusNode = el('span', 'status-run status-busy');
+    const spin = el('span', 'spin');
+    spin.setAttribute('aria-hidden', 'true');
+    const labelNode = el('span', 'status-label', status || t('tool.running'));
+    statusNode.appendChild(spin);
+    statusNode.appendChild(labelNode);
     head.appendChild(statusNode);
     summary.appendChild(head);
     details.appendChild(summary);
@@ -1157,6 +1451,9 @@
     details.appendChild(body);
     details.__body = body;
     details.__status = statusNode;
+    details.__statusWrap = statusNode;
+    details.__spin = spin;
+    details.__label = labelNode;
     // v0.7.11-web23: copiar a ferramenta (entrada + saída)
     summary.appendChild(miniCopy(() => body.textContent || ''));
     return details;
@@ -1197,12 +1494,14 @@
   function renderMessage(message) {
     if (message.role === 'user') {
       const wrap = el('div', 'msg msg-user');
+      if (message.id) wrap.dataset.mid = message.id;
       wrap.appendChild(el('div', 'bubble', message.text || ''));
       wrap.appendChild(copyButton(() => message.text || ''));
       return wrap;
     }
 
     const wrap = assistantShell(message);
+    if (message.id) wrap.dataset.mid = message.id;
     const answer = el('div', 'answer');
     answer.innerHTML = md(message.text || '');
     wrap.appendChild(answer);
@@ -1229,8 +1528,8 @@
         block.__body.appendChild(
           toolContent(tool.name, tool.input, tool.output, tool.diff),
         );
-        if (tool.status === 'error') block.__status.textContent = t('tool.error');
-        if (tool.status === 'completed') block.__status.textContent = t('tool.done');
+        setBlockStatus(block, tool.status === 'error' ? 'error'
+          : (tool.status === 'completed' ? 'done' : 'running'));
         block.open = !!state.prefs.expandTools;
         wrap.appendChild(block);
       });
@@ -1265,10 +1564,26 @@
 
   function renderMessages() {
     const box = $('#messages');
+    const thread = $('#thread');
+    // v0.7.11-web28: um re-render não pode levar a conversa de volta para
+    // o fim se o usuário está lendo uma mensagem antiga.
+    const coladoNoFim = !thread || state.autoScroll;
+    const posicaoAntes = thread ? thread.scrollTop : 0;
     box.innerHTML = '';
     $('#empty-state').hidden = state.messages.length > 0;
-    state.messages.forEach((message) => box.appendChild(renderMessage(message)));
-    scrollToEnd(true);
+    state.messages.forEach((message) => {
+      const slot = state.stream[message.id];
+      if (slot && slot.wrap) {
+        // v0.7.11-web28: a mensagem em streaming é um nó VIVO — preservá-lo
+        // evita que o texto que está chegando "suma" no re-render.
+        if (message.id) slot.wrap.dataset.mid = message.id;
+        box.appendChild(slot.wrap);
+        return;
+      }
+      box.appendChild(renderMessage(message));
+    });
+    if (coladoNoFim) scrollToEnd(true);
+    else if (thread) thread.scrollTop = posicaoAntes;
   }
 
   /**
@@ -1348,6 +1663,7 @@
   function streamSlot(messageID) {
     if (!state.stream[messageID]) {
       const wrap = el('div', 'msg msg-assistant');
+      if (messageID) wrap.dataset.mid = messageID;
       const who = el('div', 'who');
       who.appendChild(el('b', null, 'UFVAI'));
       wrap.appendChild(who);
@@ -1389,7 +1705,7 @@
         refreshSessions();
         refreshUsage();
         // v0.7.11-web24: completa o texto que possa ter ficado faltando
-        syncTail();
+        syncMessages({ force: true });
         break;
       case 'step.started': {
         const slot = streamSlot(ev.messageID);
@@ -1422,9 +1738,13 @@
         const slot = streamSlot(ev.messageID);
         slot.reasoning += ev.delta || '';
         if (!slot.reasoningBlock) {
-          slot.reasoningBlock = textBlock(t('tool.reasoning'), '', 'reasoning');
+          // v0.7.11-web28: o raciocínio mostra a espiral amarela enquanto
+          // está em curso.
+          slot.reasoningBlock = textBlock(t('tool.reasoning'), '', 'reasoning', 'running');
           slot.reasoningBlock.open = !!state.prefs.expandReasoning;
           slot.wrap.appendChild(slot.reasoningBlock);
+        } else {
+          setBlockStatus(slot.reasoningBlock, 'running');
         }
         scheduleRender(slot);
         break;
@@ -1433,9 +1753,12 @@
         const slot = streamSlot(ev.messageID);
         if (ev.text) slot.reasoning = ev.text;
         if (!slot.reasoningBlock) {
-          slot.reasoningBlock = textBlock(t('tool.reasoning'), slot.reasoning, 'reasoning');
+          slot.reasoningBlock = textBlock(t('tool.reasoning'), slot.reasoning, 'reasoning', 'done');
+          slot.reasoningBlock.open = !!state.prefs.expandReasoning;
           slot.wrap.appendChild(slot.reasoningBlock);
         }
+        // v0.7.11-web28: terminou — a espiral some e o rótulo fica verde.
+        setBlockStatus(slot.reasoningBlock, 'done');
         scheduleRender(slot);
         break;
       }
@@ -1454,8 +1777,8 @@
         const slot = streamSlot(ev.messageID);
         const block = slot.tools[ev.callID];
         if (block) {
-          block.__status.textContent = ev.status === 'error' ? t('tool.error') : t('tool.done');
-          if (ev.status === 'error') block.__status.className = 'status-error';
+          // v0.7.11-web28: verde quando conclui, vermelho quando falha
+          setBlockStatus(block, ev.status === 'error' ? 'error' : 'done');
           // v0.7.11-web23: o diff do arquivo alterado chega no fim da chamada
           const input = slot.toolInputs && slot.toolInputs[ev.callID];
           block.__body.innerHTML = '';
@@ -1530,10 +1853,10 @@
         // escrita — se a última escrita é posterior, a sessão já terminou.
         if (busy && updated && busy < updated) {
           setRunning(false);
-          await syncTail();
+          await syncMessages({ force: true });
         } else {
           // ainda rodando: confere se o texto chegou inteiro (evento perdido)
-          await syncTail();
+          await syncMessages();
         }
       } catch (e) { /* motor fora do ar: o watchdog de reconexão trata */ }
     }, 4000);
@@ -1543,56 +1866,171 @@
    * v0.7.11-web24: as vezes a mensagem parava no meio (evento de streaming
    * perdido). Ao fim do turno — e a cada reconexão do SSE — a web relê as
    * últimas mensagens do motor e completa o que ficou faltando.
+   *
+   * v0.7.11-web28: a sincronização foi refeita.
+   *
+   * **O que estava errado**
+   *
+   * 1. Só a **última** mensagem era conferida — se duas respostas se
+   *    dessincronizassem, a anterior continuava errada na tela;
+   * 2. uma diferença de texto chamava ``renderMessages()``, que **apagava
+   *    o texto que estava chegando por streaming** (a resposta "voltava" ao
+   *    estado antigo e ficava truncada);
+   * 3. não havia **fallback**: se o SSE caía, a tela ficava congelada até
+   *    a reconexão.
+   *
+   * **O que passa a valer**
+   *
+   * * todas as mensagens da cauda são reconciliadas;
+   * * mensagem em streaming é atualizada **no lugar** (o nó vivo nunca é
+   *   recriado);
+   * * mensagem do histórico é corrigida no próprio nó da tela (preserva o
+   *   que o usuário expandiu);
+   * * há **sondagem** periódica — a tela se conserta mesmo sem SSE.
    */
-  async function syncTail() {
+  let syncInFlight = false;
+
+  async function syncMessages(options) {
+    const opts = options || {};
     if (!state.sessionId) return;
+    if (syncInFlight && !opts.force) return;
+    syncInFlight = true;
+    const sid = state.sessionId;
     try {
-      const data = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}/messages?limit=40`);
+      const limit = opts.limit || 80;
+      const data = await apiGet(`/sessions/${encodeURIComponent(sid)}/messages?limit=${limit}`);
+      // trocou de sessão no meio da requisição: o resultado é de outra
+      // conversa e não pode ser aplicado aqui.
+      if (state.sessionId !== sid) return;
       const rows = data.messages || [];
       if (!rows.length) return;
-      const last = rows[rows.length - 1];
-      if (!last || last.role !== 'assistant') return;
-      const slot = state.stream[last.id];
+      applySyncedMessages(rows);
+    } catch (e) { /* mantém o que já está na tela */ }
+    finally {
+      syncInFlight = false;
+    }
+  }
+
+  // compatibilidade: chamadores antigos
+  const syncTail = syncMessages;
+
+  /**
+   * Reconcilia a lista da tela com a do motor.
+   */
+  function applySyncedMessages(rows) {
+    let estruturaMudou = false;
+    let conteudoMudou = false;
+
+    rows.forEach((row) => {
+      if (!row || !row.id) return;
+      if (row.role === 'system' && !row.outcome) return;
+
+      const slot = state.stream[row.id];
+      const known = state.messages.find((m) => m.id === row.id);
+
+      // ── mensagem viva (streaming): atualiza no lugar ────────────────
       if (slot) {
-        const texto = last.text || '';
-        const ferramentas = JSON.stringify(last.tools || []);
-        if (slot.text !== texto || slot.__tools !== ferramentas) {
+        const texto = row.text || '';
+        if (slot.text !== texto) {
           slot.text = texto;
-          slot.__tools = ferramentas;
           slot.answer.innerHTML = md(texto);
-          if (slot.reasoningBlock && last.reasoning) {
-            slot.reasoningBlock.__body.textContent = last.reasoning;
+          conteudoMudou = true;
+        }
+        if (row.reasoning) {
+          slot.reasoning = row.reasoning;
+          if (slot.reasoningBlock) {
+            slot.reasoningBlock.__body.textContent = row.reasoning;
+            // v0.7.11-web28: se o turno já acabou, o raciocínio está verde.
+            if (!state.running) setBlockStatus(slot.reasoningBlock, 'done');
           }
-          renderStreamTools(slot, last.tools || []);
+        }
+        const ferramentas = JSON.stringify(row.tools || []);
+        if (slot.__tools !== ferramentas) {
+          slot.__tools = ferramentas;
+          renderStreamTools(slot, row.tools || []);
+        }
+        if (!known) {
+          state.messages.push(row);
+          estruturaMudou = true;
         }
         return;
       }
-      const known = state.messages.find((m) => m.id === last.id);
+
+      // ── mensagem do histórico ────────────────────────────────────────
       if (!known) {
-        // v0.7.11-web24: os eventos do turno se perderam por completo — o
-        // motor tem a resposta, então ela é reconstruída aqui.
-        if (state.running) {
-          const novo = streamSlot(last.id);
-          novo.text = last.text || '';
-          novo.__tools = JSON.stringify(last.tools || []);
-          novo.answer.innerHTML = md(novo.text);
-          if (last.reasoning) {
-            novo.reasoningBlock = textBlock(t('tool.reasoning'), last.reasoning, 'reasoning');
-            novo.reasoningBlock.open = !!state.prefs.expandReasoning;
-            novo.wrap.appendChild(novo.reasoningBlock);
-          }
-          renderStreamTools(novo, last.tools || []);
-          return;
+        // a mensagem do usuário pode já estar na tela (envio otimista):
+        // troca o nó provisório pelo oficial, sem duplicar.
+        const pending = (state.pendingUsers || [])
+          .find((p) => p.text === (row.text || ''));
+        if (pending) {
+          const node = document.querySelector(
+            `#messages .msg[data-mid="${pending.key}"]`,
+          );
+          if (node) node.replaceWith(renderMessage(row));
+          state.pendingUsers = state.pendingUsers.filter((p) => p !== pending);
         }
-        state.messages.push(last);
-        renderMessages();
-      } else if ((known.text || '') !== (last.text || '')) {
-        known.text = last.text;
-        known.reasoning = last.reasoning;
-        known.tools = last.tools;
-        renderMessages();
+        state.messages.push(row);
+        estruturaMudou = true;
+        return;
       }
-    } catch (e) { /* mantém o que já está na tela */ }
+
+      if ((known.text || '') !== (row.text || '')
+        || (known.reasoning || '') !== (row.reasoning || '')
+        || JSON.stringify(known.tools || []) !== JSON.stringify(row.tools || [])
+        || (known.error || '') !== (row.error || '')) {
+        known.text = row.text;
+        known.reasoning = row.reasoning;
+        known.tools = row.tools;
+        known.error = row.error;
+        known.errorStatus = row.errorStatus;
+        known.errorType = row.errorType;
+        known.retry = row.retry;
+        updateMessageNode(known);
+        conteudoMudou = true;
+      }
+    });
+
+    // ordem cronológica (a do motor)
+    state.messages.sort((a, b) => {
+      const ta = Number(a.created || 0);
+      const tb = Number(b.created || 0);
+      if (ta && tb && ta !== tb) return ta - tb;
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+    pruneStream();
+    if (estruturaMudou) renderMessages();
+    else if (conteudoMudou) { /* os nós já foram corrigidos no lugar */ }
+  }
+
+  /**
+   * Atualiza **um** nó da tela (sem recriar a conversa inteira — o que
+   * preserva o que o usuário expandiu e a posição da rolagem).
+   */
+  function updateMessageNode(message) {
+    const id = String(message.id || '');
+    const node = document.querySelector(`#messages .msg[data-mid="${id}"]`);
+    if (!node) {
+      renderMessages();
+      return;
+    }
+    node.replaceWith(renderMessage(message));
+  }
+
+  /**
+   * Libera os slots de streaming que já foram incorporados ao histórico
+   * (o texto confere com o do motor) — a partir daí a mensagem passa a ser
+   * desenhada a partir da lista, como as outras.
+   */
+  function pruneStream() {
+    if (state.running) return;
+    Object.keys(state.stream).forEach((id) => {
+      const slot = state.stream[id];
+      const known = state.messages.find((m) => m.id === id);
+      if (known && (known.text || '') === (slot.text || '')) {
+        delete state.stream[id];
+      }
+    });
   }
 
   /** Reconstrói os blocos de ferramentas de uma mensagem em streaming. */
@@ -1604,8 +2042,8 @@
       const block = toolBlock(tool.name, tool.status);
       block.__body.innerHTML = '';
       block.__body.appendChild(toolContent(tool.name, tool.input, tool.output, tool.diff));
-      if (tool.status === 'error') block.__status.textContent = t('tool.error');
-      if (tool.status === 'completed') block.__status.textContent = t('tool.done');
+      setBlockStatus(block, tool.status === 'error' ? 'error'
+        : (tool.status === 'completed' ? 'done' : 'running'));
       block.open = !!state.prefs.expandTools;
       slot.wrap.appendChild(block);
     });
@@ -1683,7 +2121,7 @@
       if (text) text.textContent = t('sidebar.connected');
       // v0.7.11-web24: ao reconectar, o que chegou durante a queda se perdeu
       // — relê a cauda da conversa e reidrata as permissões pendentes.
-      syncTail();
+      syncMessages({ force: true });
       loadPermissions();
       const waiters = state.sseWaiters.splice(0, state.sseWaiters.length);
       waiters.forEach((fn) => fn());
@@ -1818,6 +2256,13 @@
     input.style.height = 'auto';
 
     const wrap = el('div', 'msg msg-user');
+    // v0.7.11-web28: a mensagem do usuário entra na tela na hora (envio
+    // otimista) — mas fica marcada como provisória: quando o motor devolve
+    // a mensagem oficial, o nó é trocado (sem duplicar).
+    const pendingKey = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    wrap.dataset.mid = pendingKey;
+    state.pendingUsers = state.pendingUsers || [];
+    state.pendingUsers.push({ key: pendingKey, text: text || '' });
     wrap.appendChild(el('div', 'bubble', text || `(${t('composer.attached')})`));
     if (state.attachments.length) {
       const names = state.attachments
@@ -2988,6 +3433,20 @@
     setInterval(refreshUsage, 30000);
     // v0.7.11-web25: heartbeat — detecta a queda do ambiente mesmo sem SSE
     setInterval(heartbeat, 10000);
+    // v0.7.11-web28: FALLBACK de sincronização — a tela não pode depender
+    // só do SSE. Enquanto o motor trabalha (ou enquanto o SSE está caído),
+    // a web sonda a cauda da conversa e corrige o que ficou para trás.
+    setInterval(() => {
+      if (!state.sessionId) return;
+      if (state.running || downSince) syncMessages();
+    }, 3000);
+    // v0.7.11-web28: ao voltar para a aba (ou recuperar o foco), a
+    // conversa é reconciliada — nada se perde enquanto a aba estava em
+    // segundo plano.
+    window.addEventListener('focus', () => syncMessages({ force: true }));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) syncMessages({ force: true });
+    });
     // v0.7.11-web25: ficha do UFVAI e configuração de autosave
     try {
       const about = await apiGet('/about');
@@ -3085,12 +3544,23 @@
       else openExplorer();
     });
     $('#exp-close').addEventListener('click', closeExplorer);
-    $('#exp-refresh').addEventListener('click', () => loadExplorer(state.explorerPath));
+    $('#exp-refresh').addEventListener('click', () => loadExplorer(state.explorerPath, state.explorerQuery));
     $('#exp-up').addEventListener('click', () => {
       const path = String(state.explorerPath || '');
       const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-      loadExplorer(parent);
+      loadExplorer(parent, '');
     });
+    // v0.7.11-web28: filtro de busca + largura arrastável
+    const expSearch = $('#exp-search');
+    if (expSearch) {
+      expSearch.addEventListener('input', () => onExplorerSearch(expSearch.value));
+      expSearch.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') { clearExplorerSearch(); event.preventDefault(); }
+      });
+    }
+    $('#exp-search-clear').addEventListener('click', clearExplorerSearch);
+    bindExplorerResizer();
+    loadExplorerWidth();
     $('#jump-btn').addEventListener('click', () => {
       state.autoScroll = true;
       const thread = $('#thread');
@@ -3204,6 +3674,9 @@
     showRetryNotice,
     showErrorNotice,
     syncTail,
+    syncMessages,
+    md,
+    loadExplorer,
     renderPermission,
     replyPermission,
     loadPermissions,

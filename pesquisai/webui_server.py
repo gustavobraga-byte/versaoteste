@@ -194,6 +194,11 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
         }
     if resource == "explorer" and method == "GET" and len(parts) == 3:
         rel = str(query.get("path", [""])[0] or "")
+        # v0.7.11-web28: com "q" o gateway devolve a BUSCA recursiva
+        # (o filtro do explorador); sem "q", a listagem da pasta.
+        needle = str(query.get("q", [""])[0] or "").strip()
+        if needle:
+            return 200, explorer.search(rel, needle)
         return 200, explorer.listing(rel)
     if resource == "explorer" and method == "GET" and len(parts) == 4 and parts[3] == "preview":
         rel = str(query.get("path", [""])[0] or "")

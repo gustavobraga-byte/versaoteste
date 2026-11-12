@@ -156,6 +156,9 @@
 
   <!-- ── explorador de arquivos (v0.7.11-web26) ────────────────────── -->
   <aside class="explorer" id="explorer" hidden>
+    <!-- v0.7.11-web28: arrastar para redimensionar a área do explorador -->
+    <div class="exp-resizer" id="exp-resizer" role="separator" aria-orientation="vertical"
+         tabindex="0" title="Arrastar para redimensionar" data-i18n-title="explorer.resize"></div>
     <div class="exp-head">
       <div class="exp-titles">
         <span class="exp-title" data-i18n="explorer.title">Explorador</span>
@@ -166,6 +169,15 @@
         <button class="icon-btn" id="exp-refresh" title="Atualizar" aria-label="Atualizar" data-i18n-title="explorer.refresh">↻</button>
         <button class="icon-btn" id="exp-close" title="Fechar" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
       </div>
+    </div>
+    <!-- v0.7.11-web28: filtro de busca (arquivos e pastas) -->
+    <div class="exp-search-wrap">
+      <span class="exp-search-icon" aria-hidden="true">⌕</span>
+      <input id="exp-search" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Filtrar arquivos e pastas…"
+             aria-label="Filtrar arquivos e pastas" data-i18n-placeholder="explorer.search">
+      <button class="exp-search-clear" id="exp-search-clear" type="button" hidden
+              title="Limpar o filtro" aria-label="Limpar o filtro" data-i18n-title="explorer.clearSearch">✕</button>
     </div>
     <div class="exp-body">
       <div class="exp-list" id="exp-list"></div>

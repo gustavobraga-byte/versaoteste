@@ -433,6 +433,37 @@ details.block.reasoning .block-body { color: var(--ink-muted); font-style: itali
 details.block .status-run { color: var(--green); }
 details.block .status-error { color: var(--red); }
 
+/* ── v0.7.11-web28: indicador de atividade ────────────────────────────
+   While the reasoning or the tool is running: a yellow spiral spinning.
+   When it finishes: green. When it fails: red.                      */
+
+details.block .status-busy { color: var(--amber); }
+details.block .status-done { color: var(--green); }
+details.block .status-label {
+  font-size: 10.5px;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.spin {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 2px solid var(--amber-dim);
+  border-top-color: var(--amber);
+  border-right-color: var(--amber);
+  border-radius: 50%;
+  animation: ufvai-spin .7s linear infinite;
+  vertical-align: -1px;
+}
+.spin[hidden] { display: none; }
+@keyframes ufvai-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation-duration: 2.4s; }
+}
+
 .tool-head { display: inline-flex; align-items: center; gap: 6px; }
 .tool-name { font-family: var(--font-mono); color: var(--ink); }
 
@@ -1035,12 +1066,105 @@ html[data-theme="pesquisai-light"] .hl-num { color: #1a5fb4; }
   border-left: 1px solid var(--line);
   min-width: 0;
   overflow: hidden;
+  /* v0.7.11-web28: a alça de redimensionamento é posicionada na borda */
+  position: relative;
 }
 body.explorer-open .app {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--explorer-w);
 }
 body.explorer-open.side-hidden .app {
   grid-template-columns: 0 minmax(0, 1fr) var(--explorer-w);
+}
+
+/* ── v0.7.11-web28: redimensionar arrastando a borda ───────────────── */
+
+.exp-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 2;
+  background: transparent;
+  transition: background .15s ease;
+}
+.exp-resizer:hover,
+.exp-resizer:focus-visible { background: var(--accent-dim); outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing .exp-resizer { background: var(--accent-dim); }
+
+/* ── v0.7.11-web28: filtro de busca ───────────────────────────────── */
+
+.exp-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  gap: 6px;
+}
+.exp-search-icon {
+  flex: none;
+  font-size: 13px;
+  color: var(--ink-dim);
+  line-height: 1;
+}
+#exp-search {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: 11.5px;
+}
+#exp-search::placeholder { color: var(--ink-dim); }
+#exp-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.exp-search-clear {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--ink-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.exp-search-clear:hover { background: var(--accent-dim); color: var(--accent); }
+.exp-count {
+  padding: 4px 12px 6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-dim);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.exp-where {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exp-prev-close { font-size: 11px; line-height: 1; padding: 3px 7px; }
+.exp-prev-pdf {
+  display: block;
+  width: 100%;
+  height: 58vh;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
 }
 
 .exp-head {
@@ -1167,6 +1291,10 @@ body.explorer-open.side-hidden .app {
     z-index: 35;
     box-shadow: 0 0 40px rgba(0, 0, 0, .5);
   }
+  /* v0.7.11-web28: no celular o painel é fixo — a alça de largura não
+     se aplica (a largura vem do CSS). */
+  .exp-resizer { display: none; }
+  .exp-prev-pdf { height: 50vh; }
 }
 
 /* ── v0.7.11-web25: rolagem automática, “Sobre” e autosave ─────────── */

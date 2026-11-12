@@ -45,7 +45,13 @@
     "retry.waiting": "Nova tentativa a cada instante…",
     "error.title": "Ocorreu um erro",
     "retry.attempt": "Tentativa {attempt} — nova tentativa em {seconds}s.",
-    "retry.attemptNoDelay": "Tentativa {attempt} — o motor vai tentar de novo."
+    "retry.attemptNoDelay": "Tentativa {attempt} — o motor vai tentar de novo.",
+    "explorer.search": "Filtrar arquivos e pastas…",
+    "explorer.clearSearch": "Limpar o filtro",
+    "explorer.resize": "Arrastar para redimensionar",
+    "explorer.noResults": "Nada encontrado com esse filtro.",
+    "explorer.results": "{n} resultado(s)",
+    "explorer.closePreview": "Fechar a visualização"
   },
   "en": {
     "settings.tab.autosave": "Autosave",
@@ -93,7 +99,13 @@
     "retry.waiting": "Retrying at any moment…",
     "error.title": "An error occurred",
     "retry.attempt": "Attempt {attempt} — retrying in {seconds}s.",
-    "retry.attemptNoDelay": "Attempt {attempt} — the engine will try again."
+    "retry.attemptNoDelay": "Attempt {attempt} — the engine will try again.",
+    "explorer.search": "Filter files and folders…",
+    "explorer.clearSearch": "Clear the filter",
+    "explorer.resize": "Drag to resize",
+    "explorer.noResults": "Nothing found with this filter.",
+    "explorer.results": "{n} result(s)",
+    "explorer.closePreview": "Close the preview"
   },
   "es": {
     "settings.tab.autosave": "Autosave",
@@ -141,7 +153,13 @@
     "retry.waiting": "Nuevo reintento en cualquier momento…",
     "error.title": "Se produjo un error",
     "retry.attempt": "Intento {attempt} — nuevo reintento en {seconds}s.",
-    "retry.attemptNoDelay": "Intento {attempt} — el motor lo intentará de nuevo."
+    "retry.attemptNoDelay": "Intento {attempt} — el motor lo intentará de nuevo.",
+    "explorer.search": "Filtrar archivos y carpetas…",
+    "explorer.clearSearch": "Limpiar el filtro",
+    "explorer.resize": "Arrastra para redimensionar",
+    "explorer.noResults": "No se encontró nada con este filtro.",
+    "explorer.results": "{n} resultado(s)",
+    "explorer.closePreview": "Cerrar la vista previa"
   },
   "fr": {
     "settings.tab.autosave": "Autosave",
@@ -189,7 +207,13 @@
     "retry.waiting": "Nouvelle tentative d'ici un instant…",
     "error.title": "Une erreur est survenue",
     "retry.attempt": "Tentative {attempt} — nouvel essai dans {seconds}s.",
-    "retry.attemptNoDelay": "Tentative {attempt} — le moteur réessaiera."
+    "retry.attemptNoDelay": "Tentative {attempt} — le moteur réessaiera.",
+    "explorer.search": "Filtrer les fichiers et les dossiers…",
+    "explorer.clearSearch": "Effacer le filtre",
+    "explorer.resize": "Glisser pour redimensionner",
+    "explorer.noResults": "Aucun résultat pour ce filtre.",
+    "explorer.results": "{n} résultat(s)",
+    "explorer.closePreview": "Fermer l’aperçu"
   },
   "zh": {
     "settings.tab.autosave": "自动保存",
@@ -237,6 +261,12 @@
     "retry.waiting": "随时将重试…",
     "error.title": "发生错误",
     "retry.attempt": "第 {attempt} 次尝试——{seconds} 秒后重试。",
-    "retry.attemptNoDelay": "第 {attempt} 次尝试——引擎将重新尝试。"
+    "retry.attemptNoDelay": "第 {attempt} 次尝试——引擎将重新尝试。",
+    "explorer.search": "筛选文件和文件夹…",
+    "explorer.clearSearch": "清除筛选",
+    "explorer.resize": "拖动以调整大小",
+    "explorer.noResults": "该筛选条件下没有结果。",
+    "explorer.results": "{n} 个结果",
+    "explorer.closePreview": "关闭预览"
   }
 }
