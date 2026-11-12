@@ -4547,16 +4547,69 @@ def create_wrapper_html(
     // existem na TUI, como /undo, /themes, /diff).
     window.addEventListener("message", function (e) {
       var d = e && e.data;
-      if (!d || d.type !== "ufvai-show-terminal") return;
-      try { applyConsole("ttyd"); } catch (err) {}
-      var cmd = String(d.command || "");
-      if (!cmd) return;
-      // escreve o comando no terminal (ttyd) — o TUI completa o resto
-      try {
-        var fr = document.getElementById("terminal-frame");
-        if (fr && fr.contentWindow) fr.contentWindow.postMessage({ type: "ufvai-type", text: cmd }, "*");
-      } catch (err) {}
+      if (!d) return;
+      if (d.type === "ufvai-show-terminal") {
+        try { applyConsole("ttyd"); } catch (err) {}
+        var cmd = String(d.command || "");
+        if (!cmd) return;
+        // escreve o comando no terminal (ttyd) — o TUI completa o resto
+        try {
+          var fr = document.getElementById("terminal-frame");
+          if (fr && fr.contentWindow) fr.contentWindow.postMessage({ type: "ufvai-type", text: cmd }, "*");
+        } catch (err) {}
+        return;
+      }
+      // v0.7.11-web25: a web mostra/edita a configuração de autosave (que
+      // vive no wrapper — origens diferentes não compartilham localStorage).
+      if (d.type === "ufvai-autosave-get") {
+        _replyAutosaveState(e);
+        return;
+      }
+      if (d.type === "ufvai-autosave-set") {
+        _applyAutosaveFromWeb(d.payload || {});
+        try { if (e.source) e.source.postMessage({ type: "ufvai-autosave-saved" }, "*"); } catch (err) {}
+      }
     });
+    // Estado do autosave para a interface web.
+    function _replyAutosaveState(e) {
+      var payload = {
+        enabled: autosaveEnabled(),
+        intervalMin: Math.max(1, Math.round(autosaveIntervalMs() / 60000)),
+        scope: autosaveScope(),
+        selectedIds: autosaveSelectedIds(),
+        sessions: []
+      };
+      try {
+        var list = [];
+        fetch(BASE + "/api/sessions").then(function (r) { return r.json(); }).then(function (d) {
+          (d.sessions || []).forEach(function (s) { list.push({ id: s.id, title: s.title || s.id }); });
+        }).catch(function () {});
+      } catch (err) {}
+      if (e && e.source) {
+        try { e.source.postMessage({ type: "ufvai-autosave-state", payload: payload }, "*"); } catch (err) {}
+      }
+    }
+    // Aplica o que veio da web.
+    function _applyAutosaveFromWeb(p) {
+      try {
+        if (typeof p.enabled === "boolean") {
+          localStorage.setItem(AUTOSAVE_KEY, p.enabled ? "1" : "0");
+        }
+        if (p.intervalMin) {
+          var min = Math.max(1, parseInt(p.intervalMin, 10) || 1);
+          localStorage.setItem(AUTOSAVE_INTERVAL_KEY, String(min));
+        }
+        if (p.scope) {
+          localStorage.setItem(AUTOSAVE_SCOPE_KEY, String(p.scope));
+          localStorage.setItem(AUTOSAVE_ALL_KEY, p.scope === "all" ? "1" : "0");
+        }
+        if (Array.isArray(p.selectedIds)) {
+          localStorage.setItem(AUTOSAVE_SELECTED_KEY, JSON.stringify(p.selectedIds));
+        }
+      } catch (e) {}
+      try { setAutosaveAllUI(autosaveScope() === "all"); } catch (e) {}
+      try { if (autosaveEnabled()) startAutosaveTimer(); else stopAutosaveTimer(); } catch (e) {}
+    }
     // v0.7.11-web18b: confirma que a web respondeu. Se a URL da web não
     // existir (porta trocada, proxy antigo), a moldura cai no proxy 8002
     // em vez de ficar em branco.

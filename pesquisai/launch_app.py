@@ -2466,12 +2466,23 @@ def _build_ttyd_cmd(lang: str | None = None, session_id: str | None = None,
     # mesmo com a interface em português.
     _pref_lang = str((_read_prefs() or {}).get("lang") or "").strip()
     _env_lang = str(os.environ.get("PESQUISAI_LANG") or "").strip()
+    # v0.7.11-web25: o idioma escolhido pelo PLUGIN da TUI (``/idioma``,
+    # gravado em ``~/.config/opencode/ufvai-language.json``) também é uma
+    # escolha explícita do usuário — a saudação do terminal precisa acompanhá-
+    # la. Antes, a interface ficava em francês e a saudação saía em português.
+    _plugin_lang = ""
+    try:
+        from .tui_pt import read_saved_locale as _read_tui_locale
+
+        _plugin_lang = str(_read_tui_locale() or "").strip()
+    except Exception:  # noqa: BLE001 — o módulo pode não estar no pacote
+        _plugin_lang = ""
     if lang is None:
-        lang = _env_lang or _pref_lang or _current_lang or _detect_system_lang()
-    # Idioma CONFIRMADO = escolha explícita (env) ou preferência salva no Drive.
-    # Sem confirmação, a saudação espera o cliente (/api/lang) — nunca o locale
-    # do servidor.
-    lang_confident = bool(_env_lang or _pref_lang)
+        lang = _env_lang or _pref_lang or _plugin_lang or _current_lang or _detect_system_lang()
+    # Idioma CONFIRMADO = escolha explícita (env, preferência do Drive ou o
+    # idioma do plugin da TUI). Sem confirmação, a saudação espera o cliente
+    # (/api/lang) — nunca o locale do servidor.
+    lang_confident = bool(_env_lang or _pref_lang or _plugin_lang)
     # Normaliza para o conjunto canônico
     short = (lang or "pt_BR").split("_")[0].lower()
     full_lang = _LANG_MAP.get(short, lang if lang in _LANG_MAP.values() else "pt_BR")

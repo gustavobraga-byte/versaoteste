@@ -69,6 +69,8 @@
         <button class="icon-btn labelled" id="expand-all-btn" title="Expandir/recolher tudo" aria-label="Expandir ou recolher raciocínio e ferramentas" data-i18n-title="tool.expandAll">
           <span class="lb-icon">⇕</span><span class="lb-text" data-i18n="tool.expandAll">expandir tudo</span>
         </button>
+        <!-- v0.7.11-web26: mini navegador de arquivos da pasta do agente -->
+        <button class="icon-btn" id="explorer-btn" title="Explorador de arquivos" aria-label="Abrir o explorador de arquivos" data-i18n-title="explorer.title">📁</button>
         <button class="icon-btn" id="session-menu-btn" title="Ações da sessão" aria-label="Ações da sessão" data-i18n-title="top.actions">⋯</button>
         <button class="icon-btn" id="settings-btn" title="Ajustes" aria-label="Ajustes" data-i18n-title="top.settings">⚙</button>
         <button class="icon-btn" id="refresh-btn" title="Atualizar" aria-label="Atualizar" data-i18n-title="top.refresh">↻</button>
@@ -97,6 +99,8 @@
         <p data-i18n="app.description"></p>
         <p class="empty-hint" data-i18n="empty.hint"></p>
       </div>
+      <!-- v0.7.11-web25: rolagem automática; este botão volta ao fim -->
+      <button class="jump-btn" id="jump-btn" hidden title="Ir para o fim" aria-label="Ir para o fim da conversa">↓</button>
     </div>
 
     <!-- ── compositor ─────────────────────────────────────────────── -->
@@ -126,6 +130,25 @@
   </main>
 
   <div class="scrim" id="scrim" hidden></div>
+
+  <!-- ── explorador de arquivos (v0.7.11-web26) ────────────────────── -->
+  <aside class="explorer" id="explorer" hidden>
+    <div class="exp-head">
+      <div class="exp-titles">
+        <span class="exp-title" data-i18n="explorer.title">Explorador</span>
+        <span class="exp-path" id="exp-path">/</span>
+      </div>
+      <div class="exp-actions">
+        <button class="icon-btn" id="exp-up" title="Pasta acima" aria-label="Pasta acima" data-i18n-title="explorer.up">↑</button>
+        <button class="icon-btn" id="exp-refresh" title="Atualizar" aria-label="Atualizar" data-i18n-title="explorer.refresh">↻</button>
+        <button class="icon-btn" id="exp-close" title="Fechar" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
+      </div>
+    </div>
+    <div class="exp-body">
+      <div class="exp-list" id="exp-list"></div>
+      <div class="exp-preview" id="exp-preview" hidden></div>
+    </div>
+  </aside>
 </div>
 
 <!-- ── seletor de modelo ────────────────────────────────────────────── -->
@@ -156,6 +179,7 @@
         <button class="tab" data-tab="comandos" data-i18n="settings.tab.commands">Comandos</button>
         <button class="tab" data-tab="habilidades" data-i18n="settings.tab.skills">Habilidades</button>
         <button class="tab" data-tab="sessao" data-i18n="settings.tab.session">Sessão</button>
+        <button class="tab" data-tab="autosave" data-i18n="settings.tab.autosave">Autosave</button>
         <button class="tab" data-tab="atalhos" data-i18n="settings.tab.shortcuts">Atalhos</button>
         <button class="tab" data-tab="sobre" data-i18n="settings.tab.about">Sobre</button>
       </nav>
@@ -189,8 +213,26 @@
       <input id="prompt-input" type="text" autocomplete="off" spellcheck="false">
     </div>
     <div class="modal-foot">
-      <button class="btn" id="prompt-cancel" data-i18n="key.close">Fechar</button>
+      <button class="btn" id="prompt-cancel" data-i18n="key.cancel">Cancelar</button>
       <button class="btn primary" id="prompt-ok" data-i18n="session.rename">Renomear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── confirmação (finalizar sessão) ────────────────────────────────── -->
+<div class="modal" id="confirm-modal" hidden>
+  <div class="modal-card modal-sm">
+    <div class="modal-head">
+      <h2 id="confirm-title">—</h2>
+      <button class="icon-btn" id="confirm-close" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
+    </div>
+    <div class="prompt-body">
+      <p id="confirm-message"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="confirm-cancel" data-i18n="key.cancel">Cancelar</button>
+      <button class="btn" id="confirm-archive" data-i18n="session.finalizeArchive">Finalizar e arquivar</button>
+      <button class="btn danger" id="confirm-delete" data-i18n="session.finalizeDelete">Excluir do histórico</button>
     </div>
   </div>
 </div>

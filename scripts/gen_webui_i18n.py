@@ -39,7 +39,17 @@ KEYS: list[str] = [
     "session.duplicate", "session.clear", "session.done", "session.copyResponse",
     "settings.tab.general", "settings.tab.model", "settings.tab.agent",
     "settings.tab.commands", "settings.tab.skills", "settings.tab.session",
-    "settings.tab.shortcuts", "settings.tab.about",
+    "settings.tab.shortcuts", "settings.tab.about", "settings.tab.autosave",
+    "settings.autosaveNote", "settings.autosaveEnabled", "settings.autosaveInterval",
+    "settings.autosaveScope", "settings.autosaveSessions", "settings.autosaveState",
+    "settings.autosaveConnected", "settings.autosaveStandalone", "settings.autosaveSaved",
+    "settings.scopeActive", "settings.scopeAll", "settings.scopeSelected", "settings.minutes",
+    "session.finalize", "session.finalizeAsk", "session.finalizeArchive",
+    "session.finalizeDelete", "session.finalizeDone",
+    "explorer.title", "explorer.up", "explorer.refresh", "explorer.loading",
+    "explorer.empty", "explorer.download", "explorer.drive", "explorer.truncated",
+    "about.version", "about.codename", "about.release", "about.author", "about.email",
+    "about.institution", "about.registry", "about.license", "about.languages", "about.agencies",
     "settings.expandReasoning", "settings.expandTools", "settings.expandAll",
     "settings.theme", "settings.language", "settings.model", "settings.variant",
     "settings.agent", "settings.shortcutHint",
@@ -56,7 +66,7 @@ KEYS: list[str] = [
     "settings.showContext", "settings.duplicateSession", "settings.compact",
     "settings.aboutTitle", "settings.aboutText", "settings.languageNote",
     "settings.shortcuts", "settings.modelRow", "settings.variantRow",
-    "key.send", "key.newline", "key.commands", "key.mention", "key.palette",
+    "key.send", "key.newline", "key.commands", "key.mention", "key.palette", "key.cancel",
     "key.expandAll", "key.interrupt", "key.background", "key.toggleSidebar",
     "key.attach", "key.copy", "key.close",
     "permission.title", "permission.once", "permission.always", "permission.reject",
@@ -87,53 +97,19 @@ TOOL_NAMES = {
 
 # chaves acrescentadas depois da traducao inicial (ficam aqui para o
 # gerador nao depender de um arquivo externo)
-EXTRA: dict[str, dict[str, str]] = {
-    "pt-BR": {
-        "permission.title": "O motor precisa da sua autorização",
-        "permission.once": "Permitir uma vez",
-        "permission.always": "Sempre permitir",
-        "permission.reject": "Rejeitar",
-        "permission.done": "resposta enviada",
-        "permission.action": "ação",
-        "permission.resource": "recurso",
-    },
-    "en": {
-        "permission.title": "The engine needs your authorization",
-        "permission.once": "Allow once",
-        "permission.always": "Always allow",
-        "permission.reject": "Reject",
-        "permission.done": "reply sent",
-        "permission.action": "action",
-        "permission.resource": "resource",
-    },
-    "es": {
-        "permission.title": "El motor necesita tu autorización",
-        "permission.once": "Permitir una vez",
-        "permission.always": "Permitir siempre",
-        "permission.reject": "Rechazar",
-        "permission.done": "respuesta enviada",
-        "permission.action": "acción",
-        "permission.resource": "recurso",
-    },
-    "fr": {
-        "permission.title": "Le moteur a besoin de votre autorisation",
-        "permission.once": "Autoriser une fois",
-        "permission.always": "Toujours autoriser",
-        "permission.reject": "Refuser",
-        "permission.done": "réponse envoyée",
-        "permission.action": "action",
-        "permission.resource": "ressource",
-    },
-    "zh": {
-        "permission.title": "引擎需要您的授权",
-        "permission.once": "允许一次",
-        "permission.always": "始终允许",
-        "permission.reject": "拒绝",
-        "permission.done": "已回复",
-        "permission.action": "操作",
-        "permission.resource": "资源",
-    },
-}
+EXTRA_FILE = Path(__file__).resolve().parent / "_webui_i18n_extra.json"
+
+
+def _extra() -> dict[str, dict[str, str]]:
+    """Chaves acrescentadas depois da traducao inicial (ficam em JSON)."""
+    if not EXTRA_FILE.exists():
+        return {}
+    try:
+        return json.loads(EXTRA_FILE.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+
+
 def _table(data: dict[str, str]) -> dict[str, str]:
     """Valida a completude do dicionario de um idioma."""
     missing = [k for k in KEYS if k not in data]
@@ -158,15 +134,12 @@ def _load_existing() -> dict[str, dict[str, str]]:
 
 def main() -> None:
     base = _load_existing()
-    extra_path = Path(__file__).resolve().parent / "_webui_i18n_extra.json"
-    extra = {}
-    if extra_path.exists() and extra_path.stat().st_size:
-        extra = json.loads(extra_path.read_text(encoding="utf-8"))
+    extra = _extra()
     tables: dict[str, dict[str, str]] = {}
     for locale in ("pt-BR", "en", "es", "fr", "zh"):
         merged = dict(base.get(locale) or {})
         merged.update(extra.get(locale) or {})
-        merged.update(EXTRA.get(locale) or {})
+        merged.update(extra.get(locale) or {})
         merged.update(TOOL_NAMES)
         tables[locale] = _table(merged)
     payload = {

@@ -1,5 +1,107 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web26b] — 2026-11-12 — prévia formatada e “finalizar sessão” com confirmação
+
+### Prévia formatada (sem peso extra)
+
+O visualizador do explorador deixou de despejar texto cru:
+
+| Tipo | Formatação |
+|---|---|
+| **Markdown** (`.md`) | renderizado com o mesmo motor da conversa (títulos, negrito, itálico, listas, citações, código, tabelas, imagens) |
+| **CSV/TSV** | vira **tabela** (parser leve que respeita aspas) |
+| **JSON** | identado e colorido |
+| **Código** (`.py`, `.js`, `.ts`, `.sh`, `.css`, `.html`…) | coloração mínima de palavras-chave, strings, números e comentários |
+| **Demais textos** | monoespaçado |
+
+O escape do HTML acontece **antes** das expressões regulares — não há
+injeção possível. Nenhuma biblioteca foi adicionada (o markdown reaproveita o
+renderizador já existente no cliente).
+
+### Finalizar sessão (sempre perguntando)
+
+Novo item no menu **⋯ (ações da sessão)**: *Finalizar sessão…*, que abre uma
+**confirmação** com três saídas:
+
+- **Cancelar** — nada acontece;
+- **Finalizar e arquivar** — a conversa é marcada como encerrada (título com
+  ✔) e continua na lista;
+- **Excluir do histórico** — a sessão é removida do motor (o **autosave no
+  Google Drive** é o arquivo de segurança).
+
+Rota nova: `POST /api/ufvai/sessions/{id}/finalize` com `{mode: "archive" |
+"delete"}`. O motor não expõe os comandos nativos da TUI pela API (o
+`session.command` só conhece os comandos de agente), então a finalização é
+implementada no gateway: **arquivar** = renomear com ✔; **excluir** = `DELETE`
+da sessão.
+
+### Other
+
+- **Dicionário**: 209 chaves × 5 idiomas (`key.cancel` e `session.finalize*`).
+- **Testes**: `scripts/test_web26.py` → **10/10** ✓; `test_web25.py` → **14/14** ✓;
+  `test_acceptance.py` → **33/33** ✓; 0 erros de console.
+
+## [0.7.11-web26] — 2026-11-12 — mini navegador de arquivos da pasta do agente
+
+Painel lateral (botão **📁** no cabeçalho) que navega pela pasta do agente — o
+diretório do projeto, no Google Drive — com um visualizador mínimo.
+
+| Recurso | Como funciona |
+|---|---|
+| **Navegação** | lista de pastas e arquivos com ícone por tipo e tamanho; botão “pasta acima” e “atualizar”; no celular o painel ocupa a tela |
+| **Texto** | `.md`, `.txt`, `.csv`, `.json`, código-fonte etc. são lidos e exibidos no painel (até 200 kB; o excedente é sinalizado) |
+| **Imagem** | `.png`, `.jpg`, `.gif`, `.webp`, `.svg`… servida inline pelo gateway (`?inline=1`) |
+| **Suíte Office** | `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp` — o texto é extraído do próprio pacote (ZIP + XML, **só biblioteca padrão**) e mostrado de forma resumida |
+| **Download** | `GET /api/ufvai/explorer/download?path=…` com `Content-Disposition: attachment` (nome ASCII + `filename*` UTF-8) |
+| **Google Drive** | link para abrir/editar o arquivo no Drive |
+
+### Segurança
+
+- Todo caminho é **resolvido** e precisa ficar dentro de uma raiz permitida (o
+  diretório do agente) — `../../etc/passwd` é recusado
+  (“caminho fora da pasta do agente”).
+- Leitura limitada em tamanho (200 kB de texto, 25 MB de binário) e o painel é
+  **somente leitura**: nada é gravado.
+- A montagem FUSE do Drive não expõe o *file id*, então o link do Drive vai
+  para a **busca no My Drive** pelo nome exato do arquivo (abre em uma etapa).
+
+### Arquivos
+
+- **novos** — `pesquisai/explorer.py` (navegação segura, prévias e extração
+  Office), `scripts/test_web26.py`.
+- **rotas** — `GET /api/ufvai/explorer?path=…`,
+  `GET /api/ufvai/explorer/preview?path=…`,
+  `GET /api/ufvai/explorer/download?path=…[&inline=1]`.
+- **dicionário** — 203 chaves × 5 idiomas (8 novas: `explorer.*`).
+
+### Testes
+
+`scripts/test_web26.py` → **10/10** ✓ (painel, navegação, prévia de imagem e
+de texto, download, link do Drive, fechamento e segurança), 0 erros de console.
+
+## [0.7.11-web25] — 2026-11-12 — rolagem automática, “Sobre” do UFVAI, autosave nos ajustes e o idioma nas ações de sessão
+
+| Pedido | Causa encontrada | Entregue |
+|---|---|---|
+| **Rolagem automática à medida que chegam mensagens** | a rolagem só acontecia se o usuário já estivesse perto do fim — as mensagens novas apareciam fora da tela | a conversa **acompanha** o conteúdo (`ResizeObserver` em `#messages`); rolar para cima **pausa** a rolagem (detectado em `wheel`/`touchmove`, que disparam antes do `scroll`) e aparece o botão **“ir para o fim”**; a animação suave foi removida (a vista ficava sempre um pouco acima do fim) |
+| **Trocar o texto “UFVAI · Web / Cliente próprio…” por um “sobre” do UFVAI** | a aba mostrava um texto genérico | a aba “Sobre” traz a **ficha real** (logo oficial, assinatura, descrição, versão, codinome, lançamento, autor, e-mail, instituição, registro, licença, idiomas, agências e links), alimentada pela nova rota `GET /api/ufvai/about` → `pesquisai/__version__.py` |
+| **No responsivo, o menu lateral deve recolher ao clicar fora** | **regressão da web23**: as regras `.scrim` foram perdidas quando o bloco responsivo foi substituído — o véu ficava com **0×0 px**, sem `z-index` e sem clique | regras `.scrim` restauradas; o véu cobre a tela (390×694 no celular) e **clicar fora recolhe a gaveta** (verificado) |
+| **Detectar se o Colab morreu** | só o SSE indicava a queda | **heartbeat** independente (`/health` a cada 10 s) + aviso após **10 min** sem resposta, explicando o encerramento, que **o Google Drive está intacto** e que é preciso voltar ao Colab e reexecutar |
+| **O i18n não funciona nas ações de sessão** | o menu tinha textos **fixos em português** | todos os rótulos passam por `t()` (verificado: a web mostra “Renommer / Dupliquer / Compacter / Contexte / Arrière-plan” em francês e “Rename / Duplicate / Compact / Context / Background” em inglês — **sempre no idioma do wrapper**) |
+| **Acrescentar as configurações do autosave nos ajustes** | a configuração do autosave vive no **wrapper** (é o que agenda o salvamento) e a web não compartilha `localStorage` com ele | nova aba **“Autosave”** (ligado/desligado, intervalo em minutos, escopo: sessão ativa / todas / escolhidas) com canal `postMessage` (`ufvai-autosave-get` / `ufvai-autosave-set` → o wrapper grava e reinicia o agendador) — verificado: o escopo gravado no wrapper |
+
+### Também nesta rodada
+
+- **Idioma do agente**: a saudação do terminal passou a acompanhar o idioma escolhido
+  pelo plugin da TUI (`/idioma` → `ufvai-language.json`), que é uma escolha
+  explícita do usuário — antes a interface ficava em francês e a saudação
+  saía em português.
+- **Dicionário**: **195 chaves × 5 idiomas** (`pesquisai/webui/i18n.json`),
+  gerado por `scripts/gen_webui_i18n.py`; os dados vivem em
+  `scripts/_webui_i18n_extra.json` (o gerador não é mais editado à mão).
+- **Testes**: `scripts/test_web25.py` → **14/14** ✓; `scripts/test_acceptance.py`
+  → **33/33** ✓; 0 erros de console.
+
 ## [0.7.11-web24] — 2026-11-12 — as decisões que não apareciam, o aviso que ficava preso e a sessão que fugia
 
 ### Os oito pedidos, e a causa real de cada um

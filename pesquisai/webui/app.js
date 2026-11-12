@@ -78,11 +78,16 @@
     allExpanded: false,
     view: 'web',            // 'web' | 'ttyd' — qual moldura está visível
     sseWaiters: [],          // promises à espera da abertura do SSE
+    autoScroll: true,        // v0.7.11-web25: rolagem automática ativa
+    about: {},               // ficha do UFVAI (aba "Sobre")
+    autosave: null,          // configuração de autosave (vinda do wrapper)
+    explorerPath: '',         // pasta atual do explorador de arquivos
     usage: null,           // {used, limit, percent} — janela de contexto
     uploads: [],           // anexos já gravados em disco pelo gateway
     prefs: {
       expandReasoning: false,
       expandTools: false,
+      autosaveEnabled: true,
     },
   };
 
@@ -316,6 +321,23 @@
     if (data.type === 'ufvai-view') {
       state.view = data.view === 'ttyd' ? 'ttyd' : 'web';
     }
+    // v0.7.11-web25: estado do autosave vindo do wrapper
+    if (data.type === 'ufvai-autosave-state') {
+      const payload = data.payload || {};
+      state.autosave = {
+        enabled: !!payload.enabled,
+        intervalMin: payload.intervalMin || 10,
+        scope: payload.scope || 'active',
+        selectedIds: payload.selectedIds || [],
+        sessions: payload.sessions || [],
+        known: true,
+      };
+      state.prefs.autosaveEnabled = state.autosave.enabled;
+      if (state.settingsOpen) renderSettings();
+    }
+    if (data.type === 'ufvai-autosave-saved') {
+      toast(t('settings.autosaveSaved'));
+    }
     // v0.7.11-web23: a interface principal propaga o idioma escolhido —
     // a web troca os textos na hora, sem recarregar.
     if (data.type === 'ufvai-lang') {
@@ -467,6 +489,319 @@
       rows.forEach(renderPermission);
       if (box) box.hidden = rows.length === 0;
     } catch (e) { /* sem permissões pendentes */ }
+  }
+
+  /* ── autosave (configuração do wrapper, via postMessage) ───────────── */
+
+  /**
+   * v0.7.11-web25: o autosave é agendado pelo WRAPPER (é o que mantém o
+   * terminal vivo). A web não compartilha `localStorage` com ele (origens
+   * diferentes no proxy do Colab), então a comunicação é por `postMessage`:
+   *
+   *   web → wrapper : ``ufvai-autosave-get`` / ``ufvai-autosave-set``
+   *   wrapper → web : ``ufvai-autosave-state`` / ``ufvai-autosave-saved``
+   */
+  function askAutosave() {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'ufvai-autosave-get' }, '*');
+      }
+    } catch (e) { /* cross-origin bloqueado */ }
+  }
+
+  async function pushAutosave() {
+    const cfg = state.autosave || {};
+    const payload = {
+      enabled: !!cfg.enabled,
+      intervalMin: parseInt(cfg.intervalMin, 10) || 10,
+      scope: cfg.scope || 'active',
+      selectedIds: cfg.selectedIds || [],
+    };
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'ufvai-autosave-set', payload }, '*');
+        toast(t('settings.autosaveSaved'));
+      } else {
+        // fora do wrapper (web aberta direto): mostra o estado local
+        toast(t('settings.autosaveStandalone'));
+      }
+    } catch (e) {
+      toast(t('settings.autosaveStandalone'), 'err');
+    }
+  }
+
+  /* ── explorador de arquivos (v0.7.11-web26) ──────────────────────── */
+
+  // Mini navegador da pasta do agente (Google Drive). Leve: sem framework,
+  // só DOM — lista de arquivos + prévia mínima (texto, imagem, Office),
+  // download e o link para editar no Google Drive.
+
+  const EXPLORER_ICON = {
+    directory: '📁',
+    image: '🖼️',
+    office: '📄',
+    pdf: '📕',
+    text: '📄',
+    binary: '🔒',
+  };
+
+  function explorerIcon(item) {
+    if (item.type === 'directory') return EXPLORER_ICON.directory;
+    return EXPLORER_ICON[item.kind] || '📄';
+  }
+
+  function humanSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return '';
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${Math.round(value / 1024)} kB`;
+    return `${(value / 1048576).toFixed(1)} MB`;
+  }
+
+  async function openExplorer() {
+    document.body.classList.add('explorer-open');
+    $('#explorer').hidden = false;
+    await loadExplorer(state.explorerPath || '');
+  }
+
+  function closeExplorer() {
+    document.body.classList.remove('explorer-open');
+    $('#explorer').hidden = true;
+  }
+
+  async function loadExplorer(path) {
+    const list = $('#exp-list');
+    state.explorerPath = path || '';
+    $('#exp-path').textContent = '/' + (path || '');
+    list.innerHTML = '';
+    list.appendChild(el('div', 'exp-empty', t('explorer.loading')));
+    try {
+      const data = await apiGet(`/explorer?path=${encodeURIComponent(path || '')}`);
+      list.innerHTML = '';
+      if (data.error) {
+        list.appendChild(el('div', 'exp-empty', data.error));
+        return;
+      }
+      const items = data.items || [];
+      if (!items.length) {
+        list.appendChild(el('div', 'exp-empty', t('explorer.empty')));
+      }
+      items.forEach((item) => {
+        const row = el('button', 'exp-item');
+        row.type = 'button';
+        row.appendChild(el('span', 'exp-icon', explorerIcon(item)));
+        row.appendChild(el('span', 'exp-name', item.name));
+        if (item.type !== 'directory') {
+          row.appendChild(el('span', 'exp-size', humanSize(item.size)));
+        }
+        row.addEventListener('click', () => {
+          if (item.type === 'directory') {
+            loadExplorer(item.path);
+          } else {
+            previewExplorerFile(item);
+          }
+        });
+        list.appendChild(row);
+      });
+    } catch (e) {
+      list.innerHTML = '';
+      list.appendChild(el('div', 'exp-empty', String(e.message || e)));
+    }
+  }
+
+  /* ── prévisualização formatada (leve) ──────────────────────────────── */
+
+  // v0.7.11-web26: a prévia é **formatada**, mas leve — sem biblioteca:
+  // markdown renderizado com o `md()` já existente, CSV como tabela, JSON
+  // identado e código com uma coloração mínima (escape ANTES das regex,
+  // então nada de injeção de HTML).
+
+  const HL_KEYWORDS = {
+    py: 'def class return if elif else import from as with try except finally for while in not and or None True False self lambda yield pass raise async await',
+    js: 'function const let var return if else for while class new this import export from async await try catch finally null undefined true false',
+    ts: 'interface type enum function const let var return if else for while class new this import export from async await try catch null undefined true false',
+    sh: 'if then else fi for while do done case esac function return export local echo cd ls set source',
+    css: 'important media supports keyframes from to inherit initial unset auto none flex grid block inline',
+    html: 'html head body div span a img script style link meta title p ul li table tr td th',
+    json: 'true false null',
+  };
+
+  const HL_EXT = {
+    py: 'py', js: 'js', mjs: 'js', cjs: 'js', ts: 'ts', tsx: 'ts', jsx: 'js',
+    sh: 'sh', bash: 'sh', zsh: 'sh', css: 'css', scss: 'css', html: 'html',
+    htm: 'html', xml: 'html', json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+  };
+
+  function highlightCode(text, lang) {
+    let out = escapeHtml(text);
+    const words = (HL_KEYWORDS[lang] || '').split(' ').filter(Boolean);
+    if (words.length) {
+      const pattern = new RegExp(`\\b(${words.join('|')})\\b`, 'g');
+      out = out.replace(pattern, '<span class="hl-kw">$1</span>');
+    }
+    if (lang === 'py' || lang === 'sh') {
+      out = out.replace(/(#[^\n]*)/g, '<span class="hl-com">$1</span>');
+    } else {
+      out = out.replace(/(\/\/[^\n]*)/g, '<span class="hl-com">$1</span>');
+    }
+    out = out.replace(/(&quot;[^&\n]*?&quot;|&#39;[^&\n]*?&#39;)/g, '<span class="hl-str">$1</span>');
+    out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="hl-num">$1</span>');
+    return out;
+  }
+
+  function csvToTable(text) {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    const source = String(text || '').slice(0, 120_000);
+    for (let i = 0; i < source.length && rows.length < 120; i += 1) {
+      const ch = source[i];
+      if (quoted) {
+        if (ch === '"' && source[i + 1] === '"') { cell += '"'; i += 1; }
+        else if (ch === '"') quoted = false;
+        else cell += ch;
+      } else if (ch === '"') quoted = true;
+      else if (ch === ',' || ch === ';' || ch === '\t') { row.push(cell); cell = ''; }
+      else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+      else if (ch !== '\r') cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    if (!rows.length) return null;
+    const head = rows[0].map((c) => c.trim());
+    const body = rows.slice(1).filter((r) => r.some((c) => c.trim()));
+    const table = el('table', 'exp-table');
+    const thead = el('thead');
+    const trh = el('tr');
+    head.forEach((cell) => trh.appendChild(el('th', null, cell)));
+    thead.appendChild(trh);
+    table.appendChild(thead);
+    const tbody = el('tbody');
+    body.forEach((r) => {
+      const tr = el('tr');
+      for (let i = 0; i < head.length; i += 1) tr.appendChild(el('td', null, (r[i] || '').trim()));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    return table;
+  }
+
+  /** Conteúdo formatado da prévia, conforme o tipo do arquivo. */
+  function renderPreviewContent(box, data) {
+    const name = String(data.name || '');
+    const suffix = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+    const text = data.text || '';
+
+    if (suffix === 'md' || suffix === 'markdown') {
+      const boxMd = el('div', 'exp-prev-md');
+      boxMd.innerHTML = md(text);
+      box.appendChild(boxMd);
+      return;
+    }
+    if (suffix === 'csv' || suffix === 'tsv') {
+      const table = csvToTable(text);
+      if (table) { box.appendChild(table); return; }
+    }
+    if (suffix === 'json') {
+      try {
+        const pretty = JSON.stringify(JSON.parse(text), null, 2);
+        const pre = el('pre', 'exp-prev-text');
+        pre.innerHTML = highlightCode(pretty, 'json');
+        box.appendChild(pre);
+        return;
+      } catch (e) { /* não é JSON válido: cai no texto simples */ }
+    }
+    const pre = el('pre', 'exp-prev-text');
+    pre.innerHTML = highlightCode(text, HL_EXT[suffix] || '');
+    box.appendChild(pre);
+  }
+
+  async function previewExplorerFile(item) {
+    const box = $('#exp-preview');
+    box.hidden = false;
+    box.innerHTML = '';
+    box.appendChild(el('div', 'exp-empty', t('explorer.loading')));
+    try {
+      const data = await apiGet(`/explorer/preview?path=${encodeURIComponent(item.path)}`);
+      box.innerHTML = '';
+      const head = el('div', 'exp-prev-head');
+      head.appendChild(el('span', 'exp-prev-name', data.name || item.name));
+      const actions = el('div', 'exp-prev-actions');
+      const dl = el('a', 'mini-btn', t('explorer.download'));
+      dl.href = data.downloadUrl || '';
+      dl.setAttribute('download', data.name || item.name);
+      actions.appendChild(dl);
+      const drive = el('a', 'mini-btn', t('explorer.drive'));
+      drive.href = data.driveUrl || item.driveUrl || '';
+      drive.target = '_blank';
+      drive.rel = 'noopener';
+      actions.appendChild(drive);
+      head.appendChild(actions);
+      box.appendChild(head);
+
+      const body = el('div', 'exp-prev-body');
+      if (data.error) body.appendChild(el('p', 'exp-prev-note', data.error));
+      if (data.kind === 'image' && data.inlineUrl) {
+        const img = document.createElement('img');
+        img.className = 'exp-prev-image';
+        img.alt = data.name || '';
+        img.src = data.inlineUrl;
+        body.appendChild(img);
+      } else if (data.text) {
+        renderPreviewContent(body, data);
+      }
+      if (data.truncated) {
+        body.appendChild(el('p', 'exp-prev-note', t('explorer.truncated')));
+      }
+      box.appendChild(body);
+    } catch (e) {
+      box.innerHTML = '';
+      box.appendChild(el('div', 'exp-empty', String(e.message || e)));
+    }
+  }
+
+  /* ── finalizar sessão (com confirmação) ───────────────────────────── */
+
+  // v0.7.11-web26: encerrar o trabalho com a sessão. Sempre pergunta antes
+  // — e oferece as duas saídas reais: arquivar (a conversa continua na lista,
+  // marcada com ✔) ou excluir do histórico (o autosave no Drive é o
+  // arquivo de segurança).
+
+  function askFinalize() {
+    const modal = $('#confirm-modal');
+    const row = currentSession();
+    $('#confirm-title').textContent = t('session.finalize');
+    $('#confirm-message').textContent = t('session.finalizeAsk')
+      .replace('{title}', row ? sessionTitle(row) : '');
+    modal.hidden = false;
+  }
+
+  function closeConfirm() {
+    $('#confirm-modal').hidden = true;
+  }
+
+  async function finalizeSession(mode) {
+    const sid = state.sessionId;
+    if (!sid) { closeConfirm(); return; }
+    try {
+      const result = await apiPost(`/sessions/${encodeURIComponent(sid)}/finalize`, { mode });
+      closeConfirm();
+      toast(t('session.finalizeDone'));
+      await refreshSessions();
+      if (mode === 'delete') {
+        const next = state.sessions.find((s) => s.id !== sid);
+        if (next) await openSession(next.id);
+        else await newSession();
+      } else if (result && result.title) {
+        // a sessão foi arquivada: o título no topo acompanha
+        const row = state.sessions.find((s) => s.id === sid);
+        if (row) row.title = result.title;
+        $('#session-title').textContent = result.title;
+        renderSessions();
+      }
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
   }
 
   /* ── sessões ──────────────────────────────────────────────────────── */
@@ -842,10 +1177,76 @@
     scrollToEnd(true);
   }
 
+  /**
+   * Rolagem automática: a conversa **segue** o conteúdo novo.
+   *
+   * v0.7.11-web25: antes a rolagem só acontecia se o usuário já estivesse
+   * perto do fim — as mensagens novas "apareciam fora da tela". Agora ela
+   * acompanha sempre; se o usuário rolar para cima, a rolagem automática é
+   * pausada e aparece o botão "ir para o fim".
+   */
   function scrollToEnd(force) {
     const thread = $('#thread');
-    const near = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 160;
-    if (force || near) thread.scrollTop = thread.scrollHeight;
+    if (!thread) return;
+    if (!force && !state.autoScroll) { showJump(true); return; }
+    // v0.7.11-web25: sem animação — a rolagem automática acontece a cada
+    // fragmento de texto e a animação a deixava sempre "a caminho".
+    thread.scrollTop = thread.scrollHeight;
+    showJump(false);
+  }
+
+  function showJump(visible) {
+    const btn = $('#jump-btn');
+    if (btn) btn.hidden = !visible;
+  }
+
+  function onThreadScroll() {
+    const thread = $('#thread');
+    if (!thread) return;
+    const dist = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+    // rolagem para CIMA (ação do usuário) → pausa a rolagem automática.
+    // Mas se o CONTEÚDO mudou (nova conversa, nova mensagem renderizada), o
+    // salto para 0 é do re-render, não do usuário — nesse caso a conversa
+    // deve continuar acompanhando.
+    const subiu = thread.scrollTop < lastScrollTop - 4;
+    const conteudoMudou = Math.abs(thread.scrollHeight - lastScrollHeight) > 40;
+    lastScrollTop = thread.scrollTop;
+    lastScrollHeight = thread.scrollHeight;
+    if (subiu && !conteudoMudou) {
+      lastUserScrollUp = Date.now();
+      state.autoScroll = false;
+      showJump(true);
+      return;
+    }
+    state.autoScroll = dist < 120;
+    showJump(!state.autoScroll);
+  }
+
+  let lastScrollTop = 0;
+  let lastScrollHeight = 0;
+  let lastUserScrollUp = 0;
+  let lastTouchY = 0;
+
+  /**
+   * Intenção de rolagem para CIMA — detectada em ``wheel``/``touchmove``,
+   * que disparam **antes** do evento ``scroll``. Sem isso havia uma corrida:
+   * o `ResizeObserver` (que acompanha o conteúdo) puxava a conversa de volta
+   * ao fim antes de o evento `scroll` ser processado, e o usuário nunca
+   * conseguia ler uma mensagem antiga.
+   */
+  function onScrollIntent(event) {
+    let delta = 0;
+    if (event.deltaY !== undefined) {
+      delta = event.deltaY;
+    } else if (event.touches && event.touches.length) {
+      const y = event.touches[0].clientY;
+      delta = lastTouchY - y;
+      lastTouchY = y;
+    }
+    if (delta > 0) return;             // rolando para baixo
+    lastUserScrollUp = Date.now();
+    state.autoScroll = false;
+    showJump(true);
   }
 
   /* ── streaming ────────────────────────────────────────────────────── */
@@ -1106,6 +1507,14 @@
   const DEAD_AFTER_MS = 10 * 60 * 1000;
   let downSince = 0;
 
+  /**
+   * Detecta a queda do ambiente (Colab encerrado).
+   *
+   * v0.7.11-web25: dois sinais independentes — o SSE (que só cai se o
+   * gateway ou o motor morrem) e um **heartbeat** em ``/health`` (que cobre o
+   * caso do servidor inteiro ter ido). Depois de 10 minutos sem resposta,
+   * o aviso explica o que houve.
+   */
   function markEngineDown() {
     const dot = $('#engine-dot');
     const text = $('#engine-text');
@@ -1114,19 +1523,33 @@
     if (!downSince) {
       downSince = Date.now();
       setTimeout(() => {
-        if (downSince && Date.now() - downSince >= DEAD_AFTER_MS) {
-          const banner = $('#engine-dead');
-          if (banner) banner.hidden = false;
-          if (text) text.textContent = t('sidebar.engineDead');
-        }
+        if (downSince && Date.now() - downSince >= DEAD_AFTER_MS) showEngineDead();
       }, DEAD_AFTER_MS + 500);
     }
+  }
+
+  function showEngineDead() {
+    const banner = $('#engine-dead');
+    if (banner) banner.hidden = false;
+    const text = $('#engine-text');
+    if (text) text.textContent = t('sidebar.engineDead');
   }
 
   function markEngineUp() {
     downSince = 0;
     const banner = $('#engine-dead');
     if (banner) banner.hidden = true;
+  }
+
+  /** Heartbeat: sonda o gateway (não depende do SSE). */
+  async function heartbeat() {
+    try {
+      const res = await fetch(`${BASE}health`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      markEngineUp();
+    } catch (e) {
+      markEngineDown();
+    }
   }
 
   function connectEvents() {
@@ -1983,6 +2406,77 @@
       pane.appendChild(actions);
     }
 
+    if (tab === 'autosave') {
+      // v0.7.11-web25: a configuração de autosave vive no WRAPPER (é o que
+      // agenda o salvamento). A web lê e escreve por `postMessage`.
+      const cfg = state.autosave || {};
+      pane.appendChild(el('h3', null, t('settings.tab.autosave')));
+      pane.appendChild(el('p', null, t('settings.autosaveNote')));
+      pane.appendChild(switchRow(t('settings.autosaveEnabled'), 'autosaveEnabled', async () => {
+        await pushAutosave();
+      }));
+      const interval = el('div', 'setting-row');
+      interval.appendChild(el('span', 's-label', t('settings.autosaveInterval')));
+      const number = document.createElement('input');
+      number.type = 'number';
+      number.min = '1';
+      number.max = '240';
+      number.className = 'num-input';
+      number.value = String(cfg.intervalMin || 10);
+      number.addEventListener('change', async () => {
+        const min = Math.max(1, parseInt(number.value, 10) || 10);
+        number.value = String(min);
+        if (state.autosave) state.autosave.intervalMin = min;
+        await pushAutosave();
+      });
+      interval.appendChild(number);
+      interval.appendChild(el('span', 's-value', t('settings.minutes')));
+      pane.appendChild(interval);
+
+      pane.appendChild(el('h3', null, t('settings.autosaveScope')));
+      const scopeList = el('div', 'scope-list');
+      [['active', t('settings.scopeActive')], ['all', t('settings.scopeAll')],
+       ['selected', t('settings.scopeSelected')]].forEach(([value, label]) => {
+        const opt = el('button', 'scope-opt' + ((cfg.scope || 'active') === value ? ' on' : ''),
+          label);
+        opt.type = 'button';
+        opt.addEventListener('click', async () => {
+          state.autosave.scope = value;
+          renderSettings();
+          await pushAutosave();
+        });
+        scopeList.appendChild(opt);
+      });
+      pane.appendChild(scopeList);
+
+      if ((cfg.scope || 'active') === 'selected') {
+        pane.appendChild(el('h3', null, t('settings.autosaveSessions')));
+        const list = el('div', 'setting-list');
+        const selected = new Set(cfg.selectedIds || []);
+        (cfg.sessions || []).forEach((s) => {
+          const item = el('label', 'setting-item');
+          const box = document.createElement('input');
+          box.type = 'checkbox';
+          box.checked = selected.has(s.id);
+          box.addEventListener('change', async () => {
+            const set = new Set(state.autosave.selectedIds || []);
+            if (box.checked) set.add(s.id); else set.delete(s.id);
+            state.autosave.selectedIds = [...set];
+            await pushAutosave();
+          });
+          item.appendChild(box);
+          item.appendChild(el('span', null, s.title || s.id));
+          list.appendChild(item);
+        });
+        if (!state.autosave.sessions || !state.autosave.sessions.length) {
+          list.appendChild(el('div', 'setting-item', t('warn.noSession')));
+        }
+        pane.appendChild(list);
+      }
+      pane.appendChild(row(t('settings.autosaveState'), cfg.known
+        ? t('settings.autosaveConnected') : t('settings.autosaveStandalone')));
+    }
+
     if (tab === 'atalhos') {
       pane.appendChild(el('h3', null, t('settings.shortcuts')));
       pane.appendChild(el('p', null, t('settings.shortcutHint')));
@@ -2008,14 +2502,51 @@
     }
 
     if (tab === 'sobre') {
-      pane.appendChild(el('h3', null, t('settings.aboutTitle')));
-      pane.appendChild(el('p', null, t('settings.aboutText')));
-      pane.appendChild(row(t('settings.engine'), (state.engine && state.engine.version) || '—'));
-      pane.appendChild(row(t('sidebar.sessions'), String(state.sessions.length)));
-      pane.appendChild(row(t('settings.modelsCount'), String(state.models.length)));
-      pane.appendChild(row(t('palette.commands'), String(state.commands.length)));
-      pane.appendChild(row(t('palette.skills'), String(state.skills.length)));
-      pane.appendChild(row('Endpoint', BASE + 'api/ufvai/'));
+      // v0.7.11-web25: ficha real do UFVAI (fonte: /api/ufvai/about →
+      // pesquisai/__version__.py), no lugar do texto genérico.
+      const about = state.about || {};
+      const card = el('div', 'about');
+      const logo = el('div', 'about-logo');
+      const img = document.createElement('img');
+      img.src = 'assets/logo.svg';
+      img.alt = 'UFVAI';
+      logo.appendChild(img);
+      card.appendChild(logo);
+      card.appendChild(el('h3', 'about-name', 'UFVAI — Universidade Federal de Viçosa'));
+      card.appendChild(el('p', 'about-tag', t('app.tagline')));
+      card.appendChild(el('p', 'about-desc', t('app.description')));
+      const rows = el('div', 'about-rows');
+      const put = (label, value) => {
+        if (!value) return;
+        const r = el('div', 'about-row');
+        r.appendChild(el('span', 'ar-label', label));
+        r.appendChild(el('span', 'ar-value', value));
+        rows.appendChild(r);
+      };
+      put(t('about.version'), about.version || '');
+      put(t('about.codename'), about.codename || '');
+      put(t('about.release'), about.release_date || '');
+      put(t('about.author'), about.author || '');
+      put(t('about.email'), about.email || '');
+      put(t('about.institution'), about.institution || '');
+      put(t('about.registry'), about.registry || '');
+      put(t('about.license'), about.license ? `MIT — ${about.license}` : '');
+      put(t('about.languages'), (about.languages || '').replace(/_/g, '-'));
+      put(t('about.agencies'), about.agencies || '');
+      card.appendChild(rows);
+      const links = el('div', 'about-links');
+      const gh = el('a', 'about-link', 'GitHub — gustavobraga-byte/PesquisAI');
+      gh.href = 'https://github.com/gustavobraga-byte/PesquisAI';
+      gh.target = '_blank';
+      gh.rel = 'noopener';
+      links.appendChild(gh);
+      const mail = el('a', 'about-link', about.email || '');
+      if (about.email) {
+        mail.href = `mailto:${about.email}`;
+        links.appendChild(mail);
+      }
+      card.appendChild(links);
+      pane.appendChild(card);
     }
   }
 
@@ -2117,15 +2648,16 @@
   function openSessionMenu() {
     const list = $('#session-actions');
     list.innerHTML = '';
-    $('#session-modal-title').textContent = 'Sessão';
-    const head = el('div', 'model-group', 'sessão');
+    $('#session-modal-title').textContent = t('modal.session');
+    const head = el('div', 'model-group', t('sidebar.sessions'));
     list.appendChild(head);
     const actions = [
-      ['Renomear…', renameSession],
-      ['Duplicar (fork)', forkSession],
-      ['Compactar histórico', compactSession],
-      ['Ver contexto', showContext],
-      ['Mover para segundo plano', backgroundSession],
+      [t('session.rename'), renameSession],
+      [t('session.fork'), forkSession],
+      [t('session.compact'), compactSession],
+      [t('session.context'), showContext],
+      [t('session.background'), backgroundSession],
+      [t('session.finalize'), askFinalize],
     ];
     actions.forEach(([label, fn]) => {
       const item = el('button', 'model-item');
@@ -2232,10 +2764,32 @@
       await newSession();
     }
 
+    // v0.7.11-web25: rolagem automática — o `ResizeObserver` garante que a
+    // conversa **acompanhe** o conteúdo: texto que chega em pedaços, blocos
+    // de ferramenta, anexos e o rodapé das mensagens mudam a altura depois do
+    // último render (a rolagem ficava alguns pixels acima do fim).
+    if (window.ResizeObserver) {
+      const observer = new ResizeObserver(() => {
+        if (!state.autoScroll) return;
+        // logo após o usuário rolar para cima, não puxa a conversa de volta
+        if (Date.now() - lastUserScrollUp < 1500) return;
+        scrollToEnd(false);
+      });
+      observer.observe($('#messages'));
+    }
+
     connectEvents();
     setInterval(refreshSessions, 20000);
     setInterval(pollFocus, 2500);
     setInterval(refreshUsage, 30000);
+    // v0.7.11-web25: heartbeat — detecta a queda do ambiente mesmo sem SSE
+    setInterval(heartbeat, 10000);
+    // v0.7.11-web25: ficha do UFVAI e configuração de autosave
+    try {
+      const about = await apiGet('/about');
+      state.about = about || {};
+    } catch (e) { /* segue sem a ficha */ }
+    askAutosave();
   }
 
   /* ── eventos da interface ─────────────────────────────────────────── */
@@ -2317,9 +2871,41 @@
     // v0.7.11-web23: o botão claro/escuro foi removido da web (o do
     // cabeçalho do wrapper é a fonte da verdade).
 
+    $('#thread').addEventListener('scroll', onThreadScroll, { passive: true });
+    $('#thread').addEventListener('wheel', onScrollIntent, { passive: true });
+    $('#thread').addEventListener('touchmove', onScrollIntent, { passive: true });
+
+    // v0.7.11-web26: explorador de arquivos
+    $('#explorer-btn').addEventListener('click', () => {
+      if (document.body.classList.contains('explorer-open')) closeExplorer();
+      else openExplorer();
+    });
+    $('#exp-close').addEventListener('click', closeExplorer);
+    $('#exp-refresh').addEventListener('click', () => loadExplorer(state.explorerPath));
+    $('#exp-up').addEventListener('click', () => {
+      const path = String(state.explorerPath || '');
+      const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+      loadExplorer(parent);
+    });
+    $('#jump-btn').addEventListener('click', () => {
+      state.autoScroll = true;
+      const thread = $('#thread');
+      if (thread && thread.scrollTo) {
+        thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+      } else {
+        scrollToEnd(true);
+      }
+      setTimeout(() => scrollToEnd(true), 500);
+    });
     $('#dead-action').addEventListener('click', () => {
       toast(t('warn.deadAction'));
     });
+
+    // v0.7.11-web26: confirmação de finalização da sessão
+    $('#confirm-close').addEventListener('click', closeConfirm);
+    $('#confirm-cancel').addEventListener('click', closeConfirm);
+    $('#confirm-archive').addEventListener('click', () => finalizeSession('archive'));
+    $('#confirm-delete').addEventListener('click', () => finalizeSession('delete'));
 
     $('#menu-btn').addEventListener('click', () => {
       // v0.7.11-web21: no desktop o botão OCULTA as sessões (a coluna

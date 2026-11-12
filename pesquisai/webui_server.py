@@ -23,9 +23,9 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import webapi
+from . import explorer, webapi
 from .constants import FOCUS_FILE, WEB_FOCUS_FILE
 
 WEBUI_DIR = Path(__file__).resolve().parent / "webui"
@@ -192,6 +192,14 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
             "commands": webapi.commands(lang or None),
             "skills": webapi.skills(),
         }
+    if resource == "explorer" and method == "GET" and len(parts) == 3:
+        rel = str(query.get("path", [""])[0] or "")
+        return 200, explorer.listing(rel)
+    if resource == "explorer" and method == "GET" and len(parts) == 4 and parts[3] == "preview":
+        rel = str(query.get("path", [""])[0] or "")
+        return 200, explorer.preview(rel)
+    if resource == "about" and method == "GET":
+        return 200, webapi.about()
     if resource == "locale" and method == "GET":
         lang = str(query.get("lang", [""])[0] or "")
         return 200, webapi.locale_info(lang or None)
@@ -259,6 +267,10 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
             return 200, webapi.context_usage(sid)
         if action == "diff" and method == "GET":
             return 200, webapi.session_diff(sid)
+        if action == "finalize" and method == "POST":
+            # {mode: 'archive' | 'delete'}
+            result = webapi.finalize_session(sid, str(body.get("mode") or "archive"))
+            return (200 if result.get("ok") else 502), result
         if action == "permission" and method == "GET":
             # pedidos de permissão pendentes da sessão
             return 200, {"permissions": webapi.pending_permissions(sid)}
@@ -359,6 +371,38 @@ class _Handler(BaseHTTPRequestHandler):
             return {}
         return data if isinstance(data, dict) else {}
 
+    def _download(self, query: dict) -> None:
+        """Baixa (ou exibe inline) um arquivo da pasta do agente."""
+        rel = str(query.get("path", [""])[0] or "")
+        inline = str(query.get("inline", ["0"])[0] or "").lower() in ("1", "true")
+        data, _abs_path = explorer.read_bytes(rel)
+        if data is None:
+            self._json(404, {"error": "arquivo não encontrado"})
+            return
+        target = explorer.safe_path(rel)
+        name = target.name if target else "arquivo"
+        mime = "application/octet-stream"
+        if target is not None:
+            import mimetypes
+
+            mime = mimetypes.guess_type(str(target))[0] or mime
+        disposition = "inline" if inline else "attachment"
+        try:
+            safe_name = name.encode("ascii", "ignore").decode() or "arquivo"
+            ascii_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name) or "arquivo"
+        except Exception:  # noqa: BLE001
+            safe_name = ascii_name = "arquivo"
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header(
+            "Content-Disposition",
+            f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     # -- rotas --
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -373,6 +417,11 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/ufvai/events":
             self._events(query)
+            return
+        if path == "/api/ufvai/explorer/download":
+            # v0.7.11-web26: download (ou exibição inline) de um arquivo da
+            # pasta do agente — resposta binária, não JSON.
+            self._download(query)
             return
         if path == "/__ufvai/focus/stream":
             self._focus_stream()

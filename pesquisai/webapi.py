@@ -67,6 +67,8 @@ __all__ = [
     "context_usage",
     "session_diff",
     "permission_reply",
+    "finalize_session",
+    "about",
     "normalize_event",
     "provider_available",
 ]
@@ -1071,6 +1073,46 @@ def pending_permissions(sid: str) -> list[dict]:
             }
         )
     return out
+
+
+def about() -> dict:
+    """Ficha do UFVAI para a aba “Sobre” (fonte: ``pesquisai/__version__.py``)."""
+    try:
+        from .__version__ import get_full_metadata, get_version  # type: ignore
+    except Exception:  # pragma: no cover — execução fora do pacote
+        try:
+            from __version__ import get_full_metadata, get_version  # type: ignore
+        except Exception:
+            return {}
+    try:
+        data = get_full_metadata()
+    except Exception:
+        return {}
+    data["versionShort"] = get_version()
+    return data
+
+
+def finalize_session(sid: str, mode: str = "archive") -> dict:
+    """Finaliza uma sessão.
+
+    ``archive`` (padrão) marca a conversa como encerrada, prefixando o
+    título com ``✔`` — ela continua na lista, mas deixa de “pegar” o
+    trabalho em curso. ``delete`` remove a sessão do motor (o **autosave no
+    Google Drive** continua sendo o arquivo de segurança).
+    """
+    mode = str(mode or "archive").strip().lower()
+    if mode not in ("archive", "delete"):
+        return {"ok": False, "error": "modo inválido"}
+    if mode == "delete":
+        status, data = engine_request("DELETE", f"/api/session/{sid}", None, timeout=20)
+        if not _ok(status):
+            return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+        return {"ok": True, "mode": mode, "deleted": True}
+    row = session(sid) or {}
+    title = str(row.get("title") or sid)
+    if not title.startswith("✔"):
+        title = f"✔ {title}"
+    return rename_session(sid, title)
 
 
 def permission_reply(sid: str, request_id: str, decision: str) -> dict:

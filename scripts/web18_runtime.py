@@ -45,14 +45,16 @@ def _read(url: str, timeout: float = 4.0) -> int:
 def detect_web_port() -> int:
     """Porta onde a **web nova** está respondendo (8002 pelo boot; 8003 avulso).
 
-    O teste usa ``/api/ufvai/commands`` — endpoint que só existe na versão
-    nova do gateway — para não cair no servidor antigo.
+    v0.7.11-web25: o teste usa ``/api/ufvai/about`` — rota que só existe na
+    versão web25+ do gateway. Com ``/api/ufvai/commands`` (que também existe
+    na web24) o script acabava apontando o wrapper para um servidor antigo
+    que ainda respondia em 8002.
     """
-    for port in (8002, 8003):
-        if _read(f"http://127.0.0.1:{port}/api/ufvai/commands") == 200:
+    for port in (8003, 8002):
+        if _read(f"http://127.0.0.1:{port}/api/ufvai/about") == 200:
             return port
-    for port in (8002, 8003):
-        if _read(f"http://127.0.0.1:{port}/api/ufvai/bootstrap") == 200:
+    for port in (8003, 8002):
+        if _read(f"http://127.0.0.1:{port}/api/ufvai/commands") == 200:
             return port
     return 8002
 
