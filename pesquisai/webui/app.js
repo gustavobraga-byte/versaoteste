@@ -76,6 +76,8 @@
     locale: 'pt-BR',
     settingsOpen: false,
     allExpanded: false,
+    view: 'web',            // 'web' | 'ttyd' — qual moldura está visível
+    sseWaiters: [],          // promises à espera da abertura do SSE
     usage: null,           // {used, limit, percent} — janela de contexto
     uploads: [],           // anexos já gravados em disco pelo gateway
     prefs: {
@@ -309,6 +311,11 @@
   window.addEventListener('message', (event) => {
     const data = event.data || {};
     if (data.type === 'ufvai-theme') applyTheme(data.theme);
+    // v0.7.11-web24: qual vista está visível no wrapper (terminal ou web).
+    // A web só segue o foco do terminal quando o terminal está à frente.
+    if (data.type === 'ufvai-view') {
+      state.view = data.view === 'ttyd' ? 'ttyd' : 'web';
+    }
     // v0.7.11-web23: a interface principal propaga o idioma escolhido —
     // a web troca os textos na hora, sem recarregar.
     if (data.type === 'ufvai-lang') {
@@ -338,6 +345,128 @@
     node.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { node.hidden = true; }, 4200);
+  }
+
+  /* ── entrada de texto (prompt do navegador) ──────────────────────── */
+
+  // v0.7.11-web24: `prompt()` é BLOQUEADO dentro de iframe sem
+  // `allow="modals"` — por isso renomear a sessão não fazia nada na web.
+  // Este modal resolve (e ainda funciona fora do iframe).
+  let askResolve = null;
+
+  function askText(title, value, hint, okLabel) {
+    const modal = $('#prompt-modal');
+    $('#prompt-title').textContent = title || '';
+    $('#prompt-hint').textContent = hint || '';
+    const input = $('#prompt-input');
+    input.value = value || '';
+    const ok = $('#prompt-ok');
+    ok.textContent = okLabel || t('session.rename');
+    modal.hidden = false;
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 30);
+    return new Promise((resolve) => { askResolve = resolve; });
+  }
+
+  function closeAsk(value) {
+    const modal = $('#prompt-modal');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    const resolve = askResolve;
+    askResolve = null;
+    if (resolve) resolve(value);
+  }
+
+  /* ── permissões (decisões do motor) ───────────────────────────────── */
+
+  // v0.7.11-web24: quando o motor pede licença para agir, a web ficava
+  // esperando em silêncio — o turno travava e as opções não apareciam.
+  // Agora o pedido vira um cartão com as três decisões.
+
+  const PERMISSION_LABELS = {
+    bash: 'command',
+    edit: 'edição',
+    write: 'escrita',
+    read: 'leitura',
+    webfetch: 'acesso à internet',
+    websearch: 'busca na internet',
+    patch: 'edição',
+    external_directory: 'acesso ao disco',
+  };
+
+  function permissionLabel(action) {
+    const key = String(action || '').toLowerCase();
+    return PERMISSION_LABELS[key] || key || t('tool.other');
+  }
+
+  function renderPermission(request) {
+    const box = $('#permissions');
+    if (!box) return;
+    const id = String(request.id || '');
+    if (!id) return;
+    const existing = box.querySelector(`[data-pid="${id}"]`);
+    if (existing) existing.remove();
+    const card = el('div', 'perm-card');
+    card.dataset.pid = id;
+    const head = el('div', 'perm-head');
+    head.appendChild(el('span', 'perm-icon', '🔐'));
+    const title = el('div', 'perm-title');
+    title.appendChild(el('strong', null, t('permission.title')));
+    title.appendChild(el('span', 'perm-action', permissionLabel(request.action)));
+    head.appendChild(title);
+    card.appendChild(head);
+    const msg = request.message || (request.resources || []).join('\n');
+    if (msg) card.appendChild(el('pre', 'perm-msg', msg));
+    const actions = el('div', 'perm-actions');
+    const once = el('button', 'btn primary', t('permission.once'));
+    once.addEventListener('click', () => replyPermission(id, 'once'));
+    const always = el('button', 'btn', t('permission.always'));
+    always.addEventListener('click', () => replyPermission(id, 'always'));
+    const reject = el('button', 'btn danger', t('permission.reject'));
+    reject.addEventListener('click', () => replyPermission(id, 'reject'));
+    actions.appendChild(once);
+    actions.appendChild(always);
+    actions.appendChild(reject);
+    card.appendChild(actions);
+    box.appendChild(card);
+    box.hidden = false;
+    scrollToEnd(false);
+  }
+
+  function clearPermission(id) {
+    const box = $('#permissions');
+    if (!box) return;
+    const node = box.querySelector(`[data-pid="${id}"]`);
+    if (node) node.remove();
+    box.hidden = box.children.length === 0;
+  }
+
+  async function replyPermission(id, decision) {
+    if (!state.sessionId) return;
+    try {
+      await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/permission`, {
+        requestID: id, decision,
+      });
+      clearPermission(id);
+      toast(t('permission.done'));
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
+  }
+
+  /** Recarrega os pedidos de permissão em aberto (boot e reconexão). */
+  async function loadPermissions() {
+    if (!state.sessionId) return;
+    try {
+      const data = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}/permission`);
+      const rows = data.permissions || [];
+      const box = $('#permissions');
+      if (box) box.innerHTML = '';
+      rows.forEach(renderPermission);
+      if (box) box.hidden = rows.length === 0;
+    } catch (e) { /* sem permissões pendentes */ }
   }
 
   /* ── sessões ──────────────────────────────────────────────────────── */
@@ -650,6 +779,8 @@
     const btn = $('#expand-all-btn');
     if (btn) {
       btn.classList.toggle('on', open);
+      const label = btn.querySelector('.lb-text');
+      if (label) label.textContent = open ? t('tool.collapseAll') : t('tool.expandAll');
       btn.title = open ? t('tool.collapseAll') : t('tool.expandAll');
     }
     state.allExpanded = open;
@@ -727,7 +858,10 @@
       wrap.appendChild(who);
       const answer = el('div', 'answer');
       wrap.appendChild(answer);
-      const slot = { wrap, answer, text: '', reasoning: '', tools: {}, toolInputs: {}, reasoningBlock: null };
+      const slot = { wrap, answer, text: '', reasoning: '', tools: {}, toolInputs: {}, reasoningBlock: null, __tools: '' };
+      // v0.7.11-web24: as mensagens em streaming também precisam do botão
+      // de copiar (antes ele só existia nas mensagens do histórico).
+      wrap.appendChild(copyButton(() => slot.text || '', t('session.copyResponse')));
       state.stream[messageID] = slot;
       $('#messages').appendChild(wrap);
       $('#empty-state').hidden = true;
@@ -759,6 +893,8 @@
         setRunning(false);
         refreshSessions();
         refreshUsage();
+        // v0.7.11-web24: completa o texto que possa ter ficado faltando
+        syncTail();
         break;
       case 'step.started': {
         const slot = streamSlot(ev.messageID);
@@ -839,6 +975,12 @@
           scrollToEnd(false);
         }
         break;
+      case 'permission.asked':
+        renderPermission(ev);
+        break;
+      case 'permission.replied':
+        clearPermission(ev.id);
+        break;
       case 'error':
         toast(ev.error || 'erro do motor', 'err');
         break;
@@ -851,7 +993,109 @@
     state.running = !!running;
     $('#status').hidden = !running;
     $('#stop-btn').hidden = !running;
-    $('#status-text').textContent = running ? 'Trabalhando…' : '';
+    $('#status-text').textContent = running ? t('status.working') : '';
+    if (running) watchRun();
+  }
+
+  /**
+   * v0.7.11-web24: o aviso "Trabalhando…" ficava na tela para sempre quando
+   * o evento ``run.finished`` se perdia (queda do SSE no fim do turno).
+   * O watchdog consulta o motor: quando a sessão deixa de estar ``busy``,
+   * o aviso some — independente do evento.
+   */
+  let runWatchTimer = null;
+
+  function watchRun() {
+    if (runWatchTimer) return;
+    runWatchTimer = setInterval(async () => {
+      if (!state.running || !state.sessionId) return;
+      try {
+        const row = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}`);
+        const busy = Number(row.busy || 0);
+        const updated = Number(row.updated || 0);
+        // `busy` é o instante em que a execução começou; `updated` é a última
+        // escrita — se a última escrita é posterior, a sessão já terminou.
+        if (busy && updated && busy < updated) {
+          setRunning(false);
+          await syncTail();
+        } else {
+          // ainda rodando: confere se o texto chegou inteiro (evento perdido)
+          await syncTail();
+        }
+      } catch (e) { /* motor fora do ar: o watchdog de reconexão trata */ }
+    }, 4000);
+  }
+
+  /**
+   * v0.7.11-web24: as vezes a mensagem parava no meio (evento de streaming
+   * perdido). Ao fim do turno — e a cada reconexão do SSE — a web relê as
+   * últimas mensagens do motor e completa o que ficou faltando.
+   */
+  async function syncTail() {
+    if (!state.sessionId) return;
+    try {
+      const data = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}/messages?limit=40`);
+      const rows = data.messages || [];
+      if (!rows.length) return;
+      const last = rows[rows.length - 1];
+      if (!last || last.role !== 'assistant') return;
+      const slot = state.stream[last.id];
+      if (slot) {
+        const texto = last.text || '';
+        const ferramentas = JSON.stringify(last.tools || []);
+        if (slot.text !== texto || slot.__tools !== ferramentas) {
+          slot.text = texto;
+          slot.__tools = ferramentas;
+          slot.answer.innerHTML = md(texto);
+          if (slot.reasoningBlock && last.reasoning) {
+            slot.reasoningBlock.__body.textContent = last.reasoning;
+          }
+          renderStreamTools(slot, last.tools || []);
+        }
+        return;
+      }
+      const known = state.messages.find((m) => m.id === last.id);
+      if (!known) {
+        // v0.7.11-web24: os eventos do turno se perderam por completo — o
+        // motor tem a resposta, então ela é reconstruída aqui.
+        if (state.running) {
+          const novo = streamSlot(last.id);
+          novo.text = last.text || '';
+          novo.__tools = JSON.stringify(last.tools || []);
+          novo.answer.innerHTML = md(novo.text);
+          if (last.reasoning) {
+            novo.reasoningBlock = textBlock(t('tool.reasoning'), last.reasoning, 'reasoning');
+            novo.reasoningBlock.open = !!state.prefs.expandReasoning;
+            novo.wrap.appendChild(novo.reasoningBlock);
+          }
+          renderStreamTools(novo, last.tools || []);
+          return;
+        }
+        state.messages.push(last);
+        renderMessages();
+      } else if ((known.text || '') !== (last.text || '')) {
+        known.text = last.text;
+        known.reasoning = last.reasoning;
+        known.tools = last.tools;
+        renderMessages();
+      }
+    } catch (e) { /* mantém o que já está na tela */ }
+  }
+
+  /** Reconstrói os blocos de ferramentas de uma mensagem em streaming. */
+  function renderStreamTools(slot, tools) {
+    if (!slot) return;
+    const existentes = slot.wrap.querySelectorAll('details.block.tool');
+    existentes.forEach((node) => node.remove());
+    (tools || []).forEach((tool) => {
+      const block = toolBlock(tool.name, tool.status);
+      block.__body.innerHTML = '';
+      block.__body.appendChild(toolContent(tool.name, tool.input, tool.output, tool.diff));
+      if (tool.status === 'error') block.__status.textContent = t('tool.error');
+      if (tool.status === 'completed') block.__status.textContent = t('tool.done');
+      block.open = !!state.prefs.expandTools;
+      slot.wrap.appendChild(block);
+    });
   }
 
   /* ── eventos (SSE) ────────────────────────────────────────────────── */
@@ -902,7 +1146,32 @@
       const text = $('#engine-text');
       if (dot) dot.className = 'dot ok';
       if (text) text.textContent = t('sidebar.connected');
+      // v0.7.11-web24: ao reconectar, o que chegou durante a queda se perdeu
+      // — relê a cauda da conversa e reidrata as permissões pendentes.
+      syncTail();
+      loadPermissions();
+      const waiters = state.sseWaiters.splice(0, state.sseWaiters.length);
+      waiters.forEach((fn) => fn());
     };
+  }
+
+  /**
+   * v0.7.11-web24: o prompt precisa sair **depois** que o SSE está aberto.
+   * Antes, a mensagem era publicada logo após trocar de sessão e os eventos
+   * (``run.started``, ``text.delta``) se perdiam — a resposta aparecia
+   * vazia ou truncada.
+   */
+  function ensureEvents() {
+    if (state.source && state.source.readyState === 1) return Promise.resolve();
+    return new Promise((resolve) => {
+      state.sseWaiters.push(resolve);
+      connectEvents();
+      // não bloqueia o envio se o motor estiver fora do ar
+      setTimeout(() => {
+        const waiters = state.sseWaiters.splice(0, state.sseWaiters.length);
+        waiters.forEach((fn) => fn());
+      }, 2500);
+    });
   }
 
   /* ── sessão ───────────────────────────────────────────────────────── */
@@ -1035,6 +1304,9 @@
     renderAttachments();
 
     try {
+      // v0.7.11-web24: garante o SSE aberto antes de publicar (evita perder
+      // os eventos do turno).
+      await ensureEvents();
       await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/message`, {
         text, files, skills: skills.length ? skills : undefined,
         uploads: uploads.length ? uploads : undefined,
@@ -1812,7 +2084,12 @@
     const target = sid || state.sessionId;
     if (!target) return;
     const row = state.sessions.find((s) => s.id === target) || currentSession();
-    const title = prompt('Novo título da sessão:', row ? sessionTitle(row) : '');
+    const title = await askText(
+      t('session.rename'),
+      row ? sessionTitle(row) : '',
+      t('session.renamePrompt'),
+      t('session.rename'),
+    );
     if (!title || !title.trim()) return;
     try {
       await apiPost(`/sessions/${encodeURIComponent(target)}/rename`, { title: title.trim() });
@@ -1820,7 +2097,7 @@
       if (item) item.title = title.trim();
       if (target === state.sessionId) $('#session-title').textContent = title.trim();
       renderSessions();
-      toast('sessão renomeada');
+      toast(t('session.done'));
     } catch (e) {
       toast(String(e.message || e), 'err');
     }
@@ -1862,7 +2139,18 @@
 
   /* ── foco TUI → web ───────────────────────────────────────────────── */
 
+  /**
+   * v0.7.11-web24: a web seguia a sessão do TERMINAL a cada 2,5 s — e como o
+   * ttyd fica em outra sessão, a web **puxava o usuário para outra conversa**
+   * no meio do turno (aí a mensagem "parava" e o aviso de execução sumia).
+   *
+   * Agora a web só segue o foco do terminal quando o **terminal é a vista
+   * visível** (o wrapper avisa por `postMessage {type:'ufvai-view'}`) e nunca
+   * durante uma execução.
+   */
   function pollFocus() {
+    if (state.view === 'web') return;
+    if (state.running) return;
     apiGet('/focus')
       .then((focus) => {
         if (!focus || !focus.sid) return;
@@ -2047,13 +2335,22 @@
         $('#menu-btn').title = hidden ? t('top.sessions') : t('top.sessions');
       }
     });
-    $('#side-close').addEventListener('click', () => {
-      document.body.classList.remove('side-open');
-      $('#scrim').hidden = true;
-    });
+    // v0.7.11-web24: o "✕" do quadrado de sessões foi removido (não
+    // funcionava); a gaveta fecha pelo botão ☰ ou tocando fora.
     $('#scrim').addEventListener('click', () => {
       document.body.classList.remove('side-open');
       $('#scrim').hidden = true;
+    });
+
+    // v0.7.11-web24: modal de entrada (substitui prompt(), bloqueado em iframe)
+    $('#prompt-ok').addEventListener('click', () => {
+      closeAsk($('#prompt-input').value);
+    });
+    $('#prompt-cancel').addEventListener('click', () => closeAsk(null));
+    $('#prompt-close').addEventListener('click', () => closeAsk(null));
+    $('#prompt-input').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); closeAsk($('#prompt-input').value); }
+      if (event.key === 'Escape') { event.preventDefault(); closeAsk(null); }
     });
 
     document.addEventListener('keydown', (event) => {
@@ -2106,4 +2403,16 @@
 
   bind();
   boot();
+
+  // Handle de diagnóstico (usado pelos testes de aceitação e pelo autor
+  // para depurar no console do navegador). Não expõe nada sensível.
+  window.__ufvai = {
+    state,
+    setRunning,
+    syncTail,
+    renderPermission,
+    replyPermission,
+    loadPermissions,
+    watchRun,
+  };
 })();

@@ -4532,6 +4532,16 @@ def create_wrapper_html(
           fr.classList.add("ufvai-hidden");
         }
       });
+      // v0.7.11-web24: avisa as molduras qual vista está visível — a web só
+      // segue o foco do terminal quando o terminal está à frente (sem isso
+      // ela puxava o usuário para outra sessão no meio do turno).
+      ["terminal-frame", "web-frame"].forEach(function (id) {
+        const fr = document.getElementById(id);
+        if (!fr || !fr.contentWindow) return;
+        try {
+          fr.contentWindow.postMessage({ type: "ufvai-view", view: target }, "*");
+        } catch (e) {}
+      });
     }
     // v0.7.11-web23: a web pede a troca para o terminal (comandos que só
     // existem na TUI, como /undo, /themes, /diff).

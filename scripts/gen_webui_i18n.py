@@ -59,6 +59,8 @@ KEYS: list[str] = [
     "key.send", "key.newline", "key.commands", "key.mention", "key.palette",
     "key.expandAll", "key.interrupt", "key.background", "key.toggleSidebar",
     "key.attach", "key.copy", "key.close",
+    "permission.title", "permission.once", "permission.always", "permission.reject",
+    "permission.done", "permission.action", "permission.resource",
     "warn.disconnected", "warn.dead", "warn.deadBody", "warn.deadAction",
     "warn.reconnect", "warn.noSession", "warn.sendFailed", "warn.copyFailed",
     "toolname.shell", "toolname.write", "toolname.edit", "toolname.read",
@@ -87,22 +89,51 @@ TOOL_NAMES = {
 # gerador nao depender de um arquivo externo)
 EXTRA: dict[str, dict[str, str]] = {
     "pt-BR": {
-        "composer.placeholderShort": "Pergunte ao UFVAI…",
+        "permission.title": "O motor precisa da sua autorização",
+        "permission.once": "Permitir uma vez",
+        "permission.always": "Sempre permitir",
+        "permission.reject": "Rejeitar",
+        "permission.done": "resposta enviada",
+        "permission.action": "ação",
+        "permission.resource": "recurso",
     },
     "en": {
-        "composer.placeholderShort": "Ask UFVAI…",
+        "permission.title": "The engine needs your authorization",
+        "permission.once": "Allow once",
+        "permission.always": "Always allow",
+        "permission.reject": "Reject",
+        "permission.done": "reply sent",
+        "permission.action": "action",
+        "permission.resource": "resource",
     },
     "es": {
-        "composer.placeholderShort": "Pregunte a UFVAI…",
+        "permission.title": "El motor necesita tu autorización",
+        "permission.once": "Permitir una vez",
+        "permission.always": "Permitir siempre",
+        "permission.reject": "Rechazar",
+        "permission.done": "respuesta enviada",
+        "permission.action": "acción",
+        "permission.resource": "recurso",
     },
     "fr": {
-        "composer.placeholderShort": "Interrogez UFVAI…",
+        "permission.title": "Le moteur a besoin de votre autorisation",
+        "permission.once": "Autoriser une fois",
+        "permission.always": "Toujours autoriser",
+        "permission.reject": "Refuser",
+        "permission.done": "réponse envoyée",
+        "permission.action": "action",
+        "permission.resource": "ressource",
     },
     "zh": {
-        "composer.placeholderShort": "向 UFVAI 提问…",
+        "permission.title": "引擎需要您的授权",
+        "permission.once": "允许一次",
+        "permission.always": "始终允许",
+        "permission.reject": "拒绝",
+        "permission.done": "已回复",
+        "permission.action": "操作",
+        "permission.resource": "资源",
     },
 }
-
 def _table(data: dict[str, str]) -> dict[str, str]:
     """Valida a completude do dicionario de um idioma."""
     missing = [k for k in KEYS if k not in data]

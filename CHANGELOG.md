@@ -1,5 +1,30 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web24] — 2026-11-12 — as decisões que não apareciam, o aviso que ficava preso e a sessão que fugia
+
+### Os oito pedidos, e a causa real de cada um
+
+| Pedido | Causa encontrada | Entregue |
+|---|---|---|
+| **“Trabalhando…” ficava na tela depois de finalizado** | o aviso só sumia com o evento `run.finished`; se o SSE caísse no fim do turno, o evento se perdia e o aviso ficava para sempre | **watchdog**: a web consulta o motor a cada 4 s e, quando a sessão deixa de estar `busy`, o aviso some (medido: **4 s**) |
+| **“Copiar as respostas nem sempre aparece”** | as mensagens **em streaming** não tinham botão de copiar (só as do histórico), e o botão dentro do bloco só aparecia no *hover* — no toque ele nunca aparecia | botão de copiar em **todas** as mensagens (inclusive as de streaming) e **sempre visível** nos blocos (opacidade 0,55 → 1 no hover) |
+| **“um ✕ em um quadrado do lado de sessões que não funciona”** | era o botão de fechar a gaveta (`#side-close`), que não fazia nada de útil | **removido**; a gaveta fecha pelo ☰ ou tocando fora |
+| **“o ícone do expandir tudo é difícil de identificar”** | o botão era só o glifo `⇕` | botão **rotulado** (“expandir tudo” no desktop; no celular só o ícone, em destaque dourado) |
+| **“as mensagens param e não chegam completas”** | **três** causas somadas: (1) a web **seguia a sessão do terminal** a cada 2,5 s (`pollFocus`) e puxava o usuário para outra conversa no meio do turno; (2) o prompt era publicado **antes** do SSE abrir — os eventos do turno se perdiam; (3) quando um evento se perdia, o texto ficava truncado para sempre | (1) a web só segue o foco do terminal quando **o terminal é a vista visível** (`ufvai-view`) e nunca durante uma execução; (2) `ensureEvents()` espera o SSE abrir antes de publicar; (3) `syncTail()` relê a cauda da conversa ao fim do turno, a cada 4 s durante a execução e a cada reconexão — se o texto divergir do motor, é corrigido |
+| **“quando tenho que tomar uma decisão, na web não funciona / não aparece as opções”** | o motor pede licença (`permission.asked`) e a web **ignorava** o evento: o turno travava sem nada na tela | **cartão de permissão** com as três decisões (Permitir uma vez · Sempre permitir · Rejeitar), rotas novas `GET/POST /api/ufvai/sessions/{id}/permission` e reidratação dos pedidos pendentes no boot e na reconexão |
+| **“habilitar no motor que sempre é permitida a busca na internet”** | `websearch`/`webfetch` caíam na regra padrão e perguntavam a cada uso | regras `{"action":"websearch","effect":"allow"}` e `{"action":"webfetch","effect":"allow"}` em `opencode_config.py` (antes das do Drive Guard, que precisam ficar por último) — **verificado**: um `WebFetch` real passou sem pedir licença |
+| **“renomeio pelo comando `/` e o nome não troca”** | o renomear usava `prompt()` do navegador — **bloqueado dentro de iframe** sem `allow="modals"` (a moldura do wrapper só tem `clipboard-read; clipboard-write`) | **modal próprio** de entrada (`#prompt-modal`) no lugar de `prompt()`; o título da sessão e a lista são atualizados na hora |
+
+### Arquivos
+
+- **novos** — nada nesta rodada (o dicionário i18n ganhou 7 chaves: `permission.*`).
+- **alterados** — `pesquisai/webapi.py` (eventos e rota de permissão), `pesquisai/webui_server.py`
+  (rota de permissão), `pesquisai/webui/app.js` (watchdog, `syncTail`, `ensureEvents`,
+  `pollFocus`, permissões, modal de entrada, botão rotulado), `pesquisai/webui/app.css`,
+  `pesquisai/webui/index.html`, `pesquisai/opencode_config.py` (internet liberada),
+  `pesquisai/launch_app_responsive_v041.py` (`ufvai-view`), `tests/test_drive_guard.py`.
+- **teste** — `scripts/test_acceptance.py`: **33/33** ✓ (uma por item), 0 erros de console.
+
 ## [0.7.11-web23] — 2026-11-12 — a web no celular, em 5 idiomas, com diff em verde/vermelho e anexos que o agente encontra
 
 ### Pedidos e entregas

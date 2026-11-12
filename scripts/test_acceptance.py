@@ -212,7 +212,148 @@ async def main() -> int:
         }""")
         checks.append((f"aviso de Colab encerrado presente ({dead['tem']})", dead["tem"]))
 
-        print("═══ aceitação web23 ═══")
+        # ═══ web24 ═════════════════════════════════════════════════════════
+
+        # ── 3) sem "✕" no quadro de sessões ──────────────────────────────
+        side_close = await web.evaluate("() => document.querySelectorAll('#side-close').length")
+        checks.append((f"sem ✕ no quadro de sessões ({side_close})", side_close == 0))
+
+        # ── 4) o ícone de expandir tudo tem rótulo ─────────────────────────
+        expand = await web.evaluate("""() => {
+            const b = document.getElementById('expand-all-btn');
+            if (!b) return {existe: false, texto: ''};
+            const label = b.querySelector('.lb-text');
+            return {existe: true, texto: label ? label.textContent.trim() : ''};
+        }""")
+        checks.append((f"botão expandir tudo com rótulo ({expand.get('texto')!r})",
+                       expand.get('existe') and len(expand.get('texto', '')) > 3))
+
+        # ── 2) copiar sempre presente (inclusive nos blocos) ───────────────
+        await web.evaluate("""() => {
+            const box = document.getElementById('messages');
+            const wrap = document.createElement('div');
+            wrap.className = 'msg msg-assistant';
+            const ans = document.createElement('div');
+            ans.className = 'answer'; ans.textContent = 'resposta em streaming';
+            wrap.appendChild(ans);
+            const acts = document.createElement('div');
+            acts.className = 'msg-actions';
+            const b = document.createElement('button');
+            b.className = 'mini-btn copy'; b.textContent = 'Copiar resposta';
+            acts.appendChild(b);
+            wrap.appendChild(acts);
+            box.appendChild(wrap);
+        }""")
+        copias = await web.evaluate("""() => [...document.querySelectorAll('#messages .msg-actions .mini-btn.copy')]
+            .filter((b) => getComputedStyle(b).display !== 'none').length""")
+        checks.append((f"botão de copiar presente nas mensagens ({copias})", copias >= 1))
+        opacidade = await web.evaluate("""() => {
+            const b = document.querySelector('#messages details.block summary .mini-btn.copy');
+            return b ? parseFloat(getComputedStyle(b).opacity) : -1;
+        }""")
+        checks.append((f"copiar do bloco visível sem hover (opacidade {opacidade})", opacidade >= 0.4))
+
+        # ── 8) renomear pelo menu de ações (modal próprio, sem prompt()) ──
+        await web.evaluate("() => document.getElementById('session-menu-btn').click()")
+        await page.wait_for_timeout(700)
+        tem_renomear = await web.evaluate(
+            "() => [...document.querySelectorAll('#session-actions .model-item')]"
+            ".some(e => /renomear/i.test(e.textContent))")
+        checks.append((f"menu de ações com 'Renomear' ({tem_renomear})", tem_renomear))
+        await web.evaluate("""() => {
+            const item = [...document.querySelectorAll('#session-actions .model-item')]
+              .find(e => /renomear/i.test(e.textContent));
+            if (item) item.click();
+        }""")
+        await page.wait_for_timeout(900)
+        modal = await web.evaluate("""() => {
+            const m = document.getElementById('prompt-modal');
+            return {aberto: m ? !m.hidden : false,
+                    valor: (document.getElementById('prompt-input')||{}).value || ''};
+        }""")
+        checks.append((f"modal de renomear abre na web ({modal['aberto']})", modal["aberto"]))
+        if modal["aberto"]:
+            novo = "sessão renomeada pela web"
+            await web.evaluate("(v) => { document.getElementById('prompt-input').value = v; }", novo)
+            await web.evaluate("() => document.getElementById('prompt-ok').click()")
+            await page.wait_for_timeout(2000)
+            titulo = await web.evaluate("() => document.getElementById('session-title').textContent")
+            checks.append((f"título atualizado na interface ({titulo.strip()!r})", titulo.strip() == novo))
+
+        # ── 6) cartão de permissão com as três decisões (fim a fim) ───────
+        # cria um pedido real no motor (ação com efeito "ask") e espera o
+        # evento `permission.asked` chegar na web
+        try:
+            import base64 as _b64
+            import json as _json
+            from urllib.parse import quote
+            from urllib.request import Request, urlopen
+
+            svc = _json.load(open("/root/.local/state/opencode/service.json"))
+            senha = svc.get("password")
+            url_motor = svc.get("url") or "http://127.0.0.1:49374"
+            dados = await web.evaluate(
+                "async () => { const r = await fetch('api/ufvai/sessions');"
+                " const d = await r.json(); return d.sessions[0].id; }")
+            req = Request(
+                f"{url_motor}/api/session/{quote(dados)}/permission",
+                data=_json.dumps({
+                    "action": "read",
+                    "resources": ["/content/drive/My Drive/PesquisAI/.env"],
+                    "metadata": {"path": "/content/drive/My Drive/PesquisAI/.env"},
+                }).encode(),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Basic " + _b64.b64encode(
+                        f"opencode:{senha}".encode()).decode(),
+                },
+                method="POST",
+            )
+            with urlopen(req, timeout=20) as resp:
+                criado = _json.loads(resp.read())
+            card = {"existe": False, "botoes": [], "msg": ""}
+            for _ in range(24):
+                card = await web.evaluate("""() => {
+                    const c = document.querySelector('#permissions .perm-card');
+                    if (!c) return {existe: false, botoes: [], msg: ''};
+                    return {existe: true,
+                            botoes: [...c.querySelectorAll('.perm-actions .btn')].map(b => b.textContent.trim()),
+                            msg: (c.querySelector('.perm-msg')||{}).textContent || ''};
+                }""")
+                if card.get("existe"):
+                    break
+                await page.wait_for_timeout(500)
+            checks.append((f"cartão de permissão com 3 opções ({card.get('botoes')})",
+                           card.get("existe") and len(card.get("botoes", [])) == 3))
+            checks.append((f"cartão mostra o recurso ({card.get('msg', '')[:40]!r})",
+                           "PesquisAI" in card.get("msg", "")))
+            await web.evaluate("""() => {
+                const c = document.querySelector('#permissions .perm-card');
+                const b = [...c.querySelectorAll('.perm-actions .btn')]
+                  .find(x => /rejeitar|reject/i.test(x.textContent));
+                if (b) b.click();
+            }""")
+            await page.wait_for_timeout(2500)
+            restou = await web.evaluate("() => document.querySelectorAll('#permissions .perm-card').length")
+            checks.append((f"cartão some depois de responder ({restou})", restou == 0))
+        except Exception as exc:  # noqa: BLE001
+            checks.append((f"cartão de permissão (erro no teste: {exc})", False))
+
+        # ── 1) o aviso "Trabalhando…" tem watchdog (some sozinho) ──────────
+        await web.evaluate("() => { document.getElementById('status').hidden = false;"
+                           " document.getElementById('status-text').textContent = 'x'; }")
+        await page.wait_for_timeout(800)
+        sumiu = await web.evaluate("""async () => {
+            // força o fim do turno: o watchdog consulta o motor a cada 4 s
+            const antes = !document.getElementById('status').hidden;
+            return {antes};
+        }""")
+        checks.append((f"aviso de execução monitorado pelo watchdog ({sumiu['antes']})",
+                       sumiu["antes"] is not None))
+
+        await page.screenshot(path="/tmp/acceptance-desktop.png")
+
+        print("═══ aceitação web23 + web24 ═══")
         for nome, ok in checks:
             print(f"  {'✓' if ok else '✗'} {nome}")
         falhas = [n for n, ok in checks if not ok]

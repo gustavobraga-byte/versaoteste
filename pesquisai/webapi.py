@@ -66,6 +66,7 @@ __all__ = [
     "save_upload",
     "context_usage",
     "session_diff",
+    "permission_reply",
     "normalize_event",
     "provider_available",
 ]
@@ -1051,6 +1052,46 @@ def session_diff(sid: str) -> dict:
     return {"files": out}
 
 
+def pending_permissions(sid: str) -> list[dict]:
+    """Pedidos de permissão em aberto da sessão (para a web mostrar as opções)."""
+    data = engine_json(f"/api/session/{sid}/permission", timeout=12)
+    rows = data.get("data") if isinstance(data, dict) else data
+    rows = rows if isinstance(rows, list) else []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        out.append(
+            {
+                "id": str(row.get("id")),
+                "action": str(row.get("action") or ""),
+                "resources": [str(r) for r in (row.get("resources") or [])],
+                "message": str(row.get("message") or ""),
+                "metadata": row.get("metadata") or {},
+            }
+        )
+    return out
+
+
+def permission_reply(sid: str, request_id: str, decision: str) -> dict:
+    """Responde a um pedido de permissão do motor.
+
+    ``decision`` é ``once`` (uma vez), ``always`` (sempre) ou ``reject``.
+    """
+    decision = str(decision or "").strip().lower()
+    if decision not in ("once", "always", "reject"):
+        return {"ok": False, "error": "decisão inválida"}
+    status, data = engine_request(
+        "POST",
+        f"/api/session/{sid}/permission/{request_id}/reply",
+        {"decision": decision},
+        timeout=20,
+    )
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    return {"ok": True, "decision": decision}
+
+
 def fork_session(sid: str) -> dict:
     """Cria uma cópia (fork) da sessão."""
     status, data = engine_request("POST", f"/api/session/{sid}/fork", {}, timeout=20)
@@ -1281,8 +1322,28 @@ def normalize_event(event: dict) -> dict | None:
         if diff:
             payload["diff"] = diff
         return payload
+    if kind == "permission.asked":
+        # v0.7.11-web24: o motor pede licença para agir — a web precisa
+        # mostrar as opções (permitir uma vez / sempre / rejeitar).
+        return {
+            "type": "permission.asked",
+            "sid": sid or str(data.get("sessionID") or ""),
+            "id": str(data.get("id") or ""),
+            "action": str(data.get("action") or ""),
+            "resources": [str(r) for r in (data.get("resources") or [])],
+            "save": [str(r) for r in (data.get("save") or [])],
+            "metadata": data.get("metadata") or {},
+            "source": data.get("source") or {},
+            "message": str(data.get("message") or ""),
+        }
+    if kind == "permission.replied":
+        return {
+            "type": "permission.replied",
+            "sid": sid or str(data.get("sessionID") or ""),
+            "id": str(data.get("requestID") or ""),
+            "decision": str(data.get("reply") or ""),
+        }
     if kind == "session.inbox.enqueued":
-        item = data.get("item") or {}
         payload = item.get("payload") or {}
         return {
             "type": "inbox.enqueued",

@@ -259,6 +259,17 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
             return 200, webapi.context_usage(sid)
         if action == "diff" and method == "GET":
             return 200, webapi.session_diff(sid)
+        if action == "permission" and method == "GET":
+            # pedidos de permissão pendentes da sessão
+            return 200, {"permissions": webapi.pending_permissions(sid)}
+        if action == "permission" and method == "POST":
+            # {requestID, decision: once|always|reject}
+            request_id = str(body.get("requestID") or body.get("id") or "")
+            decision = str(body.get("decision") or "")
+            if not request_id:
+                return 400, {"error": "pedido de permissão vazio"}
+            result = webapi.permission_reply(sid, request_id, decision)
+            return (200 if result.get("ok") else 502), result
         if action == "fork" and method == "POST":
             result = webapi.fork_session(sid)
             return (200 if result.get("ok") else 502), result

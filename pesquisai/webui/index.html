@@ -18,7 +18,6 @@
   <aside class="sidebar" id="sidebar">
     <div class="side-head">
       <span class="side-label" data-i18n="sidebar.sessions">sessões</span>
-      <button class="icon-btn side-close" id="side-close" title="Fechar menu" aria-label="Fechar menu" data-i18n-title="sidebar.close">✕</button>
     </div>
 
     <button class="new-session" id="new-session">
@@ -65,8 +64,11 @@
       <div class="top-actions">
         <!-- v0.7.11-web23: "expandir tudo" — os interruptores de raciocínio e
              ferramentas valem para o que vem a seguir; este botão age sobre a
-             conversa inteira, já renderizada. -->
-        <button class="icon-btn" id="expand-all-btn" title="Expandir/recolher tudo" aria-label="Expandir ou recolher raciocínio e ferramentas" data-i18n-title="tool.expandAll">⇕</button>
+             conversa inteira, já renderizada. v0.7.11-web24: ícone com
+             RÓTULO (o ⇕ sozinho era difícil de identificar). -->
+        <button class="icon-btn labelled" id="expand-all-btn" title="Expandir/recolher tudo" aria-label="Expandir ou recolher raciocínio e ferramentas" data-i18n-title="tool.expandAll">
+          <span class="lb-icon">⇕</span><span class="lb-text" data-i18n="tool.expandAll">expandir tudo</span>
+        </button>
         <button class="icon-btn" id="session-menu-btn" title="Ações da sessão" aria-label="Ações da sessão" data-i18n-title="top.actions">⋯</button>
         <button class="icon-btn" id="settings-btn" title="Ajustes" aria-label="Ajustes" data-i18n-title="top.settings">⚙</button>
         <button class="icon-btn" id="refresh-btn" title="Atualizar" aria-label="Atualizar" data-i18n-title="top.refresh">↻</button>
@@ -99,6 +101,10 @@
 
     <!-- ── compositor ─────────────────────────────────────────────── -->
     <div class="composer">
+      <!-- v0.7.11-web24: pedidos de permissão do motor (as "decisões" que
+           não apareciam na versão web) -->
+      <div class="permissions" id="permissions" hidden></div>
+
       <!-- paleta de comandos (/) e de habilidades/arquivos (@) -->
       <div class="palette" id="palette" hidden>
         <div class="palette-head" id="palette-head"></div>
@@ -170,6 +176,24 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<!-- ── entrada de texto (substitui prompt(): bloqueado em iframe) ───── -->
+<div class="modal" id="prompt-modal" hidden>
+  <div class="modal-card modal-sm">
+    <div class="modal-head">
+      <h2 id="prompt-title">—</h2>
+      <button class="icon-btn" id="prompt-close" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
+    </div>
+    <div class="prompt-body">
+      <p id="prompt-hint"></p>
+      <input id="prompt-input" type="text" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="prompt-cancel" data-i18n="key.close">Fechar</button>
+      <button class="btn primary" id="prompt-ok" data-i18n="session.rename">Renomear</button>
+    </div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>
