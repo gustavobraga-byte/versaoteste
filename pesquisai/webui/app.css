@@ -839,20 +839,158 @@ html[data-theme="pesquisai-light"] .btn.primary { color: #fff; }
 .toast[hidden] { display: none; }
 .toast.err { border-color: var(--red-dim); color: var(--red); }
 
+/* ── v0.7.11-web23: ferramentas formatadas, diff e avisos ───────────── */
+
+details.block > summary .mini-btn.copy {
+  margin-left: auto;
+  padding: 1px 7px;
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+details.block > summary:hover .mini-btn.copy,
+details.block[open] > summary .mini-btn.copy,
+details.block > summary .mini-btn.copy:focus-visible { opacity: 1; }
+details.block > summary { display: flex; align-items: center; gap: 8px; }
+details.block > summary .block-label { flex: 0 1 auto; min-width: 0; }
+
+.tool-content { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+
+.tool-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.tool-preview,
+.tool-output {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.tool-output { color: var(--ink); }
+
+.diff-legend {
+  display: flex;
+  gap: 10px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+}
+.diff-legend .dl-add { color: var(--green); }
+.diff-legend .dl-del { color: var(--red); }
+
+.diff {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  overflow-x: auto;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.diff-row {
+  display: flex;
+  gap: 8px;
+  padding: 1px 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre;
+}
+.diff-sign { flex: none; width: 9px; color: var(--ink-dim); user-select: none; }
+.diff-text { flex: 1 1 auto; min-width: 0; }
+.diff-row.add { background: var(--green-dim); color: var(--green); }
+.diff-row.add .diff-sign { color: var(--green); }
+.diff-row.del { background: var(--red-dim); color: var(--red); }
+.diff-row.del .diff-sign { color: var(--red); }
+.diff-row.ctx { color: var(--ink-dim); }
+
+/* caminho do anexo na faixa de anexos */
+.attachments .c-path {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-dim);
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── estado vazio com o logo oficial ────────────────────────────────── */
+
+.empty-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.empty-logo img {
+  width: min(320px, 78vw);
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.empty h2 {
+  color: var(--ink);
+  font-size: 17px;
+  margin: 0 0 10px;
+  font-family: "Montserrat", "Syne", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+.empty p { font-size: 13px; line-height: 1.6; margin: 0 0 10px; white-space: pre-line; }
+
+/* ── aviso de ambiente encerrado ────────────────────────────────────── */
+
+.engine-dead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 10px 14px 0;
+  padding: 12px 14px;
+  background: var(--red-dim);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+.engine-dead .dead-icon { font-size: 18px; line-height: 1.3; }
+.engine-dead .dead-text { flex: 1; min-width: 0; }
+.engine-dead strong { display: block; margin-bottom: 3px; font-size: 13.5px; }
+.engine-dead p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--ink-muted); }
+.engine-dead .dead-action {
+  flex: none;
+  padding: 7px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.engine-dead .dead-action:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── responsivo ─────────────────────────────────────────────────────── */
 
-.scrim {
-  position: fixed; inset: 0;
-  background: var(--ov-dim);
-  z-index: 20;
-}
-.scrim[hidden] { display: none; }
+/* ── v0.7.11-web23: responsivo de celular (a web vive num iframe) ──── */
+
+/* ── v0.7.11-web23b: responsivo de celular (a web vive num iframe) ──── */
 
 @media (max-width: 900px) {
+  /* a coluna das sessões vira gaveta e a conversa ocupa tudo */
   .app { grid-template-columns: minmax(0, 1fr); }
   .sidebar {
     position: fixed; inset: 0 auto 0 0;
-    width: var(--sidebar-w);
+    width: min(var(--sidebar-w), 84vw);
     z-index: 30;
     transform: translateX(-102%);
     transition: transform .18s ease;
@@ -864,7 +1002,6 @@ html[data-theme="pesquisai-light"] .btn.primary { color: #fff; }
   .topbar .status { display: none; }
   .logo-tag { display: none; }
   .msg { padding: 0 14px; }
-  .topbar { padding: 0 12px; gap: 10px; }
   .composer { padding: 9px 12px 11px; }
   .settings-body { grid-template-columns: minmax(0, 1fr); }
   .settings-tabs {
@@ -872,15 +1009,91 @@ html[data-theme="pesquisai-light"] .btn.primary { color: #fff; }
     border-right: none; border-bottom: 1px solid var(--line);
   }
   .settings-tabs .tab { width: auto; white-space: nowrap; }
-}
 
-@media (min-width: 901px) {
-  .side-close { display: none; }
+  /* o cabeçalho cresce: linha 1 = ☰ + título + ações; linha 2 = pills
+     (roláveis na largura toda). Com altura fixa, as pills invadiam a
+     conversa — era o "truncamento" do responsivo. */
+  .topbar {
+    height: auto;
+    min-height: var(--topbar-h);
+    flex-wrap: wrap;
+    row-gap: 5px;
+    padding: 6px 12px 7px;
+    align-items: center;
+    gap: 8px;
+  }
+  .topbar .menu-btn { order: 0; }
+  /* `display: contents` promove o título e as pills a itens do cabeçalho:
+     o título fica na 1ª linha e as pills ocupam a 2ª, com a largura toda. */
+  .top-title { display: contents; }
+  .top-title h1 { order: 1; flex: 1 1 auto; min-width: 0; font-size: 13px; }
+  .top-actions { order: 2; flex: none; gap: 2px; }
+  .top-actions .icon-btn { flex: none; width: 30px; height: 30px; }
+  .top-sub {
+    order: 3;
+    flex: 1 0 100%;
+    width: 100%;
+    margin-top: 0;
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 22px), transparent 100%);
+  }
+  .top-sub .pill { max-width: 70vw; }
+
+  /* nada pode ser cortado no celular */
+  .thread { padding-bottom: 8px; }
+  .msg { min-width: 0; }
+  .msg-user .bubble { max-width: 88vw; }
+  .answer, .bubble, .block-body { min-width: 0; overflow-wrap: anywhere; }
+  details.block .block-body { padding: 0 10px 10px; }
+
+  .palette { left: 8px; right: 8px; max-width: none; }
+  .palette-list { max-height: 42vh; }
+  .palette-item { padding: 8px 10px; }
+  .palette-item .p-desc {
+    font-size: 10.5px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modal { padding: 12px; }
+  .modal-card { max-height: 88vh; }
+  .settings-card { width: 100%; }
+
+  .engine-dead { flex-direction: column; margin: 8px 10px 0; }
+  .engine-dead .dead-action { align-self: stretch; }
+
+  .empty { margin: 3vh auto 0; padding: 0 16px; }
+  .empty-logo img { width: min(260px, 72vw); }
+  .empty h2 { font-size: 15px; }
+  .empty p { font-size: 12px; }
+
+  .tool-summary .ts-names { max-width: 46vw; }
+  .attachments .c-path { max-width: 58vw; }
+
+  /* placeholder curto: em 360–390 px o texto longo é cortado */
+  .composer-inner { gap: 6px; }
+  #input { font-size: 16px; }
 }
 
 @media (max-width: 560px) {
-  .top-sub .pill { max-width: 58vw; }
+  .top-sub .pill { max-width: 62vw; }
   .top-sub #usage-pill { display: none; }
+  .top-actions .icon-btn { width: 28px; height: 28px; font-size: 13px; }
+  .composer-inner { gap: 5px; }
+  #input { font-size: 16px; }
+  .tool-preview, .tool-output { font-size: 11px; padding: 7px 8px; }
+  .diff-row { font-size: 11px; }
+  .empty-hint { font-size: 11px; }
+  .p-desc { display: none; }
+}
+
+@media (max-width: 400px) {
+  .top-title h1 { font-size: 12px; }
+  .top-sub .pill { max-width: 54vw; font-size: 10.5px; }
+  .msg { padding: 0 10px; }
+  .topbar { padding: 5px 9px 6px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

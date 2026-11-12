@@ -187,7 +187,24 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
     if resource == "focus" and method == "POST":
         return 200, {"focus": set_focus(str(body.get("sid") or ""), "web")}
     if resource == "commands" and method == "GET":
-        return 200, {"commands": webapi.commands(), "skills": webapi.skills()}
+        lang = str(query.get("lang", [""])[0] or "")
+        return 200, {
+            "commands": webapi.commands(lang or None),
+            "skills": webapi.skills(),
+        }
+    if resource == "locale" and method == "GET":
+        lang = str(query.get("lang", [""])[0] or "")
+        return 200, webapi.locale_info(lang or None)
+    if resource == "upload" and method == "POST":
+        # v0.7.11-web23: anexo do navegador -> gravado em /tmp, com o
+        # caminho absoluto devolvido (o agente precisa abrir o arquivo).
+        result = webapi.save_upload(
+            sid=str(body.get("sid") or ""),
+            name=str(body.get("name") or ""),
+            mime=str(body.get("mime") or ""),
+            data_b64=str(body.get("data") or ""),
+        )
+        return (200 if result.get("ok") else 400), result
     if resource == "files" and method == "GET":
         directory = str(query.get("directory", [""])[0] or "")
         path = str(query.get("path", [""])[0] or "")
@@ -233,10 +250,15 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
                 files=files if isinstance(files, list) else None,
                 agents=body.get("agents") if isinstance(body.get("agents"), list) else None,
                 skills=body.get("skills") if isinstance(body.get("skills"), list) else None,
+                uploads=body.get("uploads") if isinstance(body.get("uploads"), list) else None,
             )
             return (200 if result.get("ok") else 502), result
         if action == "context" and method == "GET":
             return 200, webapi.session_context(sid)
+        if action == "usage" and method == "GET":
+            return 200, webapi.context_usage(sid)
+        if action == "diff" and method == "GET":
+            return 200, webapi.session_diff(sid)
         if action == "fork" and method == "POST":
             result = webapi.fork_session(sid)
             return (200 if result.get("ok") else 502), result
@@ -361,11 +383,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self._json(404, {"error": "rota desconhecida"})
             return
-        # estáticos do cliente
-        if "/" not in path.strip("/"):
-            self._static(path.strip("/"))
-            return
-        self._json(404, {"error": "não encontrado"})
+        # estaticos do cliente (com subpastas, ex.: assets/logo.svg — o
+        # guarda de travessia fica em _static)
+        self._static(path.strip("/"))
+        return
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)

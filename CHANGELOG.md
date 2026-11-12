@@ -1,5 +1,40 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web23] — 2026-11-12 — a web no celular, em 5 idiomas, com diff em verde/vermelho e anexos que o agente encontra
+
+### Pedidos e entregas
+
+| Pedido | Como ficou |
+|---|---|
+| **Expandir raciocínio e ferramentas só afetava conversas anteriores** | Os interruptores continuam valendo para o que vem a seguir; o **botão ⇕ do cabeçalho** (e os botões dos Ajustes) abrem/fecham **tudo** que já está renderizado — inclusive o histórico recarregado. Novo atalho `Ctrl+Shift+A`. |
+| **`/` deve listar todos os comandos do OpenCode** | O menu passou de **12** para **49** comandos: os 12 do agente (motor) **+ 37 nativos da barra da TUI**, traduzidos pelo plugin `ufvai.pt` e agrupados por categoria (Sessão, Agente, Sistema, Integração, VCS, Prompt). Os que só existem no terminal recebem o selo **TUI** e, ao serem escolhidos, o wrapper troca para a moldura do terminal. Os que a web sabe fazer (nova sessão, renomear, duplicar, compactar, segundo plano, modelos, variantes, agente, habilidades, ajustes, tema) são executados direto. |
+| **Trocar o idioma no wrapper troca o da web** | O dicionário da web tem **164 chaves × 5 idiomas** (pt-BR, en, es, fr, zh) em `pesquisai/webui/i18n.json`, gerado por `scripts/gen_webui_i18n.py`. O wrapper manda `postMessage {type:'ufvai-lang'}` e a web troca os textos **sem recarregar**; o cookie `pesquisai_lang` (mesmo host) e o arquivo do plugin (`ufvai-language.json`, via `/api/ufvai/locale`) são as fontes de apoio. |
+| **Formatação das ferramentas + arquivo alterado em verde/vermelho** | O gateway tira uma **foto do arquivo antes** da chamada (`session.tool.called`) e compara quando ela termina: a web mostra o diff linha a linha — **adição em verde**, **supressão em vermelho**, com a legenda `+3 adições · −1 supressões`. Cada bloco mostra o caminho do arquivo, a prévia e a saída da ferramenta. |
+| **Copiar o raciocínio e as ferramentas** | Cada bloco de raciocínio e de ferramenta ganhou o botão **copiar** no cabeçalho (além do "Copiar resposta"). |
+| **Tirar o botão claro/escuro da web** | Removido — o tema é controlado pelo cabeçalho do wrapper, que o propaga por `postMessage` (a web continua aceitando e devolvendo o tema). |
+| **Percentual da janela de contexto** | O chip de uso passou a mostrar `tokens · custo · % do contexto`. O cálculo usa a última mensagem com tokens (inclusive de compactação) × o limite do modelo — o mesmo critério da SPA. |
+| **Subir arquivo: o agente não encontrava** | O anexo agora é **gravado em disco** (`/tmp/ufvai-uploads/<sessão>/`) pelo gateway, e o **caminho absoluto é injetado no prompt** (`[ARQUIVOS ANEXADOS PELO USUÁRIO …]`). Envio múltiplo, até 25 MB por arquivo. O arquivo continua indo inline (o modelo enxerga) **e** em disco (o agente abre). |
+| **Responsivo truncado** | O cabeçalho tinha **altura fixa** (50 px) com duas linhas de conteúdo: as pills invadiam a conversa. Agora o topo cresce (linha 1: ☰ + título + ações; linha 2: pills roláveis na largura toda), o placeholder é curto no celular, e a página não tem rolagem horizontal (390/390 e 360/360). |
+| **Textos do estado vazio** | Novo cabeçalho com o **logo oficial** (`assets/logo.svg`), a assinatura *“UFVAI - A inteligência que acelera a ciência.”* e o texto *“Um agente de pesquisa científica que consulta dados oficiais e literatura validada, cita cada fonte e declara honestamente quando não há evidência suficiente. Rigor, elegância e precisão — do projeto à publicação.”* |
+| **Colab morto: “reconectando…” para sempre** | Se a conexão ficar **10 minutos** sem resposta, aparece um aviso explicando que a instância do Colab foi encerrada, que **nada do Google Drive foi perdido** e que é preciso voltar ao Colab e reexecutar. |
+| **Atalhos do wrapper** | O painel de atalhos ganhou o bloco **“Interface web”** (Enter, Shift+Enter, `/`, `@`, Ctrl+Shift+A, Ctrl+\, Ctrl+U, Ctrl+K, Ctrl+L, Esc) — nos 5 idiomas. |
+
+### Arquivos
+
+- **novos** — `pesquisai/web23_native.py` (catálogo dos comandos nativos: título e
+  grupo em inglês extraídos do `assets/i18n/pt-BR.json` do próprio OpenCode),
+  `pesquisai/webui/i18n.json` (dicionário da web), `scripts/gen_webui_i18n.py`.
+- **rotas novas** — `GET /api/ufvai/locale`, `POST /api/ufvai/upload`,
+  `GET /api/ufvai/sessions/{id}/usage`, `GET /api/ufvai/sessions/{id}/diff`.
+- **teste** — `scripts/test_acceptance.py` reescrito: **22/22** verificações
+  verdes (uma por item pedido), 0 erros de console.
+
+### Other
+
+- O `webui_server` passou a servir subpastas (`assets/logo.svg`) e a patch
+  do gateway descobre o nome da ferramenta no evento certo
+  (`session.tool.input.started` — o `tool.called` do motor não o repete).
+
 ## [0.7.11-web22] — 2026-11-11 — “Trabalhando…” não fica mais na tela depois do turno
 
 ### Causa raiz

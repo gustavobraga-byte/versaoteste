@@ -17,16 +17,16 @@
   <!-- ── barra lateral ─────────────────────────────────────────────── -->
   <aside class="sidebar" id="sidebar">
     <div class="side-head">
-      <span class="side-label">sessões</span>
-      <button class="icon-btn side-close" id="side-close" title="Fechar menu" aria-label="Fechar menu">✕</button>
+      <span class="side-label" data-i18n="sidebar.sessions">sessões</span>
+      <button class="icon-btn side-close" id="side-close" title="Fechar menu" aria-label="Fechar menu" data-i18n-title="sidebar.close">✕</button>
     </div>
 
     <button class="new-session" id="new-session">
-      <span class="plus">＋</span> Nova sessão
+      <span class="plus">＋</span> <span data-i18n="sidebar.newSession">Nova sessão</span>
     </button>
 
     <div class="search-wrap">
-      <input id="session-search" type="search" placeholder="Buscar sessão…" autocomplete="off">
+      <input id="session-search" type="search" placeholder="Buscar sessão…" autocomplete="off" data-i18n-placeholder="sidebar.search">
     </div>
 
     <nav class="sessions" id="sessions" aria-label="Sessões"></nav>
@@ -46,45 +46,54 @@
       <!-- v0.7.11-web21: botão único — oculta/mostra as sessões (colapsa no
            desktop, gaveta no responsivo). O cabeçalho do wrapper já mostra
            UFVAI, versão e "agente ativo": aqui não se repete. -->
-      <button class="icon-btn menu-btn" id="menu-btn" title="Ocultar/mostrar as sessões" aria-label="Ocultar ou mostrar a lista de sessões">☰</button>
+      <button class="icon-btn menu-btn" id="menu-btn" title="Ocultar/mostrar as sessões" aria-label="Ocultar ou mostrar a lista de sessões" data-i18n-title="top.sessions">☰</button>
 
       <div class="top-title">
         <h1 id="session-title" title="Duplo clique renomeia a sessão">UFVAI</h1>
         <div class="top-sub">
-          <button class="pill model-pill" id="model-pill" title="Trocar modelo">
+          <button class="pill model-pill" id="model-pill" title="Trocar modelo" data-i18n-title="top.model">
             <span id="model-label">modelo…</span>
           </button>
-          <button class="pill agent-pill" id="agent-pill" title="Agente (somente UFVAI)">
+          <button class="pill agent-pill" id="agent-pill" title="Agente (somente UFVAI)" data-i18n-title="top.agent">
             <span id="agent-label">UFVAI</span>
           </button>
-          <button class="pill variant-pill" id="variant-chip" title="Variante do modelo" hidden></button>
-          <span class="pill soft" id="usage-pill" hidden></span>
+          <button class="pill variant-pill" id="variant-chip" title="Variante do modelo" data-i18n-title="top.variant" hidden></button>
+          <span class="pill soft" id="usage-pill" title="Uso da sessão" data-i18n-title="top.usage" hidden></span>
         </div>
       </div>
 
       <div class="top-actions">
-        <button class="icon-btn" id="session-menu-btn" title="Ações da sessão" aria-label="Ações da sessão">⋯</button>
-        <button class="icon-btn" id="settings-btn" title="Ajustes" aria-label="Ajustes">⚙</button>
-        <button class="icon-btn" id="refresh-btn" title="Atualizar" aria-label="Atualizar">↻</button>
-        <button class="icon-btn" id="theme-btn" title="Alternar tema (claro/escuro)" aria-label="Alternar tema">◐</button>
+        <!-- v0.7.11-web23: "expandir tudo" — os interruptores de raciocínio e
+             ferramentas valem para o que vem a seguir; este botão age sobre a
+             conversa inteira, já renderizada. -->
+        <button class="icon-btn" id="expand-all-btn" title="Expandir/recolher tudo" aria-label="Expandir ou recolher raciocínio e ferramentas" data-i18n-title="tool.expandAll">⇕</button>
+        <button class="icon-btn" id="session-menu-btn" title="Ações da sessão" aria-label="Ações da sessão" data-i18n-title="top.actions">⋯</button>
+        <button class="icon-btn" id="settings-btn" title="Ajustes" aria-label="Ajustes" data-i18n-title="top.settings">⚙</button>
+        <button class="icon-btn" id="refresh-btn" title="Atualizar" aria-label="Atualizar" data-i18n-title="top.refresh">↻</button>
+        <!-- v0.7.11-web23: o botão claro/escuro foi REMOVIDO — ele vive no
+             cabeçalho do wrapper, que propaga o tema por postMessage. -->
       </div>
     </header>
+
+    <!-- v0.7.11-web23: aviso de ambiente encerrado (Colab morto) -->
+    <div class="engine-dead" id="engine-dead" hidden>
+      <div class="dead-icon">⚠️</div>
+      <div class="dead-text">
+        <strong data-i18n="warn.dead">O ambiente do Colab foi encerrado</strong>
+        <p data-i18n="warn.deadBody"></p>
+      </div>
+      <button class="dead-action" id="dead-action" data-i18n="warn.deadAction">Voltar ao Colab e reexecutar</button>
+    </div>
 
     <div class="thread" id="thread">
       <div id="messages"></div>
       <div class="empty" id="empty-state">
-        <div class="empty-mark">🔎</div>
-        <h2>UFVAI · agente de pesquisa científica</h2>
-        <p>
-          Escreva sua pergunta. As fontes são consultadas em bases reais e cada
-          afirmação quantitativa vem marcada como
-          <code>[DADO CONFIRMADO]</code>, <code>[ESTIMATIVA FUNDAMENTADA]</code>
-          ou <code>[SEM DADOS SUFICIENTES]</code>.
-        </p>
-        <p class="empty-hint">
-          <code>/</code> comandos · <code>@</code> habilidades e arquivos ·
-          <code>Ctrl+B</code> segundo plano · <code>Enter</code> envia
-        </p>
+        <div class="empty-logo">
+          <img src="assets/logo.svg" alt="UFVAI" width="320" height="133">
+        </div>
+        <h2 data-i18n="app.tagline">UFVAI - A inteligência que acelera a ciência.</h2>
+        <p data-i18n="app.description"></p>
+        <p class="empty-hint" data-i18n="empty.hint"></p>
       </div>
     </div>
 
@@ -94,20 +103,17 @@
       <div class="palette" id="palette" hidden>
         <div class="palette-head" id="palette-head"></div>
         <div class="palette-list" id="palette-list"></div>
-        <div class="palette-foot">
-          <kbd>↑</kbd><kbd>↓</kbd> mover · <kbd>Enter</kbd> escolher ·
-          <kbd>Esc</kbd> fechar
-        </div>
+        <div class="palette-foot" data-i18n="palette.hint"></div>
       </div>
 
       <div class="attachments" id="attachments" hidden></div>
 
       <div class="composer-inner">
-        <textarea id="input" rows="1" placeholder="Pergunte ao UFVAI… (/ para comandos, @ para habilidades e arquivos)" autocomplete="off"></textarea>
-        <button class="icon-btn attach-btn" id="attach-btn" title="Anexar arquivos" aria-label="Anexar arquivos">📎</button>
+        <textarea id="input" rows="1" placeholder="Pergunte ao UFVAI… (/ para comandos, @ para habilidades e arquivos)" autocomplete="off" data-i18n-placeholder="composer.placeholder"></textarea>
+        <button class="icon-btn attach-btn" id="attach-btn" title="Anexar arquivos" aria-label="Anexar arquivos" data-i18n-title="composer.attach">📎</button>
         <input id="file-input" type="file" multiple hidden>
-        <button class="send" id="send-btn" title="Enviar (Enter)" aria-label="Enviar">➤</button>
-        <button class="stop" id="stop-btn" title="Interromper (Esc)" aria-label="Interromper" hidden>■</button>
+        <button class="send" id="send-btn" title="Enviar (Enter)" aria-label="Enviar" data-i18n-title="composer.send">➤</button>
+        <button class="stop" id="stop-btn" title="Interromper (Esc)" aria-label="Interromper" data-i18n-title="composer.stop" hidden>■</button>
       </div>
       <div class="status-line" id="status" hidden><span class="spinner"></span><span id="status-text">Trabalhando…</span></div>
     </div>
@@ -120,10 +126,10 @@
 <div class="modal" id="model-modal" hidden>
   <div class="modal-card">
     <div class="modal-head">
-      <h2>Modelo</h2>
-      <button class="icon-btn" id="model-close" aria-label="Fechar">✕</button>
+      <h2 data-i18n="modal.model">Modelo</h2>
+      <button class="icon-btn" id="model-close" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
     </div>
-    <input id="model-search" type="search" placeholder="Buscar modelo…" autocomplete="off">
+    <input id="model-search" type="search" placeholder="Buscar modelo…" autocomplete="off" data-i18n-placeholder="modal.searchModel">
     <div class="model-list" id="model-list"></div>
     <div class="modal-foot" id="model-foot"></div>
   </div>
@@ -133,19 +139,19 @@
 <div class="modal" id="settings-modal" hidden>
   <div class="modal-card settings-card">
     <div class="modal-head">
-      <h2>Ajustes</h2>
-      <button class="icon-btn" id="settings-close" aria-label="Fechar">✕</button>
+      <h2 data-i18n="modal.settings">Ajustes</h2>
+      <button class="icon-btn" id="settings-close" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
     </div>
     <div class="settings-body">
       <nav class="settings-tabs" id="settings-tabs">
-        <button class="tab active" data-tab="geral">Geral</button>
-        <button class="tab" data-tab="modelo">Modelo</button>
-        <button class="tab" data-tab="agente">Agente</button>
-        <button class="tab" data-tab="comandos">Comandos</button>
-        <button class="tab" data-tab="habilidades">Habilidades</button>
-        <button class="tab" data-tab="sessao">Sessão</button>
-        <button class="tab" data-tab="atalhos">Atalhos</button>
-        <button class="tab" data-tab="sobre">Sobre</button>
+        <button class="tab active" data-tab="geral" data-i18n="settings.tab.general">Geral</button>
+        <button class="tab" data-tab="modelo" data-i18n="settings.tab.model">Modelo</button>
+        <button class="tab" data-tab="agente" data-i18n="settings.tab.agent">Agente</button>
+        <button class="tab" data-tab="comandos" data-i18n="settings.tab.commands">Comandos</button>
+        <button class="tab" data-tab="habilidades" data-i18n="settings.tab.skills">Habilidades</button>
+        <button class="tab" data-tab="sessao" data-i18n="settings.tab.session">Sessão</button>
+        <button class="tab" data-tab="atalhos" data-i18n="settings.tab.shortcuts">Atalhos</button>
+        <button class="tab" data-tab="sobre" data-i18n="settings.tab.about">Sobre</button>
       </nav>
       <div class="settings-pane" id="settings-pane"></div>
     </div>
@@ -156,8 +162,8 @@
 <div class="modal" id="session-modal" hidden>
   <div class="modal-card modal-sm">
     <div class="modal-head">
-      <h2 id="session-modal-title">Sessão</h2>
-      <button class="icon-btn" id="session-close" aria-label="Fechar">✕</button>
+      <h2 id="session-modal-title" data-i18n="modal.session">Sessão</h2>
+      <button class="icon-btn" id="session-close" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
     </div>
     <div class="model-list" id="session-actions"></div>
   </div>

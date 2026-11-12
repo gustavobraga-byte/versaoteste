@@ -1596,6 +1596,20 @@ def create_wrapper_html(
         <div class="shortcut-row"><span data-i18n="shortcuts.history_prev">Histórico anterior</span><span class="shortcut-key">↑</span></div>
         <div class="shortcut-row"><span data-i18n="shortcuts.history_next">Histórico seguinte</span><span class="shortcut-key">↓</span></div>
       </div>
+      <!-- v0.7.11-web23: atalhos da interface web (o cliente novo) -->
+      <div style="border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;">
+        <div class="shortcut-row" style="font-weight:700;"><span data-i18n="shortcuts.web">Interface web</span><span class="shortcut-key">web</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_send">Enviar mensagem</span><span class="shortcut-key">Enter</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_newline">Nova linha</span><span class="shortcut-key">Shift+Enter</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_commands">Abrir comandos</span><span class="shortcut-key">/</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_mention">Mencionar habilidade/arquivo</span><span class="shortcut-key">@</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_expand">Expandir/recolher tudo</span><span class="shortcut-key">Ctrl+Shift+A</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_sidebar">Ocultar/mostrar sessões</span><span class="shortcut-key">Ctrl+\\</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_attach">Anexar arquivo</span><span class="shortcut-key">Ctrl+U</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_search">Buscar sessões</span><span class="shortcut-key">Ctrl+K</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_focus">Focar o campo de mensagem</span><span class="shortcut-key">Ctrl+L</span></div>
+        <div class="shortcut-row"><span data-i18n="shortcuts.web_interrupt">Interromper / fechar menus</span><span class="shortcut-key">Esc</span></div>
+      </div>
       <button onclick="closeShortcuts()" class="modal-close" data-i18n="ui.close">Fechar</button>
     </div>
   </div>
@@ -2028,6 +2042,8 @@ def create_wrapper_html(
           renderRestore();
         }
       } catch (e) {}
+      // v0.7.11-web23: propaga o idioma para a interface web (moldura).
+      try { _postLangToFrame(); } catch (e) {}
       // v0.7.11: o status da VPN é dinâmico — o applyLang() acima reescreveu
       // o texto fixo; pede ao painel para redesenhar com o estado real.
       try { if (window.vpnRefresh) window.vpnRefresh(); } catch (e) {}
@@ -4465,6 +4481,29 @@ def create_wrapper_html(
         });
       });
     })();
+    // v0.7.11-web23: o idioma da interface principal é a fonte da verdade
+    // para a web — trocar o idioma aqui troca o da interface web na hora
+    // (sem recarregar a moldura).
+    function _postLangToFrame() {
+      var _map = { pt_BR: "pt-BR", en_US: "en", es_ES: "es", fr_FR: "fr", zh_CN: "zh" };
+      var _l = _map[_currentLang] || _currentLang || "pt-BR";
+      ["terminal-frame", "web-frame"].forEach(function (id) {
+        const fr = document.getElementById(id);
+        if (!fr || !fr.contentWindow) return;
+        try {
+          fr.contentWindow.postMessage({ type: "ufvai-lang", lang: _l }, "*");
+        } catch (e) {}
+      });
+    }
+    (function _bindLangSync() {
+      ["terminal-frame", "web-frame"].forEach(function (id) {
+        const fr = document.getElementById(id);
+        if (!fr) return;
+        fr.addEventListener("load", function () {
+          setTimeout(_postLangToFrame, 80);
+        });
+      });
+    })();
     function _frameUrl(mode) {
       if (mode === "ttyd" && TTYD_URL) return TTYD_URL;
       const sep = WEB_URL.indexOf("?") < 0 ? "?" : "&";
@@ -4494,6 +4533,20 @@ def create_wrapper_html(
         }
       });
     }
+    // v0.7.11-web23: a web pede a troca para o terminal (comandos que só
+    // existem na TUI, como /undo, /themes, /diff).
+    window.addEventListener("message", function (e) {
+      var d = e && e.data;
+      if (!d || d.type !== "ufvai-show-terminal") return;
+      try { applyConsole("ttyd"); } catch (err) {}
+      var cmd = String(d.command || "");
+      if (!cmd) return;
+      // escreve o comando no terminal (ttyd) — o TUI completa o resto
+      try {
+        var fr = document.getElementById("terminal-frame");
+        if (fr && fr.contentWindow) fr.contentWindow.postMessage({ type: "ufvai-type", text: cmd }, "*");
+      } catch (err) {}
+    });
     // v0.7.11-web18b: confirma que a web respondeu. Se a URL da web não
     // existir (porta trocada, proxy antigo), a moldura cai no proxy 8002
     // em vez de ficar em branco.
@@ -6915,6 +6968,17 @@ def create_wrapper_html(
             "shortcuts.interrupt": "Interromper comando", "shortcuts.paste": "Colar (Chrome)",
             "shortcuts.menu": "Menu e opções", "shortcuts.model": "Alterar modelo",
             "shortcuts.history_prev": "Histórico anterior", "shortcuts.history_next": "Histórico seguinte",
+            "shortcuts.web": "Interface web",
+            "shortcuts.web_send": "Enviar mensagem",
+            "shortcuts.web_newline": "Nova linha",
+            "shortcuts.web_commands": "Abrir comandos",
+            "shortcuts.web_mention": "Mencionar habilidade/arquivo",
+            "shortcuts.web_expand": "Expandir/recolher tudo",
+            "shortcuts.web_sidebar": "Ocultar/mostrar sessões",
+            "shortcuts.web_attach": "Anexar arquivo",
+            "shortcuts.web_search": "Buscar sessões",
+            "shortcuts.web_focus": "Focar o campo de mensagem",
+            "shortcuts.web_interrupt": "Interromper / fechar menus",
             "theme.toggle": "Alternar tema", "theme.light": "Tema claro (UI + terminal)",
             "theme.dark": "Tema escuro (UI + terminal)",
             "theme.web_applied": "Tema aplicado na versão web",
@@ -7124,6 +7188,17 @@ def create_wrapper_html(
             "shortcuts.interrupt": "Interrupt command", "shortcuts.paste": "Paste (Chrome)",
             "shortcuts.menu": "Menu and options", "shortcuts.model": "Change model",
             "shortcuts.history_prev": "Previous history", "shortcuts.history_next": "Next history",
+            "shortcuts.web": "Web interface",
+            "shortcuts.web_send": "Send message",
+            "shortcuts.web_newline": "New line",
+            "shortcuts.web_commands": "Open commands",
+            "shortcuts.web_mention": "Mention skill/file",
+            "shortcuts.web_expand": "Expand/collapse all",
+            "shortcuts.web_sidebar": "Hide/show sessions",
+            "shortcuts.web_attach": "Attach file",
+            "shortcuts.web_search": "Search sessions",
+            "shortcuts.web_focus": "Focus the message field",
+            "shortcuts.web_interrupt": "Interrupt / close menus",
             "theme.toggle": "Toggle theme", "theme.light": "Light theme (UI + terminal)",
             "theme.dark": "Dark theme (UI + terminal)",
             "theme.web_applied": "Theme applied to the web version",
@@ -7333,6 +7408,17 @@ def create_wrapper_html(
             "shortcuts.interrupt": "Interrumpir comando", "shortcuts.paste": "Pegar (Chrome)",
             "shortcuts.menu": "Menú y opciones", "shortcuts.model": "Cambiar modelo",
             "shortcuts.history_prev": "Historial anterior", "shortcuts.history_next": "Historial siguiente",
+            "shortcuts.web": "Interfaz web",
+            "shortcuts.web_send": "Enviar mensaje",
+            "shortcuts.web_newline": "Nueva línea",
+            "shortcuts.web_commands": "Abrir comandos",
+            "shortcuts.web_mention": "Mencionar habilidad/archivo",
+            "shortcuts.web_expand": "Expandir/plegar todo",
+            "shortcuts.web_sidebar": "Ocultar/mostrar sesiones",
+            "shortcuts.web_attach": "Adjuntar archivo",
+            "shortcuts.web_search": "Buscar sesiones",
+            "shortcuts.web_focus": "Enfocar el campo de mensaje",
+            "shortcuts.web_interrupt": "Interrumpir / cerrar menús",
             "theme.toggle": "Alternar tema", "theme.light": "Tema claro (UI + terminal)",
             "theme.dark": "Tema oscuro (UI + terminal)",
             "theme.web_applied": "Tema aplicado a la versión web",
@@ -7542,6 +7628,17 @@ def create_wrapper_html(
             "shortcuts.interrupt": "Interrompre la commande", "shortcuts.paste": "Coller (Chrome)",
             "shortcuts.menu": "Menu et options", "shortcuts.model": "Changer de modèle",
             "shortcuts.history_prev": "Historique précédent", "shortcuts.history_next": "Historique suivant",
+            "shortcuts.web": "Interface web",
+            "shortcuts.web_send": "Envoyer le message",
+            "shortcuts.web_newline": "Nouvelle ligne",
+            "shortcuts.web_commands": "Ouvrir les commandes",
+            "shortcuts.web_mention": "Mentionner compétence/fichier",
+            "shortcuts.web_expand": "Tout déplier/replier",
+            "shortcuts.web_sidebar": "Masquer/afficher les sessions",
+            "shortcuts.web_attach": "Joindre un fichier",
+            "shortcuts.web_search": "Rechercher les sessions",
+            "shortcuts.web_focus": "Placer le curseur dans le message",
+            "shortcuts.web_interrupt": "Interrompre / fermer les menus",
             "theme.toggle": "Basculer le thème", "theme.light": "Thème clair (UI + terminal)",
             "theme.dark": "Thème sombre (UI + terminal)",
             "theme.web_applied": "Thème appliqué à la version web",
@@ -7751,6 +7848,17 @@ def create_wrapper_html(
             "shortcuts.interrupt": "中断命令", "shortcuts.paste": "粘贴（Chrome）",
             "shortcuts.menu": "菜单与选项", "shortcuts.model": "更改模型",
             "shortcuts.history_prev": "上一条历史", "shortcuts.history_next": "下一条历史",
+            "shortcuts.web": "网页界面",
+            "shortcuts.web_send": "发送消息",
+            "shortcuts.web_newline": "换行",
+            "shortcuts.web_commands": "打开命令",
+            "shortcuts.web_mention": "提及技能/文件",
+            "shortcuts.web_expand": "全部展开/收起",
+            "shortcuts.web_sidebar": "隐藏/显示会话",
+            "shortcuts.web_attach": "附加文件",
+            "shortcuts.web_search": "搜索会话",
+            "shortcuts.web_focus": "聚焦消息框",
+            "shortcuts.web_interrupt": "中断 / 关闭菜单",
             "theme.toggle": "切换主题", "theme.light": "浅色主题（界面+终端）",
             "theme.dark": "深色主题（界面+终端）",
             "theme.web_applied": "主题已应用到网页版",

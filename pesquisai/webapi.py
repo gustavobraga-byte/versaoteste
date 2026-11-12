@@ -32,7 +32,10 @@ from __future__ import annotations
 
 import base64
 import json
+import mimetypes
 import os
+import re
+import shutil
 import threading
 import time
 import urllib.error
@@ -58,6 +61,11 @@ __all__ = [
     "set_agent",
     "agents",
     "commands",
+    "native_commands",
+    "locale_info",
+    "save_upload",
+    "context_usage",
+    "session_diff",
     "normalize_event",
     "provider_available",
 ]
@@ -65,6 +73,23 @@ __all__ = [
 ENGINE_TIMEOUT = 25.0
 EVENT_TIMEOUT = 600.0
 CATALOG_TTL = 20.0
+
+# v0.7.11-web23: onde os anexos enviados pelo navegador são gravados. O
+# motor aceita data URI (base64), mas um anexo inline NÃO tem caminho em
+# disco — o agente não consegue abrir o arquivo. Por isso o gateway grava
+# cada anexo aqui e injeta o caminho absoluto no prompt.
+UPLOAD_ROOT = Path(os.environ.get("UFVAI_UPLOAD_DIR") or "/tmp/ufvai-uploads")
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+# Idiomas da interface web (mesmos do plugin de TUI ``ufvai.pt``).
+WEB_LOCALES = ("pt-BR", "en", "es", "fr", "zh")
+_LOCALE_ALIASES = {
+    "pt": "pt-BR", "pt_br": "pt-BR", "pt-br": "pt-BR", "br": "pt-BR",
+    "en": "en", "en_us": "en", "en-us": "en",
+    "es": "es", "es_es": "es", "es-es": "es",
+    "fr": "fr", "fr_fr": "fr", "fr-fr": "fr",
+    "zh": "zh", "zh_cn": "zh", "zh-cn": "zh",
+}
 
 # Provedores que funcionam sem chave do usuário (conta pública do OpenCode).
 _BUILTIN_PROVIDERS = ("opencode", "opencode-go")
@@ -551,20 +576,101 @@ def _ok(status: int) -> bool:
     return 200 <= int(status) < 300
 
 
+def _safe_name(name: str) -> str:
+    """Nome de arquivo seguro (sem caminho, sem ``..``, sem espaços estranhos)."""
+    base = os.path.basename(str(name or "").strip().replace("\\", "/"))
+    base = re.sub(r"[^A-Za-z0-9._\-]+", "_", base).strip("._") or "arquivo"
+    return base[:120]
+
+
+def save_upload(sid: str, name: str, mime: str = "", data_b64: str = "") -> dict:
+    """Grava um anexo enviado pelo navegador em disco e devolve o caminho.
+
+    O motor aceita anexos **inline** (data URI base64), mas o agente não
+    consegue abrir um anexo inline: ele não tem caminho, não tem nome de
+    arquivo no disco e não aparece em ``ls``. Aqui o arquivo é gravado em
+    ``/tmp/ufvai-uploads/<sessão>/`` e o caminho absoluto é devolvido — o
+    gateway o injeta no prompt (ver :func:`send_prompt`).
+    """
+    if not data_b64:
+        return {"ok": False, "error": "arquivo vazio"}
+    if "," in data_b64[:80] and data_b64.strip().startswith("data:"):
+        data_b64 = data_b64.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(data_b64, validate=False)
+    except Exception:
+        return {"ok": False, "error": "conteúdo inválido (base64)"}
+    if len(raw) > MAX_UPLOAD_BYTES:
+        return {"ok": False, "error": f"arquivo maior que {MAX_UPLOAD_BYTES // 1048576} MB"}
+    safe = _safe_name(name)
+    target_dir = UPLOAD_ROOT / re.sub(r"[^A-Za-z0-9_-]+", "", str(sid or "sessao"))[:64]
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return {"ok": False, "error": f"não foi possível criar a pasta de anexos: {exc}"}
+    target = target_dir / safe
+    counter = 1
+    while target.exists():
+        stem, dot, ext = safe.rpartition(".")
+        target = target_dir / (f"{stem or safe}-{counter}" + (dot + ext if dot else ""))
+        counter += 1
+    try:
+        target.write_bytes(raw)
+    except OSError as exc:
+        return {"ok": False, "error": f"não foi possível gravar o arquivo: {exc}"}
+    guessed = mimetypes.guess_type(safe)[0] or mime or "application/octet-stream"
+    return {
+        "ok": True,
+        "name": safe,
+        "path": str(target),
+        "size": len(raw),
+        "mime": guessed,
+    }
+
+
+def _upload_note(uploads: list) -> str:
+    """Bloco textual que injeta os caminhos dos anexos no prompt."""
+    lines = []
+    for item in uploads:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path") or "")
+        if not path:
+            continue
+        size = int(item.get("size") or 0)
+        size_txt = f" ({size} bytes)" if size else ""
+        lines.append(f"- {path}{size_txt}")
+    if not lines:
+        return ""
+    return (
+        "[ARQUIVOS ANEXADOS PELO USUÁRIO — já gravados no disco do agente]\n"
+        + "\n".join(lines)
+        + "\n\nAbra, leia ou processe cada arquivo pelo caminho absoluto acima.\n\n"
+    )
+
+
 def send_prompt(
     sid: str,
     text: str,
     files: list | None = None,
     agents: list | None = None,
     skills: list | None = None,
+    uploads: list | None = None,
 ) -> dict:
     """Envia um prompt para a sessão.
 
     ``files`` é a lista de anexos no formato do motor
     (``{uri, source, name}``); o motor aceita **data URI** (base64) — um
     caminho local é recusado com ``Invalid attachment URI``.
+
+    ``uploads`` são os anexos **já gravados em disco** pelo
+    :func:`save_upload`: os caminhos absolutos são injetados no texto para
+    que o agente saiba onde o arquivo está (v0.7.11-web23).
     """
     body: dict[str, Any] = {"text": text}
+    note = _upload_note(uploads or [])
+    if note:
+        body["text"] = note + text
     if files:
         body["files"] = files
     if agents:
@@ -662,26 +768,107 @@ def agents() -> list[dict]:
     return visible
 
 
-def commands() -> list[dict]:
-    """Comandos do agente (menu ``/``).
+def web_locale() -> str:
+    """Idioma da interface web (o mesmo do plugin de TUI ``ufvai.pt``).
+
+    Ordem: ``?lang=`` do pedido → arquivo gravado pelo plugin
+    (``~/.config/opencode/ufvai-language.json``) → ``UFVAI_LANG`` →
+    ``pt-BR`` (padrão do produto).
+    """
+    for env in ("UFVAI_LANG", "PESQUISAI_LANG", "PESQUISAI_LOCALE"):
+        raw = os.environ.get(env)
+        if raw:
+            key = raw.strip().lower().replace("-", "_")
+            if key in _LOCALE_ALIASES:
+                return _LOCALE_ALIASES[key]
+    try:
+        from .tui_pt import read_saved_locale  # type: ignore
+
+        saved = read_saved_locale()
+    except Exception:  # pragma: no cover — o módulo pode não estar no pacote
+        saved = None
+    if saved:
+        key = str(saved).strip().lower().replace("-", "_")
+        if key in _LOCALE_ALIASES:
+            return _LOCALE_ALIASES[key]
+    return "pt-BR"
+
+
+def locale_info(lang: str | None = None) -> dict:
+    """Idioma atual + os disponíveis (para o seletor da interface web)."""
+    current = lang or web_locale()
+    key = str(current).strip().lower().replace("-", "_")
+    current = _LOCALE_ALIASES.get(key, "pt-BR")
+    return {
+        "lang": current,
+        "available": list(WEB_LOCALES),
+        "source": "ufvai-language.json",
+    }
+
+
+def native_commands(lang: str | None = None) -> list[dict]:
+    """Comandos **nativos** da TUI do OpenCode, traduzidos (plugin ``ufvai.pt``).
+
+    O motor expõe só os comandos de *agente* (``/api/command``: ``pesquisar``,
+    ``revisar``, ``dados``…). Os ~37 comandos da barra da TUI (``/new``,
+    ``/undo``, ``/themes``, ``/models``…) vivem dentro do binário e não
+    aparecem na API — mas o plugin de TUI do UFVAI os traduz e os publica em
+    ``pesquisai/tui_pt.py`` (``PT_CATALOG``). Esta função devolve esse
+    catálogo já no idioma corrente, para o menu ``/`` da web listar **todos**
+    os comandos do OpenCode, e não só os do agente.
+
+    Em inglês (idioma nativo do motor) o slug e o título vêm do arquivo de
+    i18n do próprio OpenCode — ver ``pesquisai/web23_native.py``.
+    """
+    current = locale_info(lang)["lang"]
+    try:
+        from .tui_pt import GROUPS, PT_CATALOG  # type: ignore
+    except Exception:  # pragma: no cover — execução fora do pacote
+        try:
+            from tui_pt import GROUPS, PT_CATALOG  # type: ignore
+        except Exception:
+            return []
+    catalog = PT_CATALOG.get(current) or PT_CATALOG.get("pt-BR") or {}
+    groups = (GROUPS or {}).get(current) or (GROUPS or {}).get("pt-BR") or {}
+    try:
+        from .web23_native import native_catalog  # type: ignore
+
+        return native_catalog(current, catalog, groups)
+    except Exception:  # pragma: no cover
+        return []
+
+
+def commands(lang: str | None = None) -> list[dict]:
+    """Comandos do menu ``/``: do agente **e** os nativos da TUI.
 
     Os comandos do UFVAI (``pesquisar``, ``revisar``, ``dados``…) vêm do
     ``opencode.json``; o motor acrescenta os próprios (``init``, ``review``,
-    ``goal``). A interface os mostra agrupados.
+    ``goal``). Os nativos da barra da TUI vêm do catálogo traduzido do plugin
+    ``ufvai.pt`` (37 comandos). A interface os mostra agrupados.
     """
     data = engine_json("/api/command", timeout=12)
     rows = data.get("data") if isinstance(data, dict) else data
     rows = rows if isinstance(rows, list) else []
-    out = []
+    out: list[dict] = []
     for r in rows:
         if isinstance(r, dict) and r.get("name"):
             out.append(
                 {
                     "name": str(r.get("name")),
+                    "title": str(r.get("name")),
                     "description": str(r.get("description") or ""),
+                    "group": "UFVAI",
+                    "aliases": [],
                     "agent": str(r.get("agent") or ""),
+                    "source": "motor",
+                    "id": str(r.get("name")),
+                    "args": False,
                 }
             )
+    for cmd in native_commands(lang):
+        if any(c["name"] == cmd["name"] for c in out):
+            continue
+        out.append(cmd)
     return out
 
 
@@ -781,6 +968,89 @@ def session_context(sid: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def context_usage(sid: str) -> dict:
+    """Uso da janela de contexto: tokens consumidos × limite do modelo.
+
+    O motor não expõe isso pronto: o limite vem do catálogo (``limit.context``
+    do modelo) e o consumido vem da **última** mensagem com tokens — é o
+    mesmo critério da SPA. Atenção: o motor devolve tipos diferentes
+    (``assistant``, ``compaction``, ``idle``…), e o token mais recente nem
+    sempre está numa mensagem de assistente (a compactação também conta).
+    """
+    data = engine_json(f"/api/session/{sid}/message?order=desc&limit=6", timeout=20)
+    rows = data.get("data") if isinstance(data, dict) else data
+    rows = rows if isinstance(rows, list) else []
+    tokens: dict = {}
+    model_info: dict = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_tokens = row.get("tokens")
+        if not isinstance(row_tokens, dict) or not row_tokens:
+            continue
+        tokens = row_tokens
+        model_info = row.get("model") or {}
+        break
+    if not model_info:
+        # sem modelo na mensagem: usa o da sessão
+        try:
+            row = session(sid) or {}
+            model_info = row.get("model") or {}
+        except Exception:
+            model_info = {}
+    cache = tokens.get("cache") or {}
+    used = (
+        int(tokens.get("input") or 0)
+        + int(cache.get("read") or 0)
+        + int(cache.get("write") or 0)
+        + int(tokens.get("output") or 0)
+        + int(tokens.get("reasoning") or 0)
+    )
+    limit = 0
+    try:
+        cat = catalog()
+        for m in cat.get("models") or []:
+            if (
+                m.get("id") == model_info.get("id")
+                and m.get("providerID") == model_info.get("providerID")
+            ):
+                limit = int(m.get("context") or 0)
+                break
+    except Exception:
+        limit = 0
+    percent = round(used * 100.0 / limit, 1) if limit else 0.0
+    return {
+        "used": used,
+        "limit": limit,
+        "percent": percent,
+        "tokens": tokens,
+        "model": {
+            "id": str(model_info.get("id") or ""),
+            "providerID": str(model_info.get("providerID") or ""),
+        },
+    }
+
+
+def session_diff(sid: str) -> dict:
+    """Diff dos arquivos alterados na sessão (para marcar adição/supressão)."""
+    data = engine_json(f"/api/session/{sid}/diff", timeout=20)
+    rows = data.get("data") if isinstance(data, dict) else data
+    rows = rows if isinstance(rows, list) else []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        out.append(
+            {
+                "file": str(row.get("file") or row.get("path") or ""),
+                "additions": int(row.get("additions") or 0),
+                "deletions": int(row.get("deletions") or 0),
+                "diff": str(row.get("diff") or row.get("patch") or ""),
+            }
+        )
+    return {"files": out}
+
+
 def fork_session(sid: str) -> dict:
     """Cria uma cópia (fork) da sessão."""
     status, data = engine_request("POST", f"/api/session/{sid}/fork", {}, timeout=20)
@@ -817,6 +1087,79 @@ def rename_session(sid: str, title: str) -> dict:
 
 
 # ── eventos (motor → cliente) ────────────────────────────────────────────────
+
+# Ferramentas que alteram arquivos em disco. O motor não expõe o diff, mas o
+# evento ``session.tool.called`` chega ANTES da execução: o gateway tira uma
+# "foto" do arquivo nesse instante e, quando a chamada termina, compara com o
+# conteúdo atual — daí o cliente poder marcar adição (verde) e supressão
+# (vermelho) linha a linha.
+_FILE_TOOLS = {"write", "edit", "patch", "multi_edit", "apply_patch"}
+_SHADOW: dict[str, dict[str, Any]] = {}
+_SHADOW_MAX = 24
+_TOOL_NAMES: dict[str, str] = {}
+
+
+def _infer_tool(name: str, tool_input: Any) -> str:
+    """Nome da ferramenta — o motor o manda no ``tool.input.started``.
+
+    Quando falta, deduz pela forma da entrada (o ``tool.called`` do motor
+    não repete o nome).
+    """
+    if str(name or "").strip():
+        return str(name)
+    if isinstance(tool_input, dict):
+        if "oldString" in tool_input or "newString" in tool_input:
+            return "edit"
+        if "content" in tool_input and ("path" in tool_input or "filePath" in tool_input):
+            return "write"
+        if "command" in tool_input:
+            return "shell"
+        if "pattern" in tool_input and "path" in tool_input:
+            return "grep"
+    return ""
+
+
+def _tool_path(name: str, tool_input: Any) -> str:
+    """Caminho do arquivo alterado pela ferramenta (se houver)."""
+    key = str(name or "").lower()
+    if key not in _FILE_TOOLS and key not in ("", "write", "edit"):
+        return ""
+    if not isinstance(tool_input, dict):
+        return ""
+    for field in ("filePath", "path", "file", "target"):
+        value = tool_input.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _read_text(path: str, limit: int = 400_000) -> str:
+    try:
+        target = Path(path)
+        if not target.is_file():
+            return ""
+        raw = target.read_bytes()[:limit]
+        return raw.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _line_diff(before: str, after: str) -> dict[str, Any]:
+    """Diff por linhas (LCS) — devolve as linhas adicionadas e removidas."""
+    import difflib
+
+    added: list[str] = []
+    removed: list[str] = []
+    matcher = difflib.SequenceMatcher(
+        a=before.splitlines(), b=after.splitlines(), autojunk=False
+    )
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("replace", "delete"):
+            removed.extend(before.splitlines()[i1:i2][:400])
+        if tag in ("replace", "insert"):
+            added.extend(after.splitlines()[j1:j2][:400])
+    return {"added": added[:400], "removed": removed[:400]}
+
 
 def normalize_event(event: dict) -> dict | None:
     """Traduz um evento do motor para o contrato do cliente.
@@ -874,14 +1217,33 @@ def normalize_event(event: dict) -> dict | None:
         }
     if kind == "session.reasoning.ended":
         return {"type": "reasoning.ended", "sid": sid, "messageID": message_id, "text": str(data.get("text") or "")}
+    if kind == "session.tool.input.started":
+        # o nome da ferramenta chega aqui (o `tool.called` não o repete)
+        call_id = str(data.get("id") or "")
+        if call_id:
+            _TOOL_NAMES[call_id] = str(data.get("name") or "")
+            if len(_TOOL_NAMES) > _SHADOW_MAX * 2:
+                for old in list(_TOOL_NAMES)[: len(_TOOL_NAMES) - _SHADOW_MAX * 2]:
+                    _TOOL_NAMES.pop(old, None)
+        return None
     if kind == "session.tool.called":
+        call_id = str(data.get("id") or "")
+        tool_input = data.get("input")
+        name = _infer_tool(_TOOL_NAMES.get(call_id, ""), tool_input)
+        # v0.7.11-web23: foto do arquivo ANTES da alteração
+        path = _tool_path(name, tool_input)
+        if path and call_id:
+            _SHADOW[call_id] = {"path": path, "before": _read_text(path)}
+            if len(_SHADOW) > _SHADOW_MAX:
+                for old in list(_SHADOW)[: len(_SHADOW) - _SHADOW_MAX]:
+                    _SHADOW.pop(old, None)
         return {
             "type": "tool.started",
             "sid": sid,
             "messageID": message_id,
-            "callID": str(data.get("id") or ""),
-            "name": str(data.get("name") or ""),
-            "input": data.get("input"),
+            "callID": call_id,
+            "name": name,
+            "input": tool_input,
         }
     if kind == "session.tool.progress":
         return {
@@ -896,16 +1258,29 @@ def normalize_event(event: dict) -> dict | None:
         for item in data.get("content") or []:
             if isinstance(item, dict) and item.get("text"):
                 chunks.append(str(item["text"]))
-        return {
+        call_id = str(data.get("id") or "")
+        name = _infer_tool(_TOOL_NAMES.pop(call_id, ""), None)
+        # v0.7.11-web23: diff do arquivo alterado (adição/supressão)
+        diff = None
+        shadow = _SHADOW.pop(call_id, None)
+        if shadow and shadow.get("path"):
+            after = _read_text(shadow["path"])
+            before = str(shadow.get("before") or "")
+            if after != before:
+                diff = {"file": shadow["path"], **_line_diff(before, after)}
+        payload = {
             "type": "tool.finished",
             "sid": sid,
             "messageID": message_id,
-            "callID": str(data.get("id") or ""),
-            "name": str(data.get("name") or ""),
+            "callID": call_id,
+            "name": name,
             "status": "error" if kind.endswith("error") else "completed",
             "output": "".join(chunks) or None,
             "metadata": data.get("metadata") or {},
         }
+        if diff:
+            payload["diff"] = diff
+        return payload
     if kind == "session.inbox.enqueued":
         item = data.get("item") or {}
         payload = item.get("payload") or {}

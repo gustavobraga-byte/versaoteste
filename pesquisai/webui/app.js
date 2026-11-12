@@ -56,6 +56,7 @@
   const state = {
     sessionId: '',
     sessions: [],
+    messages: [],
     active: {},
     agents: [],
     commands: [],
@@ -72,6 +73,11 @@
     pendingSkills: [],   // menções @skill ainda não enviadas
     palette: null,      // {kind:'command'|'mention', items, index, query}
     settingsTab: 'geral',
+    locale: 'pt-BR',
+    settingsOpen: false,
+    allExpanded: false,
+    usage: null,           // {used, limit, percent} — janela de contexto
+    uploads: [],           // anexos já gravados em disco pelo gateway
     prefs: {
       expandReasoning: false,
       expandTools: false,
@@ -91,6 +97,94 @@
 
   function savePrefs() {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (e) { /* ignora */ }
+  }
+
+  /* ── idioma (i18n) ─────────────────────────────────────────────────── */
+
+  // v0.7.11-web23: a web segue o idioma escolhido na interface principal.
+  // O dicionário vive em `i18n.json` (servido junto com o cliente) e o
+  // idioma chega por `postMessage {type:'ufvai-lang'}` do wrapper — trocar o
+  // idioma lá troca aqui, sem recarregar nada.
+  const I18N = { locales: {}, default: 'pt-BR' };
+
+  function localeFromTag(tag) {
+    const key = String(tag || '').trim().toLowerCase().replace('-', '_');
+    const map = {
+      pt: 'pt-BR', pt_br: 'pt-BR', br: 'pt-BR',
+      en: 'en', en_us: 'en',
+      es: 'es', es_es: 'es',
+      fr: 'fr', fr_fr: 'fr',
+      zh: 'zh', zh_cn: 'zh',
+    };
+    return map[key] || null;
+  }
+
+  /**
+   * Idioma escolhido na interface principal, lido do cookie.
+   *
+   * O cookie não depende da porta: quando a web roda no mesmo host do
+   * wrapper (implantação local), o cookie ``pesquisai_lang`` é visível aqui.
+   * No proxy do Colab os hosts são diferentes — aí quem manda é o
+   * ``postMessage`` ``ufvai-lang``.
+   */
+  function localeFromCookie() {
+    try {
+      const match = document.cookie.match(/(?:^| )pesquisai_lang=([^;]+)/);
+      return match ? localeFromTag(decodeURIComponent(match[1])) : null;
+    } catch (e) { return null; }
+  }
+
+  function t(key, fallback) {
+    const table = I18N.locales[state.locale] || I18N.locales[I18N.default] || {};
+    if (table[key]) return table[key];
+    if (fallback !== undefined) return fallback;
+    return key;
+  }
+
+  /** Aplica o idioma: textos, placeholders, títulos e o `lang` do documento. */
+  function applyLocale(lang) {
+    const tag = localeFromTag(lang);
+    if (!tag || !I18N.locales[tag]) return false;
+    state.locale = tag;
+    document.documentElement.setAttribute('lang', tag);
+    document.querySelectorAll('[data-i18n]').forEach((node) => {
+      const value = t(node.getAttribute('data-i18n'), '');
+      if (value) node.textContent = value;
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach((node) => {
+      const value = t(node.getAttribute('data-i18n-title'), '');
+      if (value) node.title = value;
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
+      const value = t(node.getAttribute('data-i18n-placeholder'), '');
+      if (value) node.placeholder = value;
+    });
+    applyPlaceholder();
+    try { localStorage.setItem('ufvai_web_lang', tag); } catch (e) { /* ignora */ }
+    renderSessions();
+    renderAttachments();
+    if (state.settingsOpen) renderSettings();
+    return true;
+  }
+
+  /** Em tela estreita o placeholder longo é cortado: usa a versão curta. */
+  function applyPlaceholder() {
+    const input = $('#input');
+    if (!input) return;
+    const narrow = window.matchMedia('(max-width: 560px)').matches;
+    input.placeholder = narrow
+      ? t('composer.placeholderShort')
+      : t('composer.placeholder');
+  }
+
+  async function loadI18n() {
+    try {
+      const res = await fetch(`${BASE}i18n.json`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return;
+      const data = await res.json();
+      I18N.locales = data.locales || {};
+      I18N.default = data.default || 'pt-BR';
+    } catch (e) { /* sem i18n: segue em português */ }
   }
 
   /* ── markdown (leve, seguro: escapa tudo antes) ───────────────────── */
@@ -215,6 +309,14 @@
   window.addEventListener('message', (event) => {
     const data = event.data || {};
     if (data.type === 'ufvai-theme') applyTheme(data.theme);
+    // v0.7.11-web23: a interface principal propaga o idioma escolhido —
+    // a web troca os textos na hora, sem recarregar.
+    if (data.type === 'ufvai-lang') {
+      if (applyLocale(data.lang)) {
+        try { localStorage.setItem('ufvai_web_lang', state.locale); } catch (e) { /* ignora */ }
+        toast(t('app.tagline'));
+      }
+    }
     // v0.7.11-web18: a interface principal confirma que a web respondeu; sem
     // este "pong" ela cai no proxy antigo (tela em branco).
     if (data.type === 'ufvai-ping') {
@@ -300,9 +402,26 @@
     const total = (tokens.input || 0) + (tokens.output || 0) + (tokens.reasoning || 0);
     if (total) parts.push(`${Math.round(total / 1000)}k tokens`);
     if (row.cost) parts.push(`$${Number(row.cost).toFixed(2)}`);
+    // v0.7.11-web23: percentual da janela de contexto
+    const usage = state.usage;
+    if (usage && usage.limit) {
+      const pct = Math.max(0, Math.min(100, Number(usage.percent) || 0));
+      parts.push(`${pct.toFixed(pct < 10 ? 1 : 0)}% ${t('top.context')}`);
+      pill.title = `${Math.round(usage.used / 1000)}k / ${Math.round(usage.limit / 1000)}k ${t('top.context')}`;
+    }
     if (!parts.length) { pill.hidden = true; return; }
     pill.hidden = false;
     pill.textContent = parts.join(' · ');
+  }
+
+  /** Atualiza o uso da janela de contexto da sessão aberta. */
+  async function refreshUsage() {
+    if (!state.sessionId) return;
+    try {
+      const data = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}/usage`);
+      state.usage = data || null;
+      renderUsage();
+    } catch (e) { /* motor fora do ar: mantém o último valor */ }
   }
 
   /* ── mensagens ────────────────────────────────────────────────────── */
@@ -316,16 +435,61 @@
 … (${value.length - limit} caracteres omitidos)`;
   }
 
-  /** Rótulo curto da ferramenta no estilo da SPA ("Write", "Shell", "Edit"). */
+  /** Rótulo curto da ferramenta (nomes próprios do motor). */
   function toolLabel(name) {
-    const raw = String(name || 'ferramenta');
-    const map = {
-      shell: 'Shell', bash: 'Shell', write: 'Write', edit: 'Edit', read: 'Read',
-      list: 'List', grep: 'Grep', glob: 'Glob', patch: 'Edit', todowrite: 'Todo',
-      webfetch: 'Web', websearch: 'Web', task: 'Task', skill: 'Skill',
-    };
+    const raw = String(name || '');
     const key = raw.toLowerCase().replace(/[^a-z]/g, '');
-    return map[key] || raw.charAt(0).toUpperCase() + raw.slice(1);
+    const map = {
+      shell: 'toolname.shell', bash: 'toolname.shell', write: 'toolname.write',
+      edit: 'toolname.edit', read: 'toolname.read', list: 'toolname.list',
+      grep: 'toolname.grep', glob: 'toolname.glob', patch: 'toolname.patch',
+      todowrite: 'toolname.todo', webfetch: 'toolname.web', websearch: 'toolname.web',
+      task: 'toolname.task', skill: 'toolname.skill',
+    };
+    const id = map[key];
+    if (id) return t(id);
+    return raw || t('toolname.other');
+  }
+
+  /** Diff por linhas: devolve {kind:'add'|'del'|'ctx', text}. */
+  function diffRows(oldText, newText) {
+    const a = String(oldText ?? '').split('\n');
+    const b = String(newText ?? '').split('\n');
+    let start = 0;
+    while (start < a.length && start < b.length && a[start] === b[start]) start += 1;
+    let endA = a.length;
+    let endB = b.length;
+    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+      endA -= 1; endB -= 1;
+    }
+    const rows = [];
+    a.slice(0, start).forEach((text) => rows.push({ kind: 'ctx', text }));
+    a.slice(start, endA).forEach((text) => rows.push({ kind: 'del', text }));
+    b.slice(start, endB).forEach((text) => rows.push({ kind: 'add', text }));
+    a.slice(endA).forEach((text) => rows.push({ kind: 'ctx', text }));
+    return rows;
+  }
+
+  /** Desenha o diff: adições em verde, supressões em vermelho. */
+  function renderDiff(container, rows) {
+    const box = el('div', 'diff');
+    rows.forEach((row) => {
+      const line = el('div', 'diff-row ' + row.kind);
+      line.appendChild(el('span', 'diff-sign', row.kind === 'add' ? '+' : (row.kind === 'del' ? '−' : ' ')));
+      line.appendChild(el('span', 'diff-text', row.text || ' '));
+      box.appendChild(line);
+    });
+    container.appendChild(box);
+    return box;
+  }
+
+  /** Bloco de diff a partir do payload do gateway ({added, removed}). */
+  function diffFromPayload(payload) {
+    if (!payload) return [];
+    const rows = [];
+    (payload.removed || []).forEach((text) => rows.push({ kind: 'del', text }));
+    (payload.added || []).forEach((text) => rows.push({ kind: 'add', text }));
+    return rows;
   }
 
   /** Entrada da ferramenta em formato legível (nada de JSON em uma linha). */
@@ -343,16 +507,55 @@
     }
     if (key.includes('write') || key.includes('edit') || key.includes('patch')) {
       const path = input.filePath || input.path || input.file || '';
-      const body = input.content || input.newString || input.new_string || '';
-      const head = path ? `arquivo: ${path}` : '';
-      const preview = body ? truncate(String(body), 1200) : '';
-      return [head, preview].filter(Boolean).join('\n');
+      const head = path ? `${t('tool.file')}: ${path}` : '';
+      return head;
     }
     try {
       return truncate(JSON.stringify(input, null, 2), TOOL_LIMITS.input);
     } catch (e) {
       return truncate(String(input), TOOL_LIMITS.input);
     }
+  }
+
+  /** Tela de entrada da ferramenta: cabeçalho + diff/preview + saída. */
+  function toolContent(name, input, output, diff) {
+    const wrap = el('div', 'tool-content');
+    const key = String(name || '').toLowerCase();
+    const path = (input && typeof input === 'object')
+      ? (input.filePath || input.path || input.file || '')
+      : '';
+
+    if (path) {
+      wrap.appendChild(el('div', 'tool-path', path));
+    }
+
+    // diff: do gateway (write/edit) ou calculado do próprio `edit`
+    let rows = diffFromPayload(diff);
+    if (!rows.length && input && typeof input === 'object'
+        && typeof input.oldString === 'string' && typeof input.newString === 'string') {
+      rows = diffRows(input.oldString, input.newString);
+    }
+    if (rows.length) {
+      const added = rows.filter((r) => r.kind === 'add').length;
+      const removed = rows.filter((r) => r.kind === 'del').length;
+      const legend = el('div', 'diff-legend');
+      legend.appendChild(el('span', 'dl-add', `+${added} ${t('tool.added')}`));
+      legend.appendChild(el('span', 'dl-del', `−${removed} ${t('tool.removed')}`));
+      wrap.appendChild(legend);
+      renderDiff(wrap, rows);
+    } else if (input && typeof input === 'object' && typeof input.content === 'string') {
+      // `write` sem foto anterior: mostra a prévia do conteúdo gravado
+      const preview = el('pre', 'tool-preview', truncate(input.content, 1200));
+      wrap.appendChild(preview);
+    } else {
+      const text = formatToolInput(name, input);
+      if (text) wrap.appendChild(el('pre', 'tool-preview', text));
+    }
+
+    if (output) {
+      wrap.appendChild(el('pre', 'tool-output', truncate(output, TOOL_LIMITS.output)));
+    }
+    return wrap;
   }
 
   /** Resumo compacto do uso de ferramentas (estilo "Used 39 · Write, Shell"). */
@@ -367,19 +570,40 @@
     const node = el('button', 'tool-summary');
     node.type = 'button';
     node.appendChild(el('span', 'ts-count', `${count}`));
-    node.appendChild(el('span', 'ts-label', count === 1 ? 'chamada' : 'chamadas'));
+    node.appendChild(el('span', 'ts-label', count === 1 ? t('tool.call') : t('tool.calls')));
     node.appendChild(el('span', 'ts-names', names.join(' · ')));
     return node;
+  }
+
+  /** Botão de copiar — usado na resposta, no raciocínio e nas ferramentas. */
+  function miniCopy(getText, label) {
+    const btn = el('button', 'mini-btn copy', label || t('tool.copy'));
+    btn.type = 'button';
+    btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const text = getText();
+      if (!text) { toast(t('warn.copyFailed'), 'err'); return; }
+      try {
+        await navigator.clipboard.writeText(text);
+        toast(t('tool.copied'));
+      } catch (e) {
+        toast(t('tool.copyFail'), 'err');
+      }
+    });
+    return btn;
   }
 
   function textBlock(label, body, cls) {
     const details = el('details', 'block' + (cls ? ' ' + cls : ''));
     const summary = el('summary');
-    summary.appendChild(el('span', null, label));
+    summary.appendChild(el('span', 'block-label', label));
     details.appendChild(summary);
     const bodyNode = el('div', 'block-body', body || '');
     details.appendChild(bodyNode);
     details.__body = bodyNode;
+    // v0.7.11-web23: copiar o raciocínio
+    summary.appendChild(miniCopy(() => bodyNode.textContent || ''));
     return details;
   }
 
@@ -387,15 +611,17 @@
     const details = el('details', 'block tool');
     const summary = el('summary');
     const head = el('span', 'tool-head');
-    head.appendChild(el('span', 'tool-name', name || 'ferramenta'));
-    const statusNode = el('span', 'status-run', status || 'executando');
+    head.appendChild(el('span', 'tool-name', toolLabel(name)));
+    const statusNode = el('span', 'status-run', status || t('tool.running'));
     head.appendChild(statusNode);
     summary.appendChild(head);
     details.appendChild(summary);
-    const body = el('div', 'block-body', '');
+    const body = el('div', 'block-body');
     details.appendChild(body);
     details.__body = body;
     details.__status = statusNode;
+    // v0.7.11-web23: copiar a ferramenta (entrada + saída)
+    summary.appendChild(miniCopy(() => body.textContent || ''));
     return details;
   }
 
@@ -412,19 +638,21 @@
 
   function copyButton(getText, label) {
     const actions = el('div', 'msg-actions');
-    const btn = el('button', 'mini-btn', label || 'Copiar');
-    btn.type = 'button';
-    btn.addEventListener('click', async () => {
-      const text = getText();
-      try {
-        await navigator.clipboard.writeText(text);
-        toast('copiado');
-      } catch (e) {
-        toast('não foi possível copiar', 'err');
-      }
-    });
-    actions.appendChild(btn);
+    actions.appendChild(miniCopy(getText, label || t('tool.copy')));
     return actions;
+  }
+
+  /** Abre/fecha TODOS os blocos (raciocínio e ferramentas) da conversa. */
+  function setAllExpanded(open) {
+    document.querySelectorAll('#messages details.block').forEach((block) => {
+      block.open = open;
+    });
+    const btn = $('#expand-all-btn');
+    if (btn) {
+      btn.classList.toggle('on', open);
+      btn.title = open ? t('tool.collapseAll') : t('tool.expandAll');
+    }
+    state.allExpanded = open;
   }
 
   function renderMessage(message) {
@@ -441,7 +669,7 @@
     wrap.appendChild(answer);
 
     if (message.reasoning) {
-      const block = textBlock('raciocínio', message.reasoning, 'reasoning');
+      const block = textBlock(t('tool.reasoning'), message.reasoning, 'reasoning');
       block.open = !!state.prefs.expandReasoning;
       wrap.appendChild(block);
     }
@@ -458,13 +686,12 @@
       }
       tools.forEach((tool) => {
         const block = toolBlock(tool.name, tool.status);
-        const body = [];
-        const input = formatToolInput(tool.name, tool.input);
-        if (input) body.push(input);
-        if (tool.output) body.push(truncate(tool.output, TOOL_LIMITS.output));
-        block.__body.textContent = body.join('\n\n');
-        if (tool.status === 'error') block.__status.textContent = 'erro';
-        if (tool.status === 'completed') block.__status.textContent = 'concluído';
+        block.__body.innerHTML = '';
+        block.__body.appendChild(
+          toolContent(tool.name, tool.input, tool.output, tool.diff),
+        );
+        if (tool.status === 'error') block.__status.textContent = t('tool.error');
+        if (tool.status === 'completed') block.__status.textContent = t('tool.done');
         block.open = !!state.prefs.expandTools;
         wrap.appendChild(block);
       });
@@ -472,7 +699,7 @@
     if (message.error) {
       wrap.appendChild(el('div', 'msg-error', message.error));
     }
-    wrap.appendChild(copyButton(() => message.text || '', 'Copiar resposta'));
+    wrap.appendChild(copyButton(() => message.text || '', t('session.copyResponse')));
     return wrap;
   }
 
@@ -500,7 +727,7 @@
       wrap.appendChild(who);
       const answer = el('div', 'answer');
       wrap.appendChild(answer);
-      const slot = { wrap, answer, text: '', reasoning: '', tools: {}, reasoningBlock: null };
+      const slot = { wrap, answer, text: '', reasoning: '', tools: {}, toolInputs: {}, reasoningBlock: null };
       state.stream[messageID] = slot;
       $('#messages').appendChild(wrap);
       $('#empty-state').hidden = true;
@@ -531,6 +758,7 @@
       case 'run.failed':
         setRunning(false);
         refreshSessions();
+        refreshUsage();
         break;
       case 'step.started': {
         const slot = streamSlot(ev.messageID);
@@ -560,7 +788,7 @@
         const slot = streamSlot(ev.messageID);
         slot.reasoning += ev.delta || '';
         if (!slot.reasoningBlock) {
-          slot.reasoningBlock = textBlock('raciocínio', '', 'reasoning');
+          slot.reasoningBlock = textBlock(t('tool.reasoning'), '', 'reasoning');
           slot.reasoningBlock.open = !!state.prefs.expandReasoning;
           slot.wrap.appendChild(slot.reasoningBlock);
         }
@@ -571,7 +799,7 @@
         const slot = streamSlot(ev.messageID);
         if (ev.text) slot.reasoning = ev.text;
         if (!slot.reasoningBlock) {
-          slot.reasoningBlock = textBlock('raciocínio', slot.reasoning, 'reasoning');
+          slot.reasoningBlock = textBlock(t('tool.reasoning'), slot.reasoning, 'reasoning');
           slot.wrap.appendChild(slot.reasoningBlock);
         }
         scheduleRender(slot);
@@ -579,10 +807,10 @@
       }
       case 'tool.started': {
         const slot = streamSlot(ev.messageID);
-        const block = toolBlock(ev.name, 'executando');
-        if (ev.input !== undefined && ev.input !== null) {
-          block.__body.textContent = formatToolInput(ev.name, ev.input);
-        }
+        const block = toolBlock(ev.name, t('tool.running'));
+        slot.toolInputs[ev.callID] = ev.input;
+        block.__body.innerHTML = '';
+        block.__body.appendChild(toolContent(ev.name, ev.input, null, null));
         slot.tools[ev.callID] = block;
         slot.wrap.appendChild(block);
         scrollToEnd(false);
@@ -592,12 +820,12 @@
         const slot = streamSlot(ev.messageID);
         const block = slot.tools[ev.callID];
         if (block) {
-          block.__status.textContent = ev.status === 'error' ? 'erro' : 'concluído';
+          block.__status.textContent = ev.status === 'error' ? t('tool.error') : t('tool.done');
           if (ev.status === 'error') block.__status.className = 'status-error';
-          if (ev.output) {
-            block.__body.textContent = (block.__body.textContent ? block.__body.textContent + '\n\n' : '')
-              + truncate(ev.output, TOOL_LIMITS.output);
-          }
+          // v0.7.11-web23: o diff do arquivo alterado chega no fim da chamada
+          const input = slot.toolInputs && slot.toolInputs[ev.callID];
+          block.__body.innerHTML = '';
+          block.__body.appendChild(toolContent(ev.name, input, ev.output, ev.diff));
         }
         scrollToEnd(false);
         break;
@@ -628,6 +856,35 @@
 
   /* ── eventos (SSE) ────────────────────────────────────────────────── */
 
+  // v0.7.11-web23: se a conexão ficar caída por mais de 10 minutos, o
+  // ambiente do Colab provavelmente foi encerrado (inatividade). O aviso
+  // explica o que houve e lembra que o Drive está intacto.
+  const DEAD_AFTER_MS = 10 * 60 * 1000;
+  let downSince = 0;
+
+  function markEngineDown() {
+    const dot = $('#engine-dot');
+    const text = $('#engine-text');
+    if (dot) dot.className = 'dot bad';
+    if (text) text.textContent = t('sidebar.reconnecting');
+    if (!downSince) {
+      downSince = Date.now();
+      setTimeout(() => {
+        if (downSince && Date.now() - downSince >= DEAD_AFTER_MS) {
+          const banner = $('#engine-dead');
+          if (banner) banner.hidden = false;
+          if (text) text.textContent = t('sidebar.engineDead');
+        }
+      }, DEAD_AFTER_MS + 500);
+    }
+  }
+
+  function markEngineUp() {
+    downSince = 0;
+    const banner = $('#engine-dead');
+    if (banner) banner.hidden = true;
+  }
+
   function connectEvents() {
     if (state.source) { state.source.close(); state.source = null; }
     const url = api(`/events${state.sessionId ? `?sid=${encodeURIComponent(state.sessionId)}` : ''}`);
@@ -637,12 +894,14 @@
       try { handleEvent(JSON.parse(event.data)); } catch (e) { /* frame inválido */ }
     };
     source.onerror = () => {
-      $('#engine-dot').className = 'dot bad';
-      $('#engine-text').textContent = 'reconectando…';
+      markEngineDown();
     };
     source.onopen = () => {
-      $('#engine-dot').className = 'dot ok';
-      $('#engine-text').textContent = 'motor conectado';
+      markEngineUp();
+      const dot = $('#engine-dot');
+      const text = $('#engine-text');
+      if (dot) dot.className = 'dot ok';
+      if (text) text.textContent = t('sidebar.connected');
     };
   }
 
@@ -704,6 +963,7 @@
     renderMessages();
     renderSessions();
     renderUsage();
+    refreshUsage();
     connectEvents();
     // Só uma escolha explícita do usuário move o terminal: abrir a página não
     // deve arrastar a TUI para outra sessão.
@@ -750,18 +1010,25 @@
     input.style.height = 'auto';
 
     const wrap = el('div', 'msg msg-user');
-    wrap.appendChild(el('div', 'bubble', text || '(anexo)'));
+    wrap.appendChild(el('div', 'bubble', text || `(${t('composer.attached')})`));
     if (state.attachments.length) {
-      const names = state.attachments.map((a) => `📎 ${a.name}`).join('\n');
+      const names = state.attachments
+        .map((a) => `📎 ${a.name}${a.path ? `\n${a.path}` : ''}`)
+        .join('\n');
       wrap.appendChild(el('div', 'bubble-attach', names));
     }
     $('#messages').appendChild(wrap);
     $('#empty-state').hidden = true;
     scrollToEnd(true);
 
-    const files = state.attachments.map((a) => ({
-      uri: a.uri, source: { type: 'inline' }, name: a.name,
-    }));
+    // v0.7.11-web23: o anexo vai inline (o modelo lê) E o gateway recebe o
+    // caminho em disco (o agente abre).
+    const files = state.attachments
+      .filter((a) => a.uri)
+      .map((a) => ({ uri: a.uri, source: { type: 'inline' }, name: a.name }));
+    const uploads = state.attachments
+      .filter((a) => a.path)
+      .map((a) => ({ name: a.name, path: a.path, size: a.size }));
     const skills = state.pendingSkills.slice();
     state.attachments = [];
     state.pendingSkills = [];
@@ -770,6 +1037,7 @@
     try {
       await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/message`, {
         text, files, skills: skills.length ? skills : undefined,
+        uploads: uploads.length ? uploads : undefined,
       });
     } catch (e) {
       toast(String(e.message || e), 'err');
@@ -788,7 +1056,9 @@
 
   /* ── anexos ───────────────────────────────────────────────────────── */
 
-  const MAX_ATTACHMENT = 5 * 1024 * 1024;
+  // v0.7.11-web23: 25 MB (limite do gateway; o motor aceita inline grande,
+  // mas o upload em disco é o que o agente realmente consegue abrir).
+  const MAX_ATTACHMENT = 25 * 1024 * 1024;
 
   function humanSize(bytes) {
     if (!bytes) return '';
@@ -804,9 +1074,11 @@
       const chip = el('span', 'chip' + (item.mime && item.mime.startsWith('image/') ? ' image' : ''));
       chip.appendChild(el('span', 'c-name', item.name));
       if (item.size) chip.appendChild(el('span', 'c-size', humanSize(item.size)));
+      if (item.path) chip.appendChild(el('span', 'c-path', item.path));
+      if (item.pending) chip.appendChild(el('span', 'c-path', t('composer.uploading')));
       const rm = el('button', null, '✕');
       rm.type = 'button';
-      rm.title = 'Remover';
+      rm.title = t('composer.remove');
       rm.addEventListener('click', () => {
         state.attachments.splice(index, 1);
         renderAttachments();
@@ -826,22 +1098,49 @@
     });
   }
 
+  /**
+   * Anexa arquivos do dispositivo.
+   *
+   * Duas vias: (1) o arquivo vai **inline** no prompt (data URI) para o
+   * modelo enxergar o conteúdo; (2) o gateway o grava em ``/tmp`` e devolve
+   * o caminho absoluto, que é injetado no prompt — sem isso o agente
+   * recebe o arquivo "no vácuo" e não consegue abrir.
+   */
   async function attachLocalFiles(files) {
     for (const file of files) {
       if (file.size > MAX_ATTACHMENT) {
-        toast(`${file.name} é maior que 5 MB — arquivo ignorado`, 'err');
+        toast(`${file.name} ${t('composer.tooBig')}`, 'err');
         continue;
       }
+      const item = {
+        name: file.name, size: file.size, mime: file.type || '', uri: '', path: '', pending: true,
+      };
+      state.attachments.push(item);
+      renderAttachments();
       try {
         const uri = await readFileAsDataUri(file);
-        state.attachments.push({
-          name: file.name, size: file.size, mime: file.type || '', uri,
+        item.uri = uri;
+        const base64 = uri.includes(',') ? uri.split(',')[1] : '';
+        const res = await apiPost('/upload', {
+          sid: state.sessionId || '',
+          name: file.name,
+          mime: file.type || '',
+          data: base64,
         });
+        if (res && res.ok) {
+          item.path = res.path || '';
+          item.name = res.name || file.name;
+          item.size = res.size || file.size;
+        } else {
+          toast(`${file.name}: ${t('composer.uploadFail')}`, 'err');
+        }
       } catch (e) {
-        toast(String(e.message || e), 'err');
+        toast(`${file.name}: ${t('composer.uploadFail')}`, 'err');
+      } finally {
+        item.pending = false;
+        renderAttachments();
       }
     }
-    renderAttachments();
   }
 
   /* ── paletas: "/" (comandos) e "@" (arquivos) ────────────────────── */
@@ -878,14 +1177,14 @@
     const skills = state.skills
       .filter((s) => !q || s.id.toLowerCase().includes(q) || (s.name || '').toLowerCase().includes(q))
       .map((s) => ({
-        group: 'habilidades',
+        group: t('palette.skills'),
         type: 'skill',
         id: s.id,
         name: '@' + s.id,
         desc: s.description || s.name || '',
       }));
     const files = (pal.files || []).map((f) => ({
-      group: 'arquivos',
+      group: t('palette.files'),
       type: 'file',
       path: f.path,
       name: '@' + basename(f.path),
@@ -901,17 +1200,34 @@
       items: [], files: [],
     };
     if (kind === 'command') {
+      // v0.7.11-web23: o menu "/" lista TODOS os comandos do OpenCode —
+      // os do agente (motor) e os nativos da barra da TUI, traduzidos pelo
+      // plugin ``ufvai.pt`` e agrupados pela categoria.
+      const q = String(query || '').toLowerCase();
       pal.items = state.commands
-        .filter((c) => !query || c.name.toLowerCase().includes(query.toLowerCase()))
-        .map((c) => ({ group: 'comandos', type: 'command', name: '/' + c.name, desc: c.description || '' }));
+        .filter((c) => {
+          if (!q) return true;
+          return [c.name, c.title, c.native, ...(c.aliases || [])]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(q));
+        })
+        .map((c) => ({
+          group: c.group || t('palette.commands'),
+          type: 'command',
+          name: '/' + c.name,
+          desc: c.description || c.title || '',
+          action: c.action || '',
+          scope: c.scope || 'motor',
+          native: c.native || c.name,
+        }));
     } else {
       rebuildMentionItems(pal);
     }
     state.palette = pal;
     $('#palette').hidden = false;
     $('#palette-head').textContent = kind === 'command'
-      ? `comandos — “/${query}”`
-      : `habilidades e arquivos — “@${query}”`;
+      ? `${t('palette.commands')} — “/${query}”`
+      : `${t('palette.skills')} · ${t('palette.files')} — “@${query}”`;
     renderPalette();
     if (kind !== 'command') searchFiles(query);
   }
@@ -922,7 +1238,7 @@
     const pal = state.palette;
     if (!pal) return;
     if (!pal.items.length) {
-      box.appendChild(el('div', 'palette-group', pal.loading ? 'procurando…' : 'nenhum item'));
+      box.appendChild(el('div', 'palette-group', pal.loading ? '…' : t('palette.noResults')));
       return;
     }
     const groups = new Map();
@@ -931,11 +1247,15 @@
       groups.get(item.group).push({ item, index });
     });
     groups.forEach((entries, group) => {
-      box.appendChild(el('div', 'palette-group', group));
+      box.appendChild(el('div', 'palette-group', String(group).toUpperCase()));
       entries.forEach(({ item, index }) => {
         const node = el('button', 'palette-item' + (index === pal.index ? ' active' : ''));
         node.type = 'button';
         node.appendChild(el('span', 'p-name', item.name));
+        if (item.scope === 'tui') {
+          // v0.7.11-web23: sinaliza os comandos que só existem no terminal
+          node.appendChild(el('span', 'p-badge', 'TUI'));
+        }
         node.appendChild(el('span', 'p-desc', item.desc || ''));
         node.addEventListener('click', () => { pal.index = index; choosePalette(); });
         box.appendChild(node);
@@ -982,6 +1302,19 @@
     if (!item) return;
 
     if (item.type === 'command') {
+      // v0.7.11-web23: comando nativo com ação na web → executa; comando
+      // só do terminal → pede a troca para a interface do terminal (que
+      // roda na moldura ao lado); comando de agente → insere o texto.
+      if (item.action) {
+        closePalette();
+        runCommandAction(item.action);
+        return;
+      }
+      if (item.scope === 'tui') {
+        closePalette();
+        showTerminalForCommand(item.native);
+        return;
+      }
       replaceRange(pal.start, pal.end, `${item.name} `);
       closePalette();
       return;
@@ -1019,6 +1352,70 @@
     if (!pal || !pal.items.length) return;
     pal.index = (pal.index + delta + pal.items.length) % pal.items.length;
     renderPalette();
+  }
+
+  /* ── ações dos comandos nativos ────────────────────────────────────── */
+
+  /** Executa no web o equivalente de um comando nativo da TUI. */
+  async function runCommandAction(action) {
+    switch (action) {
+      case 'new-session': await newSession(); return;
+      case 'rename-session': renameSession(); return;
+      case 'fork-session': await forkSession(); return;
+      case 'compact-session': await compactSession(); return;
+      case 'background-session': await backgroundSession(); return;
+      case 'copy-session-link': await copySessionLink(); return;
+      case 'open-models': openModels(); return;
+      case 'open-variants': openVariants(); return;
+      case 'open-agents': openAgents(); return;
+      case 'open-skills': openSkillPalette(); return;
+      case 'open-settings': openSettings('geral'); return;
+      case 'open-shortcuts': openSettings('atalhos'); return;
+      case 'toggle-theme':
+        applyTheme(currentTheme() === 'pesquisai-light' ? 'pesquisai' : 'pesquisai-light');
+        return;
+      case 'toggle-terminal': showTerminalForCommand(''); return;
+      default: return;
+    }
+  }
+
+  /** Abre a paleta de habilidades (``@``). */
+  function openSkillPalette() {
+    const input = $('#input');
+    input.focus();
+    const pos = input.selectionStart ?? input.value.length;
+    input.value = `${input.value.slice(0, pos)}@${input.value.slice(pos)}`;
+    input.setSelectionRange(pos + 1, pos + 1);
+    const trig = triggerAtCaret();
+    if (trig) openPalette(trig.kind, trig.query, trig.start, trig.end);
+    autoGrow();
+  }
+
+  /** Copia o link da sessão atual. */
+  async function copySessionLink() {
+    const url = `${location.origin}${location.pathname}#${state.sessionId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast(t('session.copy'));
+    } catch (e) {
+      toast(t('tool.copyFail'), 'err');
+    }
+  }
+
+  /**
+   * Comando que só existe no terminal (TUI): pede ao wrapper que mostre a
+   * moldura do terminal — ele fica ao lado da web, no mesmo ambiente.
+   */
+  function showTerminalForCommand(command) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'ufvai-show-terminal',
+          command: command ? `/${command}` : '',
+        }, '*');
+      }
+    } catch (e) { /* cross-origin bloqueado */ }
+    toast(t('palette.terminalOnly'));
   }
 
   /* ── seletor de modelo ────────────────────────────────────────────── */
@@ -1184,56 +1581,65 @@
     const tab = state.settingsTab;
 
     if (tab === 'geral') {
-      pane.appendChild(el('h3', null, 'Aparência e ambiente'));
-      pane.appendChild(row('Tema', currentTheme() === 'pesquisai-light' ? 'claro' : 'escuro'));
-      pane.appendChild(el('p', null, 'O tema também é sincronizado com o botão da interface principal (terminal ↔ web).'));
+      pane.appendChild(el('h3', null, t('settings.appearance')));
+      pane.appendChild(row(t('settings.theme'), currentTheme() === 'pesquisai-light' ? 'claro' : 'escuro'));
+      pane.appendChild(el('p', null, t('settings.themeNote')));
+      pane.appendChild(row(t('settings.language'), (state.locale || 'pt-BR').toUpperCase()));
+      pane.appendChild(el('p', null, t('settings.languageNote')));
+
+      pane.appendChild(el('h3', null, t('settings.display')));
+      pane.appendChild(el('p', null, t('settings.displayNote')));
+      pane.appendChild(switchRow(t('settings.expandReasoning'), 'expandReasoning',
+        () => { renderMessages(); }));
+      pane.appendChild(switchRow(t('settings.expandTools'), 'expandTools',
+        () => { renderMessages(); }));
+      pane.appendChild(el('p', null, t('settings.expandAllNote')));
       const actions = el('div', 'setting-actions');
-      const b1 = el('button', 'btn', 'Alternar tema');
-      b1.addEventListener('click', () => {
-        applyTheme(currentTheme() === 'pesquisai-light' ? 'pesquisai' : 'pesquisai-light');
+      const bAll = el('button', 'btn', t('tool.expandAll'));
+      bAll.addEventListener('click', () => {
+        setAllExpanded(true);
         renderSettings();
       });
-      actions.appendChild(b1);
+      const bNone = el('button', 'btn', t('tool.collapseAll'));
+      bNone.addEventListener('click', () => {
+        setAllExpanded(false);
+        renderSettings();
+      });
+      actions.appendChild(bAll);
+      actions.appendChild(bNone);
       pane.appendChild(actions);
 
-      pane.appendChild(el('h3', null, 'Exibição do conteúdo'));
-      pane.appendChild(el('p', null,
-        'Define se os blocos de raciocínio e de ferramentas aparecem abertos ou recolhidos.'));
-      pane.appendChild(switchRow('Expandir raciocínio', 'expandReasoning',
-        () => { renderMessages(); }));
-      pane.appendChild(switchRow('Expandir ferramentas', 'expandTools',
-        () => { renderMessages(); }));
-      pane.appendChild(el('h3', null, 'Motor'));
-      pane.appendChild(row('Versão', (state.engine && state.engine.version) || '—'));
-      pane.appendChild(row('Diretório', state.directory || '—'));
-      pane.appendChild(row('Modelos no catálogo', String(state.models.length)));
-      pane.appendChild(row('Provedores', String((state.providers || []).length)));
+      pane.appendChild(el('h3', null, t('settings.engine')));
+      pane.appendChild(row(t('settings.version'), (state.engine && state.engine.version) || '—'));
+      pane.appendChild(row(t('settings.directory'), state.directory || '—'));
+      pane.appendChild(row(t('settings.modelsCount'), String(state.models.length)));
+      pane.appendChild(row(t('settings.providers'), String((state.providers || []).length)));
     }
 
     if (tab === 'modelo') {
-      pane.appendChild(el('h3', null, 'Modelo da sessão'));
-      pane.appendChild(row('Atual', state.model.id ? `${state.model.id} · ${state.model.providerID}` : '—'));
-      pane.appendChild(row('Variante', state.model.variant || 'padrão'));
+      pane.appendChild(el('h3', null, t('settings.modelSession')));
+      pane.appendChild(row(t('settings.current'), state.model.id ? `${state.model.id} · ${state.model.providerID}` : '—'));
+      pane.appendChild(row(t('settings.variantRow'), state.model.variant || t('settings.default')));
       const actions = el('div', 'setting-actions');
-      const b = el('button', 'btn primary', 'Escolher modelo');
+      const b = el('button', 'btn primary', t('settings.chooseModel'));
       b.addEventListener('click', () => { $('#settings-modal').hidden = true; openModels(); });
       actions.appendChild(b);
       pane.appendChild(actions);
-      pane.appendChild(el('h3', null, 'Provedores'));
+      pane.appendChild(el('h3', null, t('settings.providersTitle')));
       const list = el('div', 'setting-list');
       (state.providers || []).forEach((p) => {
         const item = el('div', 'setting-item');
         item.appendChild(el('b', null, p.name || p.id));
         item.appendChild(el('span', null,
-          `${p.models} modelos · ${p.available ? 'credencial detectada' : 'chave não detectada'}`));
+          `${p.models} modelos · ${p.available ? t('settings.providerOk') : t('settings.providerNoKey')}`));
         list.appendChild(item);
       });
       pane.appendChild(list);
     }
 
     if (tab === 'agente') {
-      pane.appendChild(el('h3', null, 'Agente'));
-      pane.appendChild(el('p', null, 'O UFVAI é o único agente exposto: os demais são rotinas internas do motor.'));
+      pane.appendChild(el('h3', null, t('settings.agent')));
+      pane.appendChild(el('p', null, t('settings.agentNote')));
       const list = el('div', 'setting-list');
       state.agents.forEach((a) => {
         const item = el('div', 'setting-item');
@@ -1246,23 +1652,23 @@
     }
 
     if (tab === 'comandos') {
-      pane.appendChild(el('h3', null, 'Comandos'));
-      pane.appendChild(el('p', null, 'Digite / no campo de mensagem para abrir o menu.'));
+      pane.appendChild(el('h3', null, t('palette.commands')));
+      pane.appendChild(el('p', null, t('settings.commandsNote')));
       const list = el('div', 'setting-list');
       state.commands.forEach((c) => {
         const item = el('div', 'setting-item');
         item.appendChild(el('b', null, '/' + c.name));
-        item.appendChild(el('span', null, c.description || ''));
+        item.appendChild(el('span', null, [c.title, c.description].filter(Boolean).join(' — ')));
         list.appendChild(item);
       });
       pane.appendChild(list);
     }
 
     if (tab === 'habilidades') {
-      pane.appendChild(el('h3', null, 'Habilidades'));
+      pane.appendChild(el('h3', null, t('palette.skills')));
       const list = el('div', 'setting-list');
       if (!state.skills.length) {
-        list.appendChild(el('div', 'setting-item', 'nenhuma habilidade disponível'));
+        list.appendChild(el('div', 'setting-item', t('settings.skillsNone')));
       }
       state.skills.forEach((s) => {
         const item = el('div', 'setting-item');
@@ -1275,44 +1681,50 @@
 
     if (tab === 'sessao') {
       const s = currentSession();
-      pane.appendChild(el('h3', null, 'Sessão atual'));
+      pane.appendChild(el('h3', null, t('settings.sessionCurrent')));
       if (!s) {
-        pane.appendChild(el('p', null, 'nenhuma sessão aberta'));
+        pane.appendChild(el('p', null, t('warn.noSession')));
       } else {
-        pane.appendChild(row('Título', s.title || s.id));
-        pane.appendChild(row('ID', s.id));
-        pane.appendChild(row('Agente', s.agent || 'UFVAI'));
-        pane.appendChild(row('Modelo', s.model && s.model.id ? `${s.model.id} · ${s.model.providerID}` : '—'));
-        pane.appendChild(row('Criada', new Date(s.created).toLocaleString('pt-BR')));
-        pane.appendChild(row('Atualizada', new Date(s.updated).toLocaleString('pt-BR')));
+        pane.appendChild(row(t('settings.title'), s.title || s.id));
+        pane.appendChild(row(t('settings.id'), s.id));
+        pane.appendChild(row(t('settings.agent'), s.agent || 'UFVAI'));
+        pane.appendChild(row(t('settings.modelRow'), s.model && s.model.id ? `${s.model.id} · ${s.model.providerID}` : '—'));
+        pane.appendChild(row(t('settings.created'), new Date(s.created).toLocaleString('pt-BR')));
+        pane.appendChild(row(t('settings.updated'), new Date(s.updated).toLocaleString('pt-BR')));
         const tokens = s.tokens || {};
-        pane.appendChild(row('Tokens', `${tokens.input || 0} entrada · ${tokens.output || 0} saída · ${tokens.reasoning || 0} raciocínio`));
-        pane.appendChild(row('Custo', `$${Number(s.cost || 0).toFixed(4)}`));
-        pane.appendChild(row('Diretório', s.directory || '—'));
+        pane.appendChild(row(t('settings.tokens'), `${tokens.input || 0} entrada · ${tokens.output || 0} saída · ${tokens.reasoning || 0} raciocínio`));
+        pane.appendChild(row(t('settings.cost'), `$${Number(s.cost || 0).toFixed(4)}`));
+        if (state.usage && state.usage.limit) {
+          pane.appendChild(row(t('top.context'),
+            `${Math.round(state.usage.used / 1000)}k / ${Math.round(state.usage.limit / 1000)}k (${state.usage.percent}%)`));
+        }
+        pane.appendChild(row(t('settings.directory'), s.directory || '—'));
       }
       const actions = el('div', 'setting-actions');
-      const b1 = el('button', 'btn', 'Ver contexto');
+      const b1 = el('button', 'btn', t('settings.showContext'));
       b1.addEventListener('click', showContext);
-      const b2 = el('button', 'btn', 'Duplicar sessão');
+      const b2 = el('button', 'btn', t('settings.duplicateSession'));
       b2.addEventListener('click', forkSession);
-      const b3 = el('button', 'btn', 'Compactar histórico');
+      const b3 = el('button', 'btn', t('settings.compact'));
       b3.addEventListener('click', compactSession);
       actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3);
       pane.appendChild(actions);
     }
 
     if (tab === 'atalhos') {
-      pane.appendChild(el('h3', null, 'Atalhos'));
+      pane.appendChild(el('h3', null, t('settings.shortcuts')));
+      pane.appendChild(el('p', null, t('settings.shortcutHint')));
       const atalhos = [
-        ['Enter', 'enviar a mensagem'],
-        ['Shift+Enter', 'nova linha'],
-        ['/', 'menu de comandos'],
-        ['@', 'mencionar arquivo do projeto'],
-        ['Ctrl+K', 'buscar sessões'],
-        ['Ctrl+L', 'focar o campo de mensagem'],
-        ['Ctrl+B', 'mover a execução para segundo plano'],
-        ['Esc', 'fechar menus / interromper'],
-        ['Ctrl+Shift+R', 'recarregar a interface'],
+        ['Enter', t('key.send')],
+        ['Shift+Enter', t('key.newline')],
+        ['/', t('key.commands')],
+        ['@', t('key.mention')],
+        ['Ctrl+Shift+A', t('key.expandAll')],
+        ['Ctrl+B', t('key.background')],
+        ['Ctrl+\\', t('key.toggleSidebar')],
+        ['Ctrl+U', t('key.attach')],
+        ['Esc', t('key.interrupt')],
+        ['Ctrl+Shift+R', t('key.close')],
       ];
       atalhos.forEach(([k, d]) => {
         const r = el('div', 'shortcut-row');
@@ -1324,22 +1736,20 @@
     }
 
     if (tab === 'sobre') {
-      pane.appendChild(el('h3', null, 'UFVAI · Web'));
-      pane.appendChild(el('p', null,
-        'Cliente próprio do UFVAI (sem a SPA do OpenCode): conversa em streaming, ' +
-        'comandos, arquivos, modelo e ajustes — tudo servido pelo contrato ' +
-        '/api/ufvai/* do gateway local.'));
-      pane.appendChild(row('Motor', (state.engine && state.engine.version) || '—'));
-      pane.appendChild(row('Sessões', String(state.sessions.length)));
-      pane.appendChild(row('Modelos', String(state.models.length)));
-      pane.appendChild(row('Comandos', String(state.commands.length)));
-      pane.appendChild(row('Habilidades', String(state.skills.length)));
+      pane.appendChild(el('h3', null, t('settings.aboutTitle')));
+      pane.appendChild(el('p', null, t('settings.aboutText')));
+      pane.appendChild(row(t('settings.engine'), (state.engine && state.engine.version) || '—'));
+      pane.appendChild(row(t('sidebar.sessions'), String(state.sessions.length)));
+      pane.appendChild(row(t('settings.modelsCount'), String(state.models.length)));
+      pane.appendChild(row(t('palette.commands'), String(state.commands.length)));
+      pane.appendChild(row(t('palette.skills'), String(state.skills.length)));
       pane.appendChild(row('Endpoint', BASE + 'api/ufvai/'));
     }
   }
 
   function openSettings(tab) {
     state.settingsTab = tab || state.settingsTab;
+    state.settingsOpen = true;
     document.querySelectorAll('#settings-tabs .tab').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tab === state.settingsTab);
     });
@@ -1469,6 +1879,17 @@
   async function boot() {
     loadPrefs();
     applyTheme(currentTheme());
+    // v0.7.11-web23: i18n — dicionário local + idioma do wrapper/motor
+    await loadI18n();
+    const cookieLang = localeFromCookie();
+    if (cookieLang) applyLocale(cookieLang);
+    let saved = null;
+    try { saved = localStorage.getItem('ufvai_web_lang'); } catch (e) { /* ignora */ }
+    if (saved && !cookieLang) applyLocale(saved);
+    try {
+      const loc = await apiGet('/locale');
+      if (loc && loc.lang && !cookieLang) applyLocale(loc.lang);
+    } catch (e) { /* segue com o idioma salvo */ }
     try {
       if (localStorage.getItem('ufvai_side_hidden') === '1') {
         document.body.classList.add('side-hidden');
@@ -1506,7 +1927,7 @@
 
     // comandos e habilidades (menus "/" e "@")
     try {
-      const extra = await apiGet('/commands');
+      const extra = await apiGet(`/commands?lang=${encodeURIComponent(state.locale)}`);
       state.commands = extra.commands || [];
       state.skills = extra.skills || [];
     } catch (e) { /* segue sem os menus */ }
@@ -1526,6 +1947,7 @@
     connectEvents();
     setInterval(refreshSessions, 20000);
     setInterval(pollFocus, 2500);
+    setInterval(refreshUsage, 30000);
   }
 
   /* ── eventos da interface ─────────────────────────────────────────── */
@@ -1596,8 +2018,19 @@
     $('#session-menu-btn').addEventListener('click', openSessionMenu);
     $('#session-close').addEventListener('click', () => { $('#session-modal').hidden = true; });
 
-    $('#theme-btn').addEventListener('click', () => {
-      applyTheme(currentTheme() === 'pesquisai-light' ? 'pesquisai' : 'pesquisai-light');
+    // v0.7.11-web23: "expandir tudo" — abre/fecha todos os blocos já
+    // renderizados (raciocínio e ferramentas).
+    $('#expand-all-btn').addEventListener('click', () => {
+      const anyClosed = [...document.querySelectorAll('#messages details.block')]
+        .some((b) => !b.open);
+      setAllExpanded(anyClosed);
+    });
+
+    // v0.7.11-web23: o botão claro/escuro foi removido da web (o do
+    // cabeçalho do wrapper é a fonte da verdade).
+
+    $('#dead-action').addEventListener('click', () => {
+      toast(t('warn.deadAction'));
     });
 
     $('#menu-btn').addEventListener('click', () => {
@@ -1611,7 +2044,7 @@
         const hidden = document.body.classList.toggle('side-hidden');
         try { localStorage.setItem('ufvai_side_hidden', hidden ? '1' : '0'); } catch (e) {}
         $('#menu-btn').classList.toggle('on', hidden);
-        $('#menu-btn').title = hidden ? 'Mostrar as sessões' : 'Ocultar as sessões';
+        $('#menu-btn').title = hidden ? t('top.sessions') : t('top.sessions');
       }
     });
     $('#side-close').addEventListener('click', () => {
@@ -1642,10 +2075,32 @@
         event.preventDefault();
         backgroundSession();
       }
+      // v0.7.11-web23: expandir/recolher tudo
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey
+          && (event.key === 'A' || event.key === 'a')) {
+        event.preventDefault();
+        const anyClosed = [...document.querySelectorAll('#messages details.block')]
+          .some((b) => !b.open);
+        setAllExpanded(anyClosed);
+      }
+      // v0.7.11-web23: ocultar/mostrar as sessões
+      if ((event.ctrlKey || event.metaKey) && event.key === '\\') {
+        event.preventDefault();
+        $('#menu-btn').click();
+      }
+      // v0.7.11-web23: anexar arquivo
+      if ((event.ctrlKey || event.metaKey) && event.key === 'u') {
+        event.preventDefault();
+        $('#file-input').click();
+      }
     });
 
     window.addEventListener('beforeunload', () => {
       if (state.source) state.source.close();
+    });
+    // v0.7.11-web23: o placeholder muda com a largura da tela
+    window.addEventListener('resize', () => {
+      applyPlaceholder();
     });
   }
 
