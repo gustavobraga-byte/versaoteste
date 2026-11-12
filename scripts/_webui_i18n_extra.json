@@ -51,7 +51,10 @@
     "explorer.resize": "Arrastar para redimensionar",
     "explorer.noResults": "Nada encontrado com esse filtro.",
     "explorer.results": "{n} resultado(s)",
-    "explorer.closePreview": "Fechar a visualização"
+    "explorer.closePreview": "Fechar a visualização",
+    "explorer.notFound": "arquivo não encontrado na pasta do agente",
+    "explorer.resizePreview": "Arrastar para redimensionar a visualização",
+    "answer.openFile": "Abrir no explorador"
   },
   "en": {
     "settings.tab.autosave": "Autosave",
@@ -105,7 +108,10 @@
     "explorer.resize": "Drag to resize",
     "explorer.noResults": "Nothing found with this filter.",
     "explorer.results": "{n} result(s)",
-    "explorer.closePreview": "Close the preview"
+    "explorer.closePreview": "Close the preview",
+    "explorer.notFound": "file not found in the agent folder",
+    "explorer.resizePreview": "Drag to resize the preview",
+    "answer.openFile": "Open in the explorer"
   },
   "es": {
     "settings.tab.autosave": "Autosave",
@@ -159,7 +165,10 @@
     "explorer.resize": "Arrastra para redimensionar",
     "explorer.noResults": "No se encontró nada con este filtro.",
     "explorer.results": "{n} resultado(s)",
-    "explorer.closePreview": "Cerrar la vista previa"
+    "explorer.closePreview": "Cerrar la vista previa",
+    "explorer.notFound": "archivo no encontrado en la carpeta del agente",
+    "explorer.resizePreview": "Arrastra para redimensionar la vista previa",
+    "answer.openFile": "Abrir en el explorador"
   },
   "fr": {
     "settings.tab.autosave": "Autosave",
@@ -213,7 +222,10 @@
     "explorer.resize": "Glisser pour redimensionner",
     "explorer.noResults": "Aucun résultat pour ce filtre.",
     "explorer.results": "{n} résultat(s)",
-    "explorer.closePreview": "Fermer l’aperçu"
+    "explorer.closePreview": "Fermer l’aperçu",
+    "explorer.notFound": "fichier introuvable dans le dossier de l’agent",
+    "explorer.resizePreview": "Glisser pour redimensionner l’aperçu",
+    "answer.openFile": "Ouvrir dans l’explorateur"
   },
   "zh": {
     "settings.tab.autosave": "自动保存",
@@ -267,6 +279,9 @@
     "explorer.resize": "拖动以调整大小",
     "explorer.noResults": "该筛选条件下没有结果。",
     "explorer.results": "{n} 个结果",
-    "explorer.closePreview": "关闭预览"
+    "explorer.closePreview": "关闭预览",
+    "explorer.notFound": "在代理文件夹中未找到该文件",
+    "explorer.resizePreview": "拖动以调整预览大小",
+    "answer.openFile": "在文件浏览器中打开"
   }
 }

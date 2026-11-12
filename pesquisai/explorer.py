@@ -35,6 +35,7 @@ __all__ = [
     "safe_path",
     "listing",
     "search",
+    "resolve",
     "preview",
     "read_bytes",
     "drive_link",
@@ -64,6 +65,8 @@ PDF_SUFFIXES = {".pdf"}
 
 MAX_TEXT_BYTES = 200_000
 MAX_BINARY_BYTES = 25 * 1024 * 1024
+#: v0.7.11-web28: limite do HTML gerado a partir do .docx.
+MAX_HTML_BYTES = 2_000_000
 
 
 def _engine_sessions() -> list[dict]:
@@ -220,6 +223,63 @@ SKIP_DIRS = {
 
 MAX_SEARCH_RESULTS = 300
 MAX_SEARCH_DEPTH = 5
+#: v0.7.11-web28: teto de pastas visitadas — a busca recursiva num Drive
+#: grande é lenta (3 s); sem o teto, a interface parece travada.
+MAX_SEARCH_DIRS = 4000
+
+
+#: Cache do índice da árvore (v0.7.11-web28): a busca recursiva no Drive
+#: (FUSE) levava 3–6 s; com o índice em cache, a 2ª busca é imediata.
+_INDEX: dict[str, Any] = {"ts": 0.0, "base": "", "items": []}
+INDEX_TTL = 120.0
+
+
+def _tree_index(base: Path) -> list[tuple[str, str, bool]]:
+    """Índice da árvore: ``[(caminho relativo, nome, é_pasta)]``."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    agora = time.time()
+    chave = str(base)
+    if _INDEX.get("base") == chave and (agora - float(_INDEX.get("ts") or 0)) < INDEX_TTL:
+        return _INDEX.get("items") or []
+
+    itens: list[tuple[str, str, bool]] = []
+
+    def worker(args: tuple) -> tuple[list[tuple[str, str, bool]], list[tuple]]:
+        dir_path, prefix = args
+        achados: list[tuple[str, str, bool]] = []
+        subpastas: list[tuple] = []
+        try:
+            entries = list(os.scandir(dir_path))
+        except OSError:
+            return achados, subpastas
+        for entry in entries:
+            name = entry.name
+            if name.startswith(".") or name == "__pycache__":
+                continue
+            try:
+                is_dir = entry.is_dir()
+            except OSError:
+                continue
+            rel = f"{prefix}/{name}" if prefix else name
+            achados.append((rel, name, is_dir))
+            if is_dir and name not in SKIP_DIRS:
+                subpastas.append((Path(entry.path), rel))
+        return achados, subpastas
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        nivel: list[tuple] = [(base, "")]
+        visitadas = 0
+        while nivel and visitadas < MAX_SEARCH_DIRS:
+            visitadas += len(nivel)
+            proximo: list[tuple] = []
+            for achados, subpastas in pool.map(worker, nivel):
+                itens.extend(achados)
+                proximo.extend(subpastas)
+            nivel = proximo
+    _INDEX.update({"ts": agora, "base": chave, "items": itens})
+    return itens
 
 
 def search(relative: str = "", query: str = "", max_depth: int = MAX_SEARCH_DEPTH) -> dict[str, Any]:
@@ -228,6 +288,9 @@ def search(relative: str = "", query: str = "", max_depth: int = MAX_SEARCH_DEPT
     v0.7.11-web28: o filtro do explorador. Devolve os arquivos e pastas cujo
     nome contém o termo (sem distinção de maiúsculas), com o caminho
     completo relativo — para que o clique abra o item certo.
+
+    Usa o **índice em cache** da árvore (ver :func:`_tree_index`): o Drive é
+    um FUSE e varrer tudo a cada tecla digitada deixava a interface lenta.
     """
     roots = allowed_roots()
     base = safe_path(relative, roots)
@@ -240,61 +303,46 @@ def search(relative: str = "", query: str = "", max_depth: int = MAX_SEARCH_DEPT
         return {"error": "", "path": str(relative or ""), "items": [], "query": ""}
 
     rel_base = str(relative or "").strip("/")
+    indice = _tree_index(base)
     found: list[dict[str, Any]] = []
-    truncated = False
-
-    def walk(directory: Path, prefix: str, depth: int) -> bool:
-        """Devolve ``True`` enquanto houver espaço para mais resultados."""
-        nonlocal truncated
+    for rel, name, is_dir in indice:
+        if needle not in name.lower():
+            continue
+        depth = rel.count("/")
         if depth > max_depth:
-            return True
+            continue
+        parent = rel.rsplit("/", 1)[0] if "/" in rel else ""
+        path = Path(base) / rel
         try:
-            entries = sorted(os.scandir(directory), key=lambda e: (not e.is_dir(), e.name.lower()))
+            stat = path.stat()
+            size = 0 if is_dir else int(stat.st_size)
+            modified = int(stat.st_mtime * 1000)
         except OSError:
-            return True
-        for entry in entries:
-            if entry.name.startswith(".") or entry.name == "__pycache__":
-                continue
-            path = Path(entry.path)
-            is_dir = entry.is_dir()
-            item_rel = f"{prefix}/{entry.name}" if prefix else entry.name
-            if needle in entry.name.lower():
-                try:
-                    stat = entry.stat()
-                    size = 0 if is_dir else int(stat.st_size)
-                    modified = int(stat.st_mtime * 1000)
-                except OSError:
-                    size, modified = 0, 0
-                found.append(
-                    {
-                        "name": entry.name,
-                        "path": item_rel,
-                        "parent": prefix,
-                        "type": "directory" if is_dir else "file",
-                        "size": size,
-                        "modified": modified,
-                        "mime": "" if is_dir else _mime_of(path),
-                        "kind": _kind_of(path),
-                        "driveUrl": drive_link(entry.name),
-                        "depth": depth,
-                    }
-                )
-                if len(found) >= MAX_SEARCH_RESULTS:
-                    truncated = True
-                    return False
-            if is_dir and entry.name not in SKIP_DIRS:
-                if not walk(path, item_rel, depth + 1):
-                    return False
-        return True
-
-    walk(base, rel_base, 0)
+            size, modified = 0, 0
+        found.append(
+            {
+                "name": name,
+                "path": rel,
+                "parent": parent,
+                "type": "directory" if is_dir else "file",
+                "size": size,
+                "modified": modified,
+                "mime": "" if is_dir else _mime_of(path),
+                "kind": _kind_of(path),
+                "driveUrl": drive_link(name),
+                "depth": depth,
+            }
+        )
+        if len(found) >= MAX_SEARCH_RESULTS:
+            break
+    found.sort(key=lambda i: (i.get("depth", 0), i.get("path", "")))
     return {
         "path": rel_base,
         "parent": "",
         "root": str(base),
         "items": found,
         "query": query,
-        "truncated": truncated,
+        "truncated": len(found) >= MAX_SEARCH_RESULTS,
         "driveHome": DRIVE_HOME,
         "error": "",
     }
@@ -410,6 +458,383 @@ def _BytesIO(data: bytes):  # noqa: N802 — helper local
     return io.BytesIO(data)
 
 
+# ── DOCX → HTML (modo leitura, com a formatação do Word) ───────────────────
+#
+# v0.7.11-web28: o `.docx` era extraído como **texto puro** (parágrafos em
+# linhas) — a formatação do Word (títulos, negrito, itálico, listas, tabelas,
+# links e imagens) se perdia. Aqui o pacote OOXML é convertido em HTML
+# simples, só com a biblioteca padrão.
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _xml_attr(tag: str, name: str) -> str:
+    m = re.search(rf'{name}="([^"]*)"', tag)
+    return m.group(1) if m else ""
+
+
+def _docx_numbering(zf: zipfile.ZipFile) -> dict[str, dict[int, str]]:
+    """Mapa ``numId → {nível: 'bullet'|'decimal'}`` (de ``numbering.xml``)."""
+    out: dict[str, dict[int, str]] = {}
+    try:
+        xml = zf.read("word/numbering.xml").decode("utf-8", "replace")
+    except KeyError:
+        return out
+    abstracts: dict[str, dict[int, str]] = {}
+    for block in re.findall(r"<w:abstractNum\b.*?</w:abstractNum>", xml, re.S):
+        aid = ""
+        levels: dict[int, str] = {}
+        for lvl in re.findall(r"<w:lvl\b[^>]*>.*?</w:lvl>", block, re.S):
+            ilvl = int(_xml_attr(lvl[: lvl.find(">") + 1], "w:ilvl") or 0)
+            fmt = ""
+            m = re.search(r"<w:numFmt\b[^>]*w:val=\"([^\"]*)\"", lvl)
+            if m:
+                fmt = m.group(1)
+            levels[ilvl] = "bullet" if fmt == "bullet" else "decimal"
+        aid = _xml_attr(block[: block.find(">") + 1], "w:abstractNumId")
+        if aid:
+            abstracts[aid] = levels
+    for num in re.findall(r"<w:num\b.*?</w:num>", xml, re.S):
+        num_id = _xml_attr(num[: num.find(">") + 1], "w:numId")
+        aid = ""
+        m = re.search(r"<w:abstractNumId\b[^>]*w:val=\"([^\"]*)\"", num)
+        if m:
+            aid = m.group(1)
+        if num_id:
+            out[num_id] = abstracts.get(aid, {})
+    return out
+
+
+def _docx_rels(zf: zipfile.ZipFile) -> dict[str, dict[str, str]]:
+    """Mapa ``rId → {tipo, alvo}`` (de ``word/_rels/document.xml.rels``)."""
+    out: dict[str, dict[str, str]] = {}
+    try:
+        xml = zf.read("word/_rels/document.xml.rels").decode("utf-8", "replace")
+    except KeyError:
+        return out
+    for rel in re.findall(r"<Relationship\b[^>]*/>", xml):
+        rid = _xml_attr(rel, "Id")
+        target = _xml_attr(rel, "Target")
+        rtype = _xml_attr(rel, "Type").rsplit("/", 1)[-1]
+        if rid:
+            out[rid] = {"type": rtype, "target": target}
+    return out
+
+
+def _docx_images(zf: zipfile.ZipFile, rels: dict[str, dict[str, str]]) -> dict[str, str]:
+    """Mapa ``rId → data URI`` das imagens embutidas.
+
+    v0.7.11-web28: com limite de tamanho e de quantidade — um .docx com
+    fotos grandes geraria um HTML de vários MB (travando a pré-visualização).
+    """
+    import base64
+    import mimetypes
+
+    out: dict[str, str] = {}
+    total = 0
+    for rid, info in rels.items():
+        if info.get("type") != "image":
+            continue
+        if len(out) >= 12 or total >= 3 * 1024 * 1024:
+            break
+        target = info.get("target") or ""
+        name = target.split("/")[-1]
+        path = f"word/{target}" if not target.startswith("word/") else target
+        try:
+            raw = zf.read(path)
+        except KeyError:
+            continue
+        if len(raw) > 900 * 1024:      # imagem muito grande: fora
+            continue
+        mime = mimetypes.guess_type(name)[0] or "image/png"
+        out[rid] = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+        total += len(raw)
+    return out
+
+
+def _docx_run_html(run: str, rels: dict[str, dict[str, str]],
+                   images: dict[str, str]) -> str:
+    """Um ``<w:r>`` → HTML (negrito, itálico, sublinhado, link, imagem)."""
+    props = ""
+    rpr = re.search(r"<w:rPr\b.*?</w:rPr>", run, re.S)
+    if rpr:
+        props = rpr.group(0)
+    text = "".join(html.unescape(t) for t in re.findall(r"<w:t[^>]*>(.*?)</w:t>", run, re.S))
+    if not text:
+        # imagem embutida
+        for rid in re.findall(r'r:embed="([^"]+)"', run):
+            src = images.get(rid)
+            if src:
+                return f'<img src="{src}" alt="">'
+        return ""
+    out = html.escape(text)
+    if "<w:b/>" in props or '<w:b ' in props:
+        out = f"<strong>{out}</strong>"
+    if "<w:i/>" in props or '<w:i ' in props:
+        out = f"<em>{out}</em>"
+    if "<w:u/>" in props or "<w:u " in props:
+        out = f"<u>{out}</u>"
+    return out
+
+
+def _docx_paragraph_html(block: str, rels: dict[str, dict[str, str]],
+                         images: dict[str, str],
+                         numbering: dict[str, dict[int, str]]) -> tuple[str, str, int]:
+    """Um ``<w:p>`` → (html, tipo, nível).
+
+    ``tipo``: ``p`` | ``h1..h6`` | ``title`` | ``quote`` | ``li`` | ``img``.
+    """
+    ppr = ""
+    m = re.search(r"<w:pPr\b.*?</w:pPr>", block, re.S)
+    if m:
+        ppr = m.group(0)
+    style = ""
+    ms = re.search(r"<w:pStyle\b[^>]*w:val=\"([^\"]*)\"", ppr)
+    if ms:
+        style = ms.group(1).lower()
+
+    # numeração (lista)
+    num_id = ""
+    ilvl = 0
+    mn = re.search(r"<w:numId\b[^>]*w:val=\"([^\"]*)\"", ppr)
+    if mn:
+        num_id = mn.group(1)
+    mi = re.search(r"<w:ilvl\b[^>]*w:val=\"([^\"]*)\"", ppr)
+    if mi:
+        try:
+            ilvl = int(mi.group(1))
+        except ValueError:
+            ilvl = 0
+    list_fmt = "decimal"
+    if num_id:
+        levels = numbering.get(num_id) or {}
+        list_fmt = levels.get(ilvl, "decimal")
+
+    # conteúdo: runs + hyperlinks
+    partes: list[str] = []
+    for hm in re.finditer(r"<w:hyperlink\b([^>]*)>(.*?)</w:hyperlink>", block, re.S):
+        rid = _xml_attr(hm.group(1), "r:id")
+        url = (rels.get(rid) or {}).get("target") or ""
+        inner = "".join(
+            _docx_run_html(r, rels, images) for r in re.findall(r"<w:r\b.*?</w:r>", hm.group(2), re.S)
+        )
+        if url.startswith("http"):
+            partes.append(f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener">{inner}</a>')
+        else:
+            partes.append(inner)
+    # runs fora de hyperlinks
+    fora = re.sub(r"<w:hyperlink\b.*?</w:hyperlink>", "", block, flags=re.S)
+    for rm in re.finditer(r"<w:r\b.*?</w:r>", fora, re.S):
+        partes.append(_docx_run_html(rm.group(0), rels, images))
+    conteudo = "".join(partes)
+
+    tipo = "p"
+    if style in ("title",):
+        tipo = "title"
+    elif re.match(r"^heading(\d)$", style):
+        tipo = "h" + style[-1]
+    elif style == "quote":
+        tipo = "quote"
+    elif num_id:
+        tipo = "li"
+    return conteudo, tipo, ilvl, list_fmt
+
+
+def docx_html(data: bytes) -> str:
+    """Converte um ``.docx`` em HTML (modo leitura, com a formatação)."""
+    try:
+        zf = zipfile.ZipFile(_BytesIO(data))
+    except (zipfile.BadZipFile, OSError):
+        return ""
+    rels = _docx_rels(zf)
+    images = _docx_images(zf, rels)
+    numbering = _docx_numbering(zf)
+    try:
+        xml = zf.read("word/document.xml").decode("utf-8", "replace")
+    except KeyError:
+        return ""
+
+    out: list[str] = []
+    lista_aberta = False
+    tipo_lista = "ul"
+
+    def fechar_lista() -> None:
+        nonlocal lista_aberta
+        if lista_aberta:
+            out.append(f"</{tipo_lista}>")
+            lista_aberta = False
+
+    # percorre o corpo: parágrafos e tabelas
+    corpo = re.search(r"<w:body\b.*?</w:body>", xml, re.S)
+    corpo_txt = corpo.group(0) if corpo else xml
+    blocos = re.findall(
+        r"<w:p\b.*?</w:p>|<w:tbl>.*?</w:tbl>", corpo_txt, re.S
+    )
+    for bloco in blocos:
+        if bloco.startswith("<w:tbl"):
+            fechar_lista()
+            out.append(_docx_table_html(bloco, rels, images))
+            continue
+        conteudo, tipo, ilvl, fmt = _docx_paragraph_html(bloco, rels, images, numbering)
+        if tipo == "li":
+            alvo = "ul" if fmt == "bullet" else "ol"
+            if lista_aberta and alvo != tipo_lista:
+                fechar_lista()
+            if not lista_aberta:
+                out.append(f"<{alvo}>")
+                lista_aberta = True
+                tipo_lista = alvo
+            out.append(f"<li>{conteudo}</li>")
+            continue
+        fechar_lista()
+        if not conteudo.strip():
+            continue
+        if tipo == "title":
+            out.append(f"<h1>{conteudo}</h1>")
+        elif tipo.startswith("h") and tipo[1:].isdigit():
+            out.append(f"<{tipo}>{conteudo}</{tipo}>")
+        elif tipo == "quote":
+            out.append(f"<blockquote>{conteudo}</blockquote>")
+        else:
+            out.append(f"<p>{conteudo}</p>")
+    fechar_lista()
+    return "\n".join(out)
+
+
+def _docx_table_html(block: str, rels: dict[str, dict[str, str]],
+                     images: dict[str, str]) -> str:
+    """Uma ``<w:tbl>`` → ``<table>``."""
+    linhas: list[str] = []
+    for row in re.findall(r"<w:tr\b.*?</w:tr>", block, re.S):
+        celulas: list[str] = []
+        for cell in re.findall(r"<w:tc\b.*?</w:tc>", row, re.S):
+            paragrafos = []
+            for p in re.findall(r"<w:p\b.*?</w:p>", cell, re.S):
+                conteudo, _t, _l, _f = _docx_paragraph_html(p, rels, images, {})
+                if conteudo.strip():
+                    paragrafos.append(f"<p>{conteudo}</p>")
+            celulas.append("".join(paragrafos) or "<p></p>")
+        if celulas:
+            linhas.append("<tr>" + "".join(f"<td>{c}</td>" for c in celulas) + "</tr>")
+    if not linhas:
+        return ""
+    return "<table><tbody>" + "".join(linhas) + "</tbody></table>"
+
+
+def _col_index(ref: str) -> int:
+    """``"B3"`` → 1 (índice da coluna, base 0)."""
+    m = re.match(r"([A-Z]+)", str(ref or ""))
+    if not m:
+        return 0
+    idx = 0
+    for ch in m.group(1):
+        idx = idx * 26 + (ord(ch) - 64)
+    return idx - 1
+
+
+def _xlsx_shared(zf: zipfile.ZipFile) -> list[str]:
+    """Textos compartilhados (``xl/sharedStrings.xml``)."""
+    try:
+        xml = zf.read("xl/sharedStrings.xml").decode("utf-8", "replace")
+    except KeyError:
+        return []
+    out: list[str] = []
+    for si in re.findall(r"<si\b.*?</si>", xml, re.S):
+        textos = re.findall(r"<t[^>]*>(.*?)</t>", si, re.S)
+        out.append(html.unescape("".join(textos)))
+    return out
+
+
+def _xlsx_sheets(zf: zipfile.ZipFile) -> list[tuple[str, str]]:
+    """``[(nome da aba, caminho da xml)]`` — de ``workbook.xml`` + rels."""
+    try:
+        wb = zf.read("xl/workbook.xml").decode("utf-8", "replace")
+        rels_xml = zf.read("xl/_rels/workbook.xml.rels").decode("utf-8", "replace")
+    except KeyError:
+        return []
+    rels: dict[str, str] = {}
+    for rel in re.findall(r"<Relationship\b[^>]*/>", rels_xml):
+        rid = _xml_attr(rel, "Id")
+        target = _xml_attr(rel, "Target")
+        if rid:
+            rels[rid] = target
+    out: list[tuple[str, str]] = []
+    for sheet in re.findall(r"<sheet\b[^>]*/>", wb):
+        nome = _xml_attr(sheet, "name")
+        rid = _xml_attr(sheet, "r:id")
+        alvo = rels.get(rid, "")
+        if not alvo:
+            continue
+        caminho = alvo[1:] if alvo.startswith("/") else f"xl/{alvo}"
+        caminho = caminho.replace("xl/xl/", "xl/")
+        out.append((html.unescape(nome), caminho))
+    return out
+
+
+def _xlsx_sheet_html(zf: zipfile.ZipFile, caminho: str, compartilhados: list[str]) -> str:
+    """Uma planilha → ``<table>``."""
+    try:
+        xml = zf.read(caminho).decode("utf-8", "replace")
+    except KeyError:
+        return ""
+    linhas: list[list[str]] = []
+    for row in re.findall(r"<row\b.*?</row>", xml, re.S):
+        celulas: list[str] = []
+        for cell in re.findall(r"<c\b([^>]*)>(.*?)</c>|<c\b([^>]*)/>", row, re.S):
+            attrs = cell[0] or cell[2] or ""
+            corpo = cell[1] or ""
+            tipo = _xml_attr(attrs, "t")
+            valor = ""
+            if tipo == "s":
+                m = re.search(r"<v>(.*?)</v>", corpo, re.S)
+                if m:
+                    try:
+                        valor = compartilhados[int(m.group(1))]
+                    except (ValueError, IndexError):
+                        valor = ""
+            elif tipo == "inlineStr":
+                textos = re.findall(r"<t[^>]*>(.*?)</t>", corpo, re.S)
+                valor = html.unescape("".join(textos))
+            elif tipo == "str":
+                m = re.search(r"<v>(.*?)</v>", corpo, re.S)
+                valor = html.unescape(m.group(1)) if m else ""
+            else:
+                m = re.search(r"<v>(.*?)</v>", corpo, re.S)
+                valor = html.unescape(m.group(1)) if m else ""
+            col = _col_index(_xml_attr(attrs, "r"))
+            while len(celulas) < col:
+                celulas.append("")
+            celulas.append(valor)
+        if any(c.strip() for c in celulas):
+            linhas.append(celulas)
+    if not linhas:
+        return ""
+    corpo = []
+    for celulas in linhas:
+        corpo.append("<tr>" + "".join(f"<td>{html.escape(c)}</td>" for c in celulas) + "</tr>")
+    return "<table><tbody>" + "".join(corpo) + "</tbody></table>"
+
+
+def xlsx_html(data: bytes) -> str:
+    """Converte um ``.xlsx`` em HTML — **cada aba vira uma tabela**."""
+    try:
+        zf = zipfile.ZipFile(_BytesIO(data))
+    except (zipfile.BadZipFile, OSError):
+        return ""
+    compartilhados = _xlsx_shared(zf)
+    abas = _xlsx_sheets(zf)
+    if not abas:
+        return ""
+    out: list[str] = []
+    for nome, caminho in abas:
+        tabela = _xlsx_sheet_html(zf, caminho, compartilhados)
+        if not tabela:
+            continue
+        out.append(f"<h3>{html.escape(nome)}</h3>")
+        out.append(tabela)
+    return "\n".join(out)
+
+
 def office_text(path: Path) -> str:
     """Texto extraído de um arquivo da suíte Office (best-effort)."""
     try:
@@ -429,6 +854,68 @@ def office_text(path: Path) -> str:
     except (zipfile.BadZipFile, OSError, ValueError):
         return ""
     return ""
+
+
+def resolve(name: str) -> dict[str, Any]:
+    """Resolve uma referência de arquivo citada numa resposta.
+
+    v0.7.11-web28: quando a resposta menciona um arquivo (pelo nome ou pelo
+    caminho), o clique tem de **abrir o arquivo no explorador**. Aceita:
+
+    * caminho absoluto dentro da raiz permitida (ex.: ``/content/drive/.../a.pdf``);
+    * caminho relativo à raiz (``docs/relatorio.pdf``);
+    * apenas o **nome** do arquivo (``relatorio.pdf``) — procurado na árvore
+      (o mais raso primeiro).
+    """
+    raw = str(name or "").strip().strip("`'\"")
+    if not raw:
+        return {"ok": False, "error": "referência vazia"}
+    roots = allowed_roots()
+
+    # 1) caminho absoluto ou relativo, dentro da raiz
+    candidate = safe_path(raw, roots)
+    if candidate and candidate.is_file():
+        rel = _relative(candidate, roots)
+        return {"ok": True, "path": rel, "name": candidate.name, "kind": _kind_of(candidate)}
+    if candidate and candidate.is_dir():
+        return {"ok": True, "path": _relative(candidate, roots), "name": candidate.name,
+                "kind": "directory", "dir": True}
+
+    # 2) só o nome: procura na árvore (o mais raso primeiro)
+    base = os.path.basename(raw)
+    if not base:
+        return {"ok": False, "error": "arquivo não encontrado", "name": raw}
+    achados: list[tuple[int, str, Path]] = []
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+            depth = dirpath[len(str(root)):].count(os.sep)
+            if depth > 4:
+                dirnames[:] = []
+                continue
+            for nome in filenames:
+                if nome.lower() == base.lower():
+                    achados.append((depth, os.path.join(dirpath, nome), Path(dirpath) / nome))
+    if not achados:
+        return {"ok": False, "error": "arquivo não encontrado na pasta do agente", "name": raw}
+    achados.sort(key=lambda x: (x[0], x[1]))
+    _depth, caminho, _p = achados[0]
+    return {
+        "ok": True,
+        "path": _relative(Path(caminho), roots),
+        "name": os.path.basename(caminho),
+        "kind": _kind_of(Path(caminho)),
+    }
+
+
+def _relative(path: Path, roots: list[Path] | None = None) -> str:
+    """Caminho relativo à raiz permitida (para a URL do explorador)."""
+    for root in (roots if roots is not None else allowed_roots()):
+        try:
+            return str(path.resolve().relative_to(root.resolve()))
+        except (ValueError, OSError):
+            continue
+    return path.name
 
 
 def preview(relative: str) -> dict[str, Any]:
@@ -469,6 +956,17 @@ def preview(relative: str) -> dict[str, Any]:
             )
         info["text"] = text[:MAX_TEXT_BYTES]
         info["truncated"] = len(text) > MAX_TEXT_BYTES
+        # v0.7.11-web28: o .docx/.xlsx sai em HTML — com a formatação do
+        # Word/Excel (títulos, negrito, listas, tabelas, links, imagens), em
+        # modo leitura.
+        suffix = target.suffix.lower()
+        if suffix in (".docx", ".xlsx"):
+            try:
+                raw = target.read_bytes()
+            except OSError:
+                raw = b""
+            html_out = docx_html(raw) if suffix == ".docx" else xlsx_html(raw)
+            info["html"] = html_out[:MAX_HTML_BYTES]
         return info
     if kind == "pdf":
         # v0.7.11-web28: o PDF é exibido **dentro** da web (o navegador

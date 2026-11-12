@@ -84,6 +84,7 @@
     explorerPath: '',         // pasta atual do explorador de arquivos
     explorerQuery: '',        // filtro de busca do explorador (web28)
     explorerWidth: 360,       // largura do explorador (arrastável — web28)
+    previewHeight: 320,       // altura do visualizador (arrastável — web28)
     pendingUsers: [],         // mensagens do usuário ainda provisórias (web28)
     usage: null,           // {used, limit, percent} — janela de contexto
     uploads: [],           // anexos já gravados em disco pelo gateway
@@ -208,20 +209,56 @@
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
 
+  // Extensões que, ao aparecerem como "nome.ext" ou "pasta/nome.ext", viram
+  // referência clicável (abre o arquivo no explorador).
+  const FILE_REFERENCE_EXT = 'pdf|docx?|xlsx?|pptx?|odt|ods|odp|csv|tsv|md|txt|rst|json|ya?ml|toml|ini|cfg|conf|log|py|js|mjs|cjs|ts|tsx|jsx|sh|bash|zsh|css|scss|html?|xml|sql|r|jl|tex|bib|ipynb|env|lock|png|jpe?g|gif|webp|svg|bmp|ico|mp3|mp4|wav|zip|tar|gz';
+
   function inline(text) {
     const codes = [];
+    const bare = [];
+    const anchors = [];
+    const files = [];
     let out = escapeHtml(text);
     out = out.replace(/`([^`\n]+)`/g, (_, code) => {
       codes.push(code);
-      return `${codes.length - 1}`;
+      return `\x01${codes.length - 1}\x01`;
     });
-    // v0.7.11-web28: o link aceita parênteses balanceados na URL (o caso
-    // da Wikipédia) — sem isso o `)` fechava o link no meio do caminho.
+    // link markdown — ANTES da URL solta (senão o "https://..." dentro do
+    // link seria tratado como URL avulsa e o link quebraria)
     out = out.replace(/\[([^\]\n]+)\]\(((?:https?:\/\/)[^\s)]*(?:\([^\s)]*\)[^\s)]*)*)\)/g,
-      (_, label, url) => `<a href="${url}" target="_blank" rel="noopener">${label}</a>`);
+      (_, label, url) => {
+        anchors.push({ label, url });
+        return `\x03${anchors.length - 1}\x03`;
+      });
+    // v0.7.11-web28: URL solta (sem markdown) tambem e clicavel
+    out = out.replace(/(^|[\s(])((?:https?:\/\/)[^\s<>"'`)\]]+)/g, (_, pre, url) => {
+      bare.push(url);
+      return `${pre}\x02${bare.length - 1}\x02`;
+    });
+    // v0.7.11-web28: referencia a arquivo (nome ou caminho) -> clicavel
+    out = out.replace(
+      new RegExp(`(^|[\\s(]|\\*\\*)((?:[\\w.\\-]+[\\\\/])*[\\w.\\-]+\\.(?:${FILE_REFERENCE_EXT}))(?=[\\s).,;:!?*]|$)`, 'g'),
+      (_, pre, path) => {
+        files.push(path);
+        return `${pre}\x04${files.length - 1}\x04`;
+      },
+    );
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     out = out.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
-    out = out.replace(/(\d+)/g, (_, i) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
+    out = out.replace(/\x01(\d+)\x01/g, (_, i) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
+    out = out.replace(/\x02(\d+)\x02/g, (_, i) => {
+      const url = bare[Number(i)];
+      return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+    });
+    out = out.replace(/\x03(\d+)\x03/g, (_, i) => {
+      const a = anchors[Number(i)];
+      return `<a href="${a.url}" target="_blank" rel="noopener">${a.label}</a>`;
+    });
+    out = out.replace(/\x04(\d+)\x04/g, (_, i) => {
+      const path = files[Number(i)];
+      return `<a class="file-ref" data-file="${escapeHtml(path)}" href="#" `
+        + `title="${t('answer.openFile')}">${escapeHtml(path)}</a>`;
+    });
     return out;
   }
 
@@ -746,6 +783,104 @@
     }
   }
 
+  /**
+   * v0.7.11-web28: uma referência a arquivo citada na resposta (nome ou
+   * caminho) abre o **arquivo no explorador** — o gateway resolve a
+   * referência (`/explorer/resolve`) e a web navega até ela.
+   */
+  async function openFileInExplorer(reference) {
+    const name = String(reference || '').trim();
+    if (!name) return;
+    try {
+      const data = await apiGet(`/explorer/resolve?name=${encodeURIComponent(name)}`);
+      if (!data || !data.ok) {
+        toast((data && data.error) || t('explorer.notFound'), 'err');
+        return;
+      }
+      document.body.classList.add('explorer-open');
+      $('#explorer').hidden = false;
+      applyExplorerWidth();
+      if (data.dir) {
+        await loadExplorer(data.path || '', '');
+      } else {
+        const parent = String(data.path || '').includes('/')
+          ? String(data.path).slice(0, String(data.path).lastIndexOf('/'))
+          : '';
+        await loadExplorer(parent, '');
+        previewExplorerFile({ path: data.path, name: data.name });
+      }
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
+  }
+
+  /**
+   * Arrastar a borda entre a lista e a visualização para mudar a **altura**
+   * do visualizador (v0.7.11-web28).
+   */
+  const PREVIEW_H_KEY = 'ufvai_explorer_preview_h';
+
+  function applyPreviewHeight() {
+    const box = $('#exp-preview');
+    if (!box) return;
+    const h = Math.max(120, Number(state.previewHeight || 320));
+    box.style.height = `${h}px`;
+    box.style.maxHeight = 'none';
+    const handle = $('#exp-vresizer');
+    if (handle) handle.setAttribute('aria-valuenow', String(h));
+  }
+
+  function setPreviewHeight(height) {
+    state.previewHeight = Math.max(120, Math.min(900, Math.round(height)));
+    applyPreviewHeight();
+    try { localStorage.setItem(PREVIEW_H_KEY, String(state.previewHeight)); } catch (e) { /* ignora */ }
+  }
+
+  function loadPreviewHeight() {
+    try {
+      const saved = parseInt(localStorage.getItem(PREVIEW_H_KEY) || '', 10);
+      if (saved) state.previewHeight = saved;
+    } catch (e) { /* ignora */ }
+    applyPreviewHeight();
+  }
+
+  function bindPreviewResizer() {
+    const handle = $('#exp-vresizer');
+    if (!handle) return;
+    let arrastando = false;
+    let inicioY = 0;
+    let inicioAltura = 0;
+
+    const mover = (event) => {
+      if (!arrastando) return;
+      const y = (event.touches && event.touches[0] ? event.touches[0].clientY : event.clientY);
+      // a alça fica ACIMA do visualizador: arrastar para baixo encolhe
+      setPreviewHeight(inicioAltura + (inicioY - y));
+    };
+    const soltar = () => {
+      if (!arrastando) return;
+      arrastando = false;
+      document.body.classList.remove('resizing');
+    };
+
+    handle.addEventListener('pointerdown', (event) => {
+      arrastando = true;
+      inicioY = (event.touches && event.touches[0] ? event.touches[0].clientY : event.clientY);
+      inicioAltura = Number(state.previewHeight || 320);
+      document.body.classList.add('resizing');
+      try { handle.setPointerCapture(event.pointerId); } catch (e) { /* ignora */ }
+      event.preventDefault();
+    });
+    handle.addEventListener('pointermove', mover);
+    handle.addEventListener('pointerup', soltar);
+    handle.addEventListener('pointercancel', soltar);
+    handle.addEventListener('dblclick', () => setPreviewHeight(320));
+    handle.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowUp') { setPreviewHeight(state.previewHeight + 24); event.preventDefault(); }
+      if (event.key === 'ArrowDown') { setPreviewHeight(state.previewHeight - 24); event.preventDefault(); }
+    });
+  }
+
   /* ── filtro de busca do explorador (v0.7.11-web28) ────────────────── */
 
   let searchTimer = null;
@@ -996,6 +1131,12 @@
         frame.title = data.name || 'PDF';
         frame.setAttribute('loading', 'lazy');
         body.appendChild(frame);
+      } else if (data.html) {
+        // v0.7.11-web28: Word em MODO LEITURA — o HTML vem do próprio
+        // pacote .docx (títulos, negrito, listas, tabelas, links, imagens).
+        const doc = el('div', 'exp-prev-doc');
+        doc.innerHTML = data.html;
+        body.appendChild(doc);
       } else if (data.text) {
         renderPreviewContent(body, data);
       }
@@ -1826,11 +1967,45 @@
   }
 
   function setRunning(running) {
+    const estavaRodando = state.running;
     state.running = !!running;
     $('#status').hidden = !running;
     $('#stop-btn').hidden = !running;
     $('#status-text').textContent = running ? t('status.working') : '';
+    setAgentBusy(running, estavaRodando);
     if (running) watchRun();
+  }
+
+  /**
+   * v0.7.11-web29: indicador **global** de atividade.
+   *
+   * Enquanto o agente trabalha, uma **espiral amarela** gira no cabeçalho
+   * (e na linha de status do compositor). Quando o turno termina, a espiral
+   * é trocada por um **✓ verde** com "concluído" por alguns segundos — sem
+   * isso não dá para saber se o agente acabou ou se travou.
+   */
+  let busyFlashTimer = null;
+
+  function setAgentBusy(busy, veioDeExecucao) {
+    const node = $('#agent-busy');
+    if (!node) return;
+    const text = node.querySelector('.busy-text');
+    clearTimeout(busyFlashTimer);
+    if (busy) {
+      node.classList.remove('done');
+      node.hidden = false;
+      if (text) text.textContent = t('status.working');
+      return;
+    }
+    if (!veioDeExecucao) { node.hidden = true; return; }
+    // fim do turno: "concluído" verde por um instante
+    node.classList.add('done');
+    node.hidden = false;
+    if (text) text.textContent = t('tool.done');
+    busyFlashTimer = setTimeout(() => {
+      node.hidden = true;
+      node.classList.remove('done');
+    }, 2800);
   }
 
   /**
@@ -3536,6 +3711,17 @@
 
     $('#thread').addEventListener('scroll', onThreadScroll, { passive: true });
     $('#thread').addEventListener('wheel', onScrollIntent, { passive: true });
+    // v0.7.11-web28: referência a arquivo citada na resposta → abre no
+    // explorador (delegado: vale para qualquer mensagem já renderizada).
+    document.addEventListener('click', (event) => {
+      const ref = event.target && event.target.closest
+        ? event.target.closest('.file-ref')
+        : null;
+      if (!ref) return;
+      event.preventDefault();
+      openFileInExplorer(ref.getAttribute('data-file'));
+    });
+
     $('#thread').addEventListener('touchmove', onScrollIntent, { passive: true });
 
     // v0.7.11-web26: explorador de arquivos
@@ -3560,7 +3746,9 @@
     }
     $('#exp-search-clear').addEventListener('click', clearExplorerSearch);
     bindExplorerResizer();
+    bindPreviewResizer();
     loadExplorerWidth();
+    loadPreviewHeight();
     $('#jump-btn').addEventListener('click', () => {
       state.autoScroll = true;
       const thread = $('#thread');
@@ -3572,6 +3760,7 @@
       setTimeout(() => scrollToEnd(true), 500);
     });
     $('#dead-action').addEventListener('click', () => {
+      // v0.7.11-web28: é um link para o notebook no Colab (abre em nova aba)
       toast(t('warn.deadAction'));
     });
 

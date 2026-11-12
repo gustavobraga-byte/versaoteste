@@ -1,5 +1,24 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web29] — 2026-11-12 — Word e Excel em modo leitura, links e arquivos clicáveis, indicador global de atividade e busca instantânea
+
+| Pedido | Entregue |
+|---|---|
+| **Alterar o tamanho do visualizador de arquivo** | alça entre a lista e a prévia (cursor `row-resize`); altura gravada no `localStorage`; duplo clique = 320 px; setas do teclado em passos de 24 px (120–900 px) |
+| **Word siguiendo a formatação, em modo leitura** | o `.docx` é convertido em **HTML** a partir do próprio pacote OOXML (só biblioteca padrão): títulos (Título/Heading 1–6), **negrito**, *itálico*, sublinhado, listas com numeração real (`numbering.xml`), **tabelas**, **hiperlinks** e **imagens** embutidas — o documento é lido como no Word, não como texto solto |
+| **Excel também como tabela** | o `.xlsx` vira **uma tabela por aba** (`xl/workbook.xml` + `sharedStrings.xml` + `worksheets/`): 6 abas → 6 tabelas na prévia |
+| **"Voltar ao Colab e reexecutar"** | o botão virou **link** para o notebook no Colab: `https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb` |
+| **Links nas respostas com opção de clicar** | além do link markdown, a **URL solta** (`https://…`) vira `<a href>` clicável — antes era texto cru |
+| **Resposta que aponta um arquivo → abre no explorador** | nome ou caminho citado na resposta vira `.file-ref` clicável; o gateway **resolve** a referência (`GET /api/ufvai/explorer/resolve`) e a web abre o arquivo no explorador |
+| **Espiral enquanto o agente está processando** | indicador **global** no cabeçalho: espiral **amarela** girando enquanto o agente trabalha (e na linha de status do compositor, agora uma etiqueta visível); ao fim do turno, **✓ verde "concluído"** por ~3 s — fica claro se o agente terminou ou travou |
+| **Busca do explorador instantânea** | a varredura recursiva no Drive (FUSE) levava **3–6 s**; agora há um **índice da árvore em cache** (120 s) e a varredura é feita por nível, em paralelo: a 1ª busca monta o índice (~2,5 s) e as seguintes respondem em **~70 ms** |
+
+### Também nesta rodada
+
+- **Dicionário**: **226 chaves × 5 idiomas**.
+- **Testes**: `scripts/test_web29.py` → **13/13** ✓; `test_web28.py` → **18/18** ✓;
+  `test_acceptance.py` → **33/33** ✓; `test_web25.py` → **14/14** ✓; 0 erros de console.
+
 ## [0.7.11-web28] — 2026-11-12 — tabelas com links, sincronismo com fallback, explorador redimensionável com busca e PDF, e o indicador de atividade
 
 ### 1. Tabelas nas respostas (com links)

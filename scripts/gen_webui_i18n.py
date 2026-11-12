@@ -52,6 +52,8 @@ KEYS: list[str] = [
     "explorer.empty", "explorer.download", "explorer.drive", "explorer.truncated",
     "explorer.search", "explorer.clearSearch", "explorer.resize",
     "explorer.noResults", "explorer.results", "explorer.closePreview",
+    "explorer.notFound", "explorer.resizePreview",
+    "answer.openFile",
     "about.version", "about.codename", "about.release", "about.author", "about.email",
     "about.institution", "about.registry", "about.license", "about.languages", "about.agencies",
     "settings.expandReasoning", "settings.expandTools", "settings.expandAll",

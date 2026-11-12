@@ -203,6 +203,10 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
     if resource == "explorer" and method == "GET" and len(parts) == 4 and parts[3] == "preview":
         rel = str(query.get("path", [""])[0] or "")
         return 200, explorer.preview(rel)
+    if resource == "explorer" and method == "GET" and len(parts) == 4 and parts[3] == "resolve":
+        # v0.7.11-web28: resolve a referência de arquivo citada na resposta
+        name = str(query.get("name", [""])[0] or "")
+        return 200, explorer.resolve(name)
     if resource == "about" and method == "GET":
         return 200, webapi.about()
     if resource == "locale" and method == "GET":

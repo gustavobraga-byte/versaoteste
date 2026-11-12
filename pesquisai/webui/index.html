@@ -48,7 +48,16 @@
       <button class="icon-btn menu-btn" id="menu-btn" title="Ocultar/mostrar as sessões" aria-label="Ocultar ou mostrar a lista de sessões" data-i18n-title="top.sessions">☰</button>
 
       <div class="top-title">
-        <h1 id="session-title" title="Duplo clique renomeia a sessão">UFVAI</h1>
+        <div class="title-row">
+          <h1 id="session-title" title="Duplo clique renomeia a sessão">UFVAI</h1>
+          <!-- v0.7.11-web29: espiral global — mostra que o agente está
+               trabalhando (e que terminou, com o "concluído" verde) -->
+          <span class="agent-busy" id="agent-busy" hidden>
+            <span class="spin" aria-hidden="true"></span>
+            <span class="busy-check" aria-hidden="true">✓</span>
+            <span class="busy-text"></span>
+          </span>
+        </div>
         <div class="top-sub">
           <button class="pill model-pill" id="model-pill" title="Trocar modelo" data-i18n-title="top.model">
             <span id="model-label">modelo…</span>
@@ -96,7 +105,10 @@
         <strong data-i18n="warn.dead">O ambiente do Colab foi encerrado</strong>
         <p data-i18n="warn.deadBody"></p>
       </div>
-      <button class="dead-action" id="dead-action" data-i18n="warn.deadAction">Voltar ao Colab e reexecutar</button>
+      <!-- v0.7.11-web28: o botão abre o notebook no Colab (para reexecutar) -->
+      <a class="dead-action" id="dead-action" target="_blank" rel="noopener"
+         href="https://colab.research.google.com/github/gustavobraga-byte/PesquisAI/blob/main/PesquisAI.ipynb"
+         data-i18n="warn.deadAction">Voltar ao Colab e reexecutar</a>
     </div>
 
     <div class="thread" id="thread">
@@ -181,6 +193,10 @@
     </div>
     <div class="exp-body">
       <div class="exp-list" id="exp-list"></div>
+      <!-- v0.7.11-web28: arrastar para redimensionar o VISUALIZADOR -->
+      <div class="exp-vresizer" id="exp-vresizer" role="separator" aria-orientation="horizontal"
+           tabindex="0" title="Arrastar para redimensionar a visualização"
+           data-i18n-title="explorer.resizePreview"></div>
       <div class="exp-preview" id="exp-preview" hidden></div>
     </div>
   </aside>
