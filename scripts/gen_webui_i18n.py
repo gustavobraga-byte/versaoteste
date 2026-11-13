@@ -27,8 +27,12 @@ KEYS: list[str] = [
     "composer.remove", "composer.attached", "composer.uploading", "composer.uploadFail",
     "composer.tooBig", "composer.filesSaved",
     "status.working", "status.interrupting", "status.queued",
+    # v0.7.11-web30: interrupção pedida pelo usuário + "nada em execução"
+    "status.stopped", "status.noneRunning",
     "palette.commands", "palette.skills", "palette.files", "palette.hint",
     "palette.noResults", "palette.terminalOnly", "composer.placeholderShort",
+    # v0.7.11-web30: comando da web — parar a execução
+    "palette.stopCommand", "palette.stopDesc",
     "modal.model", "modal.searchModel", "modal.settings", "modal.session",
     "modal.close", "modal.variant",
     "tool.reasoning", "tool.copy", "tool.copied", "tool.copyFail", "tool.expandAll",
@@ -53,7 +57,7 @@ KEYS: list[str] = [
     "explorer.search", "explorer.clearSearch", "explorer.resize",
     "explorer.noResults", "explorer.results", "explorer.closePreview",
     "explorer.notFound", "explorer.resizePreview",
-    "answer.openFile",
+    "answer.openFile", "answer.openFolder",
     "about.version", "about.codename", "about.release", "about.author", "about.email",
     "about.institution", "about.registry", "about.license", "about.languages", "about.agencies",
     "settings.expandReasoning", "settings.expandTools", "settings.expandAll",

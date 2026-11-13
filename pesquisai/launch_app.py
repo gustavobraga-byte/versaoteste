@@ -6884,6 +6884,36 @@ def launch():
         except Exception as exc:  # noqa: BLE001
             logger.warning("webui: falha ao iniciar o servidor web (%s)", exc)
 
+        # v0.7.11-web30: o **supervisor** mantém uma segunda cópia do
+        # servidor web (porta 8003) rodando com o código mais recente —
+        # ele sobrevive à queda do próprio processo e é religado pelo
+        # wrapper quando a instância reinicia. Sem ele, a interface ficava
+        # presa no código do boot.
+        try:
+            _supervisor = Path(__file__).resolve().parent.parent / "scripts" / "webui_supervisor.sh"
+            if _supervisor.exists():
+                import subprocess as _subprocess
+
+                _supervisor_log = Path("/tmp/webui-8003.log")
+                _supervisor_log.parent.mkdir(parents=True, exist_ok=True)
+                with open(_supervisor_log, "ab") as _log:
+                    _subprocess.Popen(
+                        ["bash", str(_supervisor)],
+                        stdout=_log,
+                        stderr=_log,
+                        stdin=_subprocess.DEVNULL,
+                        start_new_session=True,
+                        # o supervisor serve o código a partir da MESMA
+                        # pasta do pacote que o boot está usando
+                        env={
+                            **os.environ,
+                            "UFVAI_WEBUI_SRC": str(Path(__file__).resolve().parent.parent),
+                        },
+                    )
+                logger.info("webui: supervisor da porta 8003 iniciado")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("webui: supervisor 8003 não iniciou (%s)", exc)
+
         boot.active("Preparando a interface web", 98)
         global _SESSION_TOKEN
         _SESSION_TOKEN = secrets.token_urlsafe(32)

@@ -428,8 +428,16 @@ def sessions() -> list[dict]:
 
 
 def active_sessions() -> dict:
-    """Sessões que o motor considera em execução."""
+    """Sessões que o motor considera em execução.
+
+    v0.7.11-web30: quando o motor está indisponível, devolve ``{"error": …}``
+    em vez de ``{}`` — o cliente precisa distinguir "não há nada rodando"
+    de "não deu para perguntar" (senão o indicador "trabalhando" morre no
+    meio de uma execução).
+    """
     data = engine_json("/api/session/active", timeout=8)
+    if isinstance(data, dict) and data.get("error"):
+        return {"error": str(data["error"])}
     rows = data.get("data") if isinstance(data, dict) else data
     return rows if isinstance(rows, dict) else {}
 

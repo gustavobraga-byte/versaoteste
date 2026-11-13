@@ -857,7 +857,7 @@ def office_text(path: Path) -> str:
 
 
 def resolve(name: str) -> dict[str, Any]:
-    """Resolve uma referência de arquivo citada numa resposta.
+    """Resolve uma referência de arquivo **ou pasta** citada numa resposta.
 
     v0.7.11-web28: quando a resposta menciona um arquivo (pelo nome ou pelo
     caminho), o clique tem de **abrir o arquivo no explorador**. Aceita:
@@ -866,6 +866,10 @@ def resolve(name: str) -> dict[str, Any]:
     * caminho relativo à raiz (``docs/relatorio.pdf``);
     * apenas o **nome** do arquivo (``relatorio.pdf``) — procurado na árvore
       (o mais raso primeiro).
+
+    v0.7.11-web30: também aceita **pastas** — pelo caminho
+    (``outputs-projeto/artigos``) ou só pelo nome (``artigos``). O clique
+    abre a pasta no explorador.
     """
     raw = str(name or "").strip().strip("`'\"")
     if not raw:
@@ -881,11 +885,12 @@ def resolve(name: str) -> dict[str, Any]:
         return {"ok": True, "path": _relative(candidate, roots), "name": candidate.name,
                 "kind": "directory", "dir": True}
 
-    # 2) só o nome: procura na árvore (o mais raso primeiro)
-    base = os.path.basename(raw)
+    # 2) só o nome: procura na árvore (o mais raso primeiro) — ARQUIVOS e
+    #    PASTAS (v0.7.11-web30: o caminho de uma pasta também é clicável)
+    base = os.path.basename(raw.rstrip("/"))
     if not base:
         return {"ok": False, "error": "arquivo não encontrado", "name": raw}
-    achados: list[tuple[int, str, Path]] = []
+    achados: list[tuple[int, int, str, Path]] = []
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
@@ -895,16 +900,21 @@ def resolve(name: str) -> dict[str, Any]:
                 continue
             for nome in filenames:
                 if nome.lower() == base.lower():
-                    achados.append((depth, os.path.join(dirpath, nome), Path(dirpath) / nome))
+                    achados.append((depth, 0, os.path.join(dirpath, nome), Path(dirpath) / nome))
+            for nome in dirnames:
+                if nome.lower() == base.lower():
+                    achados.append((depth, 1, os.path.join(dirpath, nome), Path(dirpath) / nome))
     if not achados:
         return {"ok": False, "error": "arquivo não encontrado na pasta do agente", "name": raw}
-    achados.sort(key=lambda x: (x[0], x[1]))
-    _depth, caminho, _p = achados[0]
+    achados.sort(key=lambda x: (x[0], x[1], x[2]))
+    _depth, _e_pasta, caminho, _p = achados[0]
+    alvo = Path(caminho)
     return {
         "ok": True,
-        "path": _relative(Path(caminho), roots),
+        "path": _relative(alvo, roots),
         "name": os.path.basename(caminho),
-        "kind": _kind_of(Path(caminho)),
+        "kind": "directory" if _e_pasta else _kind_of(alvo),
+        "dir": bool(_e_pasta),
     }
 
 

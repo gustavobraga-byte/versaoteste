@@ -54,7 +54,12 @@
     "explorer.closePreview": "Fechar a visualização",
     "explorer.notFound": "arquivo não encontrado na pasta do agente",
     "explorer.resizePreview": "Arrastar para redimensionar a visualização",
-    "answer.openFile": "Abrir no explorador"
+    "answer.openFile": "Abrir no explorador",
+    "status.stopped": "interrompido",
+    "status.noneRunning": "nenhuma execução em andamento",
+    "palette.stopCommand": "/parar",
+    "palette.stopDesc": "Interromper a execução atual (Esc)",
+    "answer.openFolder": "Abrir a pasta no explorador"
   },
   "en": {
     "settings.tab.autosave": "Autosave",
@@ -111,7 +116,12 @@
     "explorer.closePreview": "Close the preview",
     "explorer.notFound": "file not found in the agent folder",
     "explorer.resizePreview": "Drag to resize the preview",
-    "answer.openFile": "Open in the explorer"
+    "answer.openFile": "Open in the explorer",
+    "status.stopped": "stopped",
+    "status.noneRunning": "no run in progress",
+    "palette.stopCommand": "/stop",
+    "palette.stopDesc": "Interrupt the current run (Esc)",
+    "answer.openFolder": "Open the folder in the explorer"
   },
   "es": {
     "settings.tab.autosave": "Autosave",
@@ -168,7 +178,12 @@
     "explorer.closePreview": "Cerrar la vista previa",
     "explorer.notFound": "archivo no encontrado en la carpeta del agente",
     "explorer.resizePreview": "Arrastra para redimensionar la vista previa",
-    "answer.openFile": "Abrir en el explorador"
+    "answer.openFile": "Abrir en el explorador",
+    "status.stopped": "detenido",
+    "status.noneRunning": "sin ejecución en curso",
+    "palette.stopCommand": "/detener",
+    "palette.stopDesc": "Interrumpir la ejecución actual (Esc)",
+    "answer.openFolder": "Abrir la carpeta en el explorador"
   },
   "fr": {
     "settings.tab.autosave": "Autosave",
@@ -225,7 +240,12 @@
     "explorer.closePreview": "Fermer l’aperçu",
     "explorer.notFound": "fichier introuvable dans le dossier de l’agent",
     "explorer.resizePreview": "Glisser pour redimensionner l’aperçu",
-    "answer.openFile": "Ouvrir dans l’explorateur"
+    "answer.openFile": "Ouvrir dans l’explorateur",
+    "status.stopped": "interrompu",
+    "status.noneRunning": "aucune exécution en cours",
+    "palette.stopCommand": "/arrêter",
+    "palette.stopDesc": "Interrompre l'exécution en cours (Échap)",
+    "answer.openFolder": "Ouvrir le dossier dans l'explorateur"
   },
   "zh": {
     "settings.tab.autosave": "自动保存",
@@ -282,6 +302,11 @@
     "explorer.closePreview": "关闭预览",
     "explorer.notFound": "在代理文件夹中未找到该文件",
     "explorer.resizePreview": "拖动以调整预览大小",
-    "answer.openFile": "在文件浏览器中打开"
+    "answer.openFile": "在文件浏览器中打开",
+    "status.stopped": "已停止",
+    "status.noneRunning": "当前没有正在执行的运行",
+    "palette.stopCommand": "/停止",
+    "palette.stopDesc": "中断当前运行 (Esc)",
+    "answer.openFolder": "在文件管理器中打开文件夹"
   }
 }

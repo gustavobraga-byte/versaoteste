@@ -158,7 +158,11 @@
         <button class="icon-btn attach-btn" id="attach-btn" title="Anexar arquivos" aria-label="Anexar arquivos" data-i18n-title="composer.attach">📎</button>
         <input id="file-input" type="file" multiple hidden>
         <button class="send" id="send-btn" title="Enviar (Enter)" aria-label="Enviar" data-i18n-title="composer.send">➤</button>
-        <button class="stop" id="stop-btn" title="Interromper (Esc)" aria-label="Interromper" data-i18n-title="composer.stop" hidden>■</button>
+        <!-- v0.7.11-web30: o botão de PARAR é sempre visível. Antes ele
+             só aparecia enquanto o SSE dizia que o modelo estava
+             trabalhando — quando esse evento se perdia, não havia
+             comando nenhum para interromper. -->
+        <button class="stop" id="stop-btn" title="Interromper (Esc)" aria-label="Interromper" data-i18n-title="composer.stop">■</button>
       </div>
       <div class="status-line" id="status" hidden><span class="spinner"></span><span id="status-text">Trabalhando…</span></div>
     </div>

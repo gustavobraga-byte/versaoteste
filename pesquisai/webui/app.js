@@ -66,6 +66,10 @@
     model: { id: '', providerID: '', variant: '' },
     agent: 'UFVAI',
     running: false,
+    runningSince: 0,        // v0.7.11-web30: início do turno (cronômetro)
+    stopping: false,        // v0.7.11-web30: interrupção pedida pelo usuário
+    runClosed: false,       // v0.7.11-web30: turno já encerrado (não religar)
+    lastContentChange: 0,   // v0.7.11-web30: última vez que a resposta cresceu
     stream: {},
     manualSwitch: 0,
     source: null,
@@ -213,6 +217,47 @@
   // referência clicável (abre o arquivo no explorador).
   const FILE_REFERENCE_EXT = 'pdf|docx?|xlsx?|pptx?|odt|ods|odp|csv|tsv|md|txt|rst|json|ya?ml|toml|ini|cfg|conf|log|py|js|mjs|cjs|ts|tsx|jsx|sh|bash|zsh|css|scss|html?|xml|sql|r|jl|tex|bib|ipynb|env|lock|png|jpe?g|gif|webp|svg|bmp|ico|mp3|mp4|wav|zip|tar|gz';
 
+  // v0.7.11-web30: **caminhos** — de arquivo e de PASTA — citados na
+  // resposta também viram clicáveis.
+  //
+  // Antes só era reconhecido "nome.ext" de uma lista fixa, e só fora de
+  // crases. Ficavam como texto morto: `outputs-projeto/artigos` (pasta),
+  // `` `vault/moc/last-state.md` `` (caminho entre crases) e
+  // `/content/drive/My Drive/PesquisAI/vault` (caminho absoluto).
+  const FILE_EXT_TEST = new RegExp(`\\.(?:${FILE_REFERENCE_EXT})$`, 'i');
+  const PATH_SEGMENT = "[^\\s/\\\\:*?\"<>|,;\\[\\](){}]+";
+  // caminho com pelo menos uma barra: "vault/moc", "outputs-x/artigos"
+  const PATH_WITH_SLASH = `(?:${PATH_SEGMENT}\\/)+\\/?${PATH_SEGMENT}`;
+  // caminho absoluto no Drive — o "My Drive" tem espaço
+  const PATH_ABS_DRIVE = /\/content\/drive\/My Drive\/[^\s'"`<>)\]]+/g;
+  // primeiras palavras que NÃO iniciam um caminho ("e/ou", "and/or"…)
+  const PATH_STOP_FIRST = new Set([
+    'e', 'ou', 'and', 'or', 'de', 'da', 'do', 'dos', 'das', 'em', 'no',
+    'na', 'nos', 'nas', 'se', 'the', 'of', 'for', 'y', 'a', 'o',
+  ]);
+
+  /**
+   * O texto é um caminho de arquivo ou de pasta?
+   *
+   * @param {string} text  texto puro (sem escape)
+   * @returns {boolean}
+   */
+  function looksLikePath(text) {
+    const s = String(text || '').trim();
+    if (!s || s.length > 400 || s.includes('\n')) return false;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return false;   // URL
+    if (/^#/.test(s)) return false;                            // âncora
+    if (/[<>|]/.test(s)) return false;
+    if (s.startsWith('/content/drive/My Drive/')) return true;  // caminho absoluto
+    if (/\s/.test(s)) return false;                            // com espaço: só o Drive
+    if (!s.includes('/')) return FILE_EXT_TEST.test(s);        // "relatorio.md"
+    const parts = s.replace(/\/+$/, '').split('/').filter(Boolean);
+    if (parts.length < 2) return false;
+    if (parts.every((p) => p.length <= 2)) return false;       // "e/ou"
+    if (PATH_STOP_FIRST.has(parts[0].toLowerCase())) return false;
+    return true;
+  }
+
   function inline(text) {
     const codes = [];
     const bare = [];
@@ -220,6 +265,11 @@
     const files = [];
     let out = escapeHtml(text);
     out = out.replace(/`([^`\n]+)`/g, (_, code) => {
+      // v0.7.11-web30: caminho entre crases também é clicável
+      if (looksLikePath(code)) {
+        files.push(code.trim());
+        return `\x04${files.length - 1}\x04`;
+      }
       codes.push(code);
       return `\x01${codes.length - 1}\x01`;
     });
@@ -241,6 +291,26 @@
       (_, pre, path) => {
         files.push(path);
         return `${pre}\x04${files.length - 1}\x04`;
+      },
+    );
+    // v0.7.11-web30: caminho ABSOLUTO no Drive — o "My Drive" tem espaço,
+    // então a regra geral (que não aceita espaço) não pega.
+    out = out.replace(PATH_ABS_DRIVE, (match) => {
+      const limpo = match.replace(/[.,;:!?]+$/, '');
+      if (!limpo) return match;
+      files.push(limpo);
+      return `\x04${files.length - 1}\x04` + match.slice(limpo.length);
+    });
+    // v0.7.11-web30: caminho com barra — de ARQUIVO ou de PASTA. É a regra
+    // que faltava: "outputs-projeto/artigos" (pasta) e "vault/moc" viram
+    // clicáveis e abrem no explorador.
+    out = out.replace(
+      new RegExp(`(^|[\\s(\\[>"'«]|\\*\\*)((?:${PATH_SEGMENT}\\/)+${PATH_SEGMENT}|(?:${PATH_SEGMENT}\\/)+)`, 'g'),
+      (_, pre, path) => {
+        const limpo = path.replace(/[.,;:!?]+$/, '');
+        if (!limpo || !looksLikePath(limpo)) return pre + path;
+        files.push(limpo);
+        return `${pre}\x04${files.length - 1}\x04` + path.slice(limpo.length);
       },
     );
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -508,6 +578,14 @@
     node.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { node.hidden = true; }, 4200);
+  }
+
+  /** O foco está num campo de texto? (evita atalhos acidentais) */
+  function isDigitando(alvo) {
+    if (!alvo) return false;
+    const tag = String(alvo.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select'
+      || !!alvo.isContentEditable;
   }
 
   /* ── entrada de texto (prompt do navegador) ──────────────────────── */
@@ -802,6 +880,9 @@
       applyExplorerWidth();
       if (data.dir) {
         await loadExplorer(data.path || '', '');
+        // v0.7.11-web30: confirma que a PASTA foi aberta (antes não havia
+        // nenhuma pista de que o clique tinha funcionado).
+        toast(`${t('answer.openFolder')}: ${data.path || data.name}`);
       } else {
         const parent = String(data.path || '').includes('/')
           ? String(data.path).slice(0, String(data.path).lastIndexOf('/'))
@@ -1842,6 +1923,7 @@
         break;
       case 'run.finished':
       case 'run.failed':
+        state.runClosed = true;
         setRunning(false);
         refreshSessions();
         refreshUsage();
@@ -1966,14 +2048,67 @@
     }
   }
 
-  function setRunning(running) {
+  /**
+   * v0.7.11-web30: estado de execução — **sem depender só do SSE**.
+   *
+   * O indicador anterior só acendia com o evento ``run.started``. Se esse
+   * evento se perdesse (queda do SSE, proxy que bufferiza, reconexão), o
+   * usuário ficava **sem nenhuma pista** de o modelo estar trabalhando —
+   * e sem botão de parar. Agora há três fontes independentes:
+   *
+   * 1. o SSE (``run.started`` / ``run.finished``);
+   * 2. o estado ``active`` do motor (``GET /sessions`` → ``active``);
+   * 3. a própria resposta **crescendo** (a sincronização de 3 s).
+   *
+   * E o envio é **otimista**: ao publicar, o turno já está começando.
+   */
+  function setRunning(running, opts) {
+    const opcoes = opts || {};
     const estavaRodando = state.running;
     state.running = !!running;
-    $('#status').hidden = !running;
-    $('#stop-btn').hidden = !running;
-    $('#status-text').textContent = running ? t('status.working') : '';
-    setAgentBusy(running, estavaRodando);
-    if (running) watchRun();
+    const agora = Date.now();
+    if (state.running) {
+      if (!estavaRodando && !opcoes.keepStopping) state.runningSince = agora;
+      $('#status').hidden = false;
+      const botao = $('#stop-btn');
+      if (botao) { botao.classList.add('live'); botao.disabled = false; }
+    } else {
+      $('#status').hidden = true;
+      const botao = $('#stop-btn');
+      if (botao) { botao.classList.remove('live'); }
+    }
+    atualizaTextoAtividade();
+    setAgentBusy(state.running, estavaRodando);
+    if (state.running) { watchRun(); startElapsed(); } else { stopElapsed(); }
+  }
+
+  /** Texto do indicador: "Trabalhando… 12 s" / "interrompendo…". */
+  function atualizaTextoAtividade() {
+    const seg = state.runningSince ? Math.floor((Date.now() - state.runningSince) / 1000) : 0;
+    const base = state.stopping ? t('status.interrupting') : t('status.working');
+    const texto = seg > 0 ? `${base} · ${seg}s` : base;
+    const status = $('#status-text');
+    if (status) status.textContent = state.running ? texto : '';
+    const busy = $('#agent-busy');
+    // só mexe no texto do indicador enquanto ele gira — senão o texto do
+    // flash ("concluído" / "interrompido") seria sobrescrito.
+    if (busy && state.running) {
+      const alvo = busy.querySelector('.busy-text');
+      if (alvo) alvo.textContent = texto;
+    }
+  }
+
+  let elapsedTimer = null;
+
+  function startElapsed() {
+    if (elapsedTimer) return;
+    elapsedTimer = setInterval(atualizaTextoAtividade, 1000);
+  }
+
+  function stopElapsed() {
+    if (!elapsedTimer) return;
+    clearInterval(elapsedTimer);
+    elapsedTimer = null;
   }
 
   /**
@@ -1983,6 +2118,9 @@
    * (e na linha de status do compositor). Quando o turno termina, a espiral
    * é trocada por um **✓ verde** com "concluído" por alguns segundos — sem
    * isso não dá para saber se o agente acabou ou se travou.
+   *
+   * v0.7.11-web30: ganhou o estado **interrompido** (quadrado vermelho),
+   * quando a parada foi pedida pelo usuário.
    */
   let busyFlashTimer = null;
 
@@ -1991,28 +2129,87 @@
     if (!node) return;
     const text = node.querySelector('.busy-text');
     clearTimeout(busyFlashTimer);
+    node.classList.remove('done', 'stopped');
     if (busy) {
-      node.classList.remove('done');
       node.hidden = false;
-      if (text) text.textContent = t('status.working');
+      node.classList.toggle('stopping', !!state.stopping);
+      if (text) text.textContent = state.stopping ? t('status.interrupting') : t('status.working');
       return;
     }
     if (!veioDeExecucao) { node.hidden = true; return; }
-    // fim do turno: "concluído" verde por um instante
-    node.classList.add('done');
+    // fim do turno: "concluído" (verde) ou "interrompido" (vermelho)
+    if (state.stopping) {
+      node.classList.add('stopped');
+      if (text) text.textContent = t('status.stopped');
+    } else {
+      node.classList.add('done');
+      if (text) text.textContent = t('tool.done');
+    }
     node.hidden = false;
-    if (text) text.textContent = t('tool.done');
     busyFlashTimer = setTimeout(() => {
       node.hidden = true;
-      node.classList.remove('done');
+      node.classList.remove('done', 'stopped');
+      state.stopping = false;
     }, 2800);
+  }
+
+  /**
+   * v0.7.11-web30: sondagem do estado do motor.
+   *
+   * ``GET /api/ufvai/sessions`` devolve ``active``: o próprio motor dice
+   * quais sessões estão **em execução**. É uma chamada normal (funciona
+   * por qualquer proxy, ao contrário do SSE) — então serve de segunda
+   * fonte para o indicador e para habilitar o botão de parar.
+   */
+  const ATIVIDADE_POLL_MS = 2500;
+  let atividadeTimer = null;
+
+  function iniciaSondaAtividade() {
+    if (atividadeTimer) return;
+    atividadeTimer = setInterval(sondaAtividade, ATIVIDADE_POLL_MS);
+    sondaAtividade();
+  }
+
+  async function sondaAtividade() {
+    if (!state.sessionId) return;
+    let ativo = null;
+    try {
+      const data = await apiGet('/sessions');
+      const mapa = (data && data.active) || null;
+      if (mapa && typeof mapa === 'object') ativo = mapa;
+    } catch (e) { return; }
+    if (!ativo) return;
+    // v0.7.11-web30: "não deu para perguntar" ≠ "não está rodando"
+    if (ativo.error) return;
+    state.active = ativo;
+    const ids = Object.keys(ativo);
+    const emExecucao = ids.includes(state.sessionId);
+    const agora = Date.now();
+    if (emExecucao) {
+      // v0.7.11-web30: o turno **já encerrado** não é religado pela
+      // sondagem — o motor pode continuar listando a sessão como ativa
+      // por alguns instantes depois do fim (e o "concluído" sumiria).
+      if (!state.running && !state.runClosed) setRunning(true);
+      return;
+    }
+    // o motor diz que esta sessão está parada: só encerra o indicador se
+    // também houve silêncio (nada novo na resposta) — evita apagar o
+    // "trabalhando" por causa de uma leitura atrasada do motor.
+    const silencio = agora - (state.lastContentChange || state.runningSince || agora);
+    if (state.running && silencio > 7000 && agora - (state.runningSince || 0) > 9000) {
+      setRunning(false);
+      await syncMessages({ force: true });
+    }
   }
 
   /**
    * v0.7.11-web24: o aviso "Trabalhando…" ficava na tela para sempre quando
    * o evento ``run.finished`` se perdia (queda do SSE no fim do turno).
-   * O watchdog consulta o motor: quando a sessão deixa de estar ``busy``,
-   * o aviso some — independente do evento.
+   * O watchdog relê a conversa — mas **não** decide mais se o turno ended:
+   * v0.7.11-web30, a heurística ``busy < updated`` estava **errada**
+   * (``updated`` também avança DURANTE o turno) e apagava o indicador
+   * "trabalhando" bem no meio da execução. Quem decide agora é a
+   * sondagem do motor (:func:`sondaAtividade`), com a lista ``active``.
    */
   let runWatchTimer = null;
 
@@ -2021,18 +2218,7 @@
     runWatchTimer = setInterval(async () => {
       if (!state.running || !state.sessionId) return;
       try {
-        const row = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}`);
-        const busy = Number(row.busy || 0);
-        const updated = Number(row.updated || 0);
-        // `busy` é o instante em que a execução começou; `updated` é a última
-        // escrita — se a última escrita é posterior, a sessão já terminou.
-        if (busy && updated && busy < updated) {
-          setRunning(false);
-          await syncMessages({ force: true });
-        } else {
-          // ainda rodando: confere se o texto chegou inteiro (evento perdido)
-          await syncMessages();
-        }
+        await syncMessages();
       } catch (e) { /* motor fora do ar: o watchdog de reconexão trata */ }
     }, 4000);
   }
@@ -2176,6 +2362,13 @@
     pruneStream();
     if (estruturaMudou) renderMessages();
     else if (conteudoMudou) { /* os nós já foram corrigidos no lugar */ }
+    // v0.7.11-web30: a resposta **cresceu** → o modelo está trabalhando.
+    // É a 3ª fonte do indicador de atividade (independente do SSE).
+    // E o turno volta a estar "aberto": houve output novo.
+    if (conteudoMudou) {
+      state.lastContentChange = Date.now();
+      state.runClosed = false;
+    }
   }
 
   /**
@@ -2462,6 +2655,12 @@
     state.pendingSkills = [];
     renderAttachments();
 
+    // v0.7.11-web30: o turno começa AGORA — o indicador acende no instante
+    // do envio, sem esperar o evento do motor (que às vezes se perde).
+    state.stopping = false;
+    state.runClosed = false;
+    setRunning(true);
+
     try {
       // v0.7.11-web24: garante o SSE aberto antes de publicar (evita perder
       // os eventos do turno).
@@ -2472,15 +2671,32 @@
       });
     } catch (e) {
       toast(String(e.message || e), 'err');
+      setRunning(false);
     }
   }
 
   async function stop() {
     if (!state.sessionId) return;
+    // v0.7.11-web30: o botão de parar é SEMPRE visível — se o indicador
+    // falhar, o usuário ainda tem como interromper. E o estado "interrompido"
+    // fica visível depois da parada (não é só um flash).
+    if (!state.running) {
+      toast(t('status.noneRunning'));
+      return;
+    }
+    state.stopping = true;
+    atualizaTextoAtividade();
+    const node = $('#agent-busy');
+    if (node) {
+      node.classList.remove('done');
+      node.classList.add('stopping');
+      node.hidden = false;
+    }
     try {
       await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/interrupt`, {});
-      toast('interrompendo…');
+      toast(t('status.interrupting'));
     } catch (e) {
+      state.stopping = false;
       toast(String(e.message || e), 'err');
     }
   }
@@ -2635,7 +2851,20 @@
       // os do agente (motor) e os nativos da barra da TUI, traduzidos pelo
       // plugin ``ufvai.pt`` e agrupados pela categoria.
       const q = String(query || '').toLowerCase();
-      pal.items = state.commands
+      // v0.7.11-web30: comando **da web** — parar a execução. Não existe
+      // no motor: era o que faltava ("não tem comando para parar").
+      const locais = [{
+        group: t('palette.commands'),
+        type: 'command',
+        name: t('palette.stopCommand'),
+        desc: t('palette.stopDesc'),
+        action: 'stop',
+        scope: 'web',
+        native: 'stop',
+      }].filter((c) => !q
+        || c.name.toLowerCase().includes(q)
+        || String(c.desc).toLowerCase().includes(q));
+      const doMotor = state.commands
         .filter((c) => {
           if (!q) return true;
           return [c.name, c.title, c.native, ...(c.aliases || [])]
@@ -2651,6 +2880,7 @@
           scope: c.scope || 'motor',
           native: c.native || c.name,
         }));
+      pal.items = locais.concat(doMotor);
     } else {
       rebuildMentionItems(pal);
     }
@@ -2806,6 +3036,8 @@
         applyTheme(currentTheme() === 'pesquisai-light' ? 'pesquisai' : 'pesquisai-light');
         return;
       case 'toggle-terminal': showTerminalForCommand(''); return;
+      // v0.7.11-web30: parar a execução (também pelo atalho Esc)
+      case 'stop': await stop(); return;
       default: return;
     }
   }
@@ -3606,6 +3838,9 @@
     setInterval(refreshSessions, 20000);
     setInterval(pollFocus, 2500);
     setInterval(refreshUsage, 30000);
+    // v0.7.11-web30: sondagem do estado do motor — o indicador de atividade
+    // e o botão de parar não podem depender só do SSE.
+    iniciaSondaAtividade();
     // v0.7.11-web25: heartbeat — detecta a queda do ambiente mesmo sem SSE
     setInterval(heartbeat, 10000);
     // v0.7.11-web28: FALLBACK de sincronização — a tela não pode depender
@@ -3803,6 +4038,15 @@
     });
 
     document.addEventListener('keydown', (event) => {
+      // v0.7.11-web30: **Esc** interrompe a execução quando ela está em
+      // curso (e nada mais está aberto). As outras camadas de Esc
+      // (paleta, modais) marcam `defaultPrevented` — por isso o guarda.
+      if (event.key === 'Escape' && !event.defaultPrevented && state.running
+          && !isDigitando(event.target)) {
+        event.preventDefault();
+        stop();
+        return;
+      }
       if (event.key === 'Escape') {
         closePalette();
         $('#model-modal').hidden = true;
@@ -3870,5 +4114,9 @@
     replyPermission,
     loadPermissions,
     watchRun,
+    // v0.7.11-web30: parada e sondagem de atividade (usadas na aceitação)
+    stop,
+    sondaAtividade,
+    iniciaSondaAtividade,
   };
 })();

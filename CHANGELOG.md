@@ -1,5 +1,24 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web30] — 2026-11-13 — Caminhos clicáveis (inclusive pastas), botão de parar sempre visível e indicador de atividade confiável
+
+| Pedido | Causa real | Entregue |
+|---|---|---|
+| **"Quando o modelo responde um arquivo ou o caminho de uma pasta ainda não consigo clicar nele"** | só era reconhecido `nome.ext` de uma lista fixa, e **fora** de crases | **qualquer caminho** vira link: `outputs-projeto/artigos` (PASTA), `vault/moc/last-state.md` (entre crases), `/content/drive/My Drive/PesquisAI/vault` (absoluto). O clique resolve a referência e abre o item no explorador — **inclusive a pasta**, que agora também é encontrada pelo nome |
+| **"Não tem botão ou comando para parar"** | o botão aparecia **só** enquanto o SSE dizia que o modelo trabalhava; quando o evento se perdia, não havia botão nem comando | o botão **■ é sempre visível** (apagado quando ocioso, aceso e pulsante durante a execução), o **Esc** interrompe e o comando **`/parar`** (`/stop`, `/detener`, `/arrêter`, `/停止`) entrou na paleta |
+| **"Não é possível saber se o modelo está trabalhando ou já finalizou"** | o indicador dependia **só** do evento `run.started`; e o *watchdog* antigo usava a heurística `busy < updated`, **errada** (`updated` avança durante o turno) — apagava o "trabalhando" no meio da execução | indicador com **três fontes**: SSE, estado `active` do motor (sondagem a cada 2,5 s) e o **crescimento da resposta**; o envio é **otimista** (acende na hora), há **cronômetro** ("Trabalhando… · 12 s"), fim de turno → **✓ verde "concluído"**, parada → **■ vermelho "interrompido"** |
+
+### Também nesta rodada
+
+- **Servidor nunca mais "périmé"**: o servidor do boot sobe dentro do processo do OpenCode e ficava com o
+  Python **congelado** até o próximo reinício (cliente novo + contrato velho). Agora um **recarregador**
+  (`importlib.reload`) reloading `webapi.py`/`explorer.py` quando a fonte muda no disco.
+- **Supervisor do 8003 no boot**: `launch_app.py` sobe o supervisor — a interface volta a ter uma cópia
+  sempre atualizada depois de qualquer reinício do Colab.
+- **Dicionário**: **231 chaves × 5 idiomas**.
+- **Testes**: `scripts/test_web30.py` → **20/20** ✓; `test_web29.py` → **13/13** ✓; `test_web28.py` → **18/18** ✓;
+  `test_acceptance.py` → **33/33** ✓; `test_web25.py` → **14/14** ✓; `tests/test_drive_guard.py` → **20/20** ✓.
+
 ## [0.7.11-web29] — 2026-11-12 — Word e Excel em modo leitura, links e arquivos clicáveis, indicador global de atividade e busca instantânea
 
 | Pedido | Entregue |

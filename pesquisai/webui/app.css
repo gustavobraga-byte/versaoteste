@@ -281,6 +281,21 @@ html[data-theme="pesquisai-light"] .new-session { color: #fff; }
 }
 .agent-busy.done .spin { display: none; }
 .agent-busy.done .busy-check { display: inline; }
+/* v0.7.11-web30: estado "interrompido" (a parada foi pedida pelo usuário) */
+.agent-busy.stopped {
+  color: var(--red);
+  border-color: rgba(var(--red), .45);
+  background: rgba(var(--red), .12);
+}
+.agent-busy.stopped .spin { display: none; }
+.agent-busy.stopped .busy-check { display: inline; }
+/* v0.7.11-web30: interrompendo — a espiral fica vermelha */
+.agent-busy.stopping .spin {
+  border-color: rgba(var(--red), .25);
+  border-top-color: var(--red);
+  border-right-color: var(--red);
+}
+.agent-busy.stopping { color: var(--red); border-color: rgba(var(--red), .4); }
 .top-title h1 {
   margin: 0;
   font-size: 14px; font-weight: 600;
@@ -594,6 +609,27 @@ details.block .status-label {
 html[data-theme="pesquisai-light"] .send { color: #fff; }
 .send:disabled { opacity: 0.4; cursor: not-allowed; }
 .stop { background: var(--red); color: #fff; font-size: 10px; }
+/* v0.7.11-web30: o botão de parar fica sempre visível, mas **apagado**
+   quando não há execução em curso (e aceso quando há). */
+.stop {
+  background: transparent;
+  color: var(--ink-muted);
+  border: 1px solid var(--line-strong);
+  opacity: .55;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+.stop:hover { opacity: .9; }
+.stop.live {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+  opacity: 1;
+  animation: ufvai-stop-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ufvai-stop-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--red), .45); }
+  50% { box-shadow: 0 0 0 5px rgba(var(--red), 0); }
+}
 
 .status-line {
   display: flex; align-items: center; gap: 8px;

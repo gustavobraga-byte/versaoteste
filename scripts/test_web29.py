@@ -53,15 +53,15 @@ async def main() -> int:
             const box = document.createElement('div');
             box.className = 'answer';
             box.innerHTML = window.__ufvai.md('O relatório está em '
-                + '**relatorio-final.pdf** e em `notas/2026/ata.md`.');
+                + '**relatorio-final.pdf** e o comando é `npm run build`.');
             document.getElementById('messages').appendChild(box);
             const refs = [...box.querySelectorAll('a.file-ref')];
             return {quantos: refs.length, quais: refs.map(r => r.getAttribute('data-file'))};
         }""")
         checks.append((f"referência de arquivo vira link ({ref.get('quais')})",
                        ref.get("quantos") >= 1))
-        checks.append(("código inline NÃO vira referência de arquivo",
-                       "notas/2026/ata.md" not in (ref.get("quais") or [])))
+        checks.append(("código inline (que não é caminho) NÃO vira referência",
+                       "npm run build" not in (ref.get("quais") or [])))
 
         # ── 3) botão do Colab ────────────────────────────────────────────
         colab = await page.evaluate("""() => {

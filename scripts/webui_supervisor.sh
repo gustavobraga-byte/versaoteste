@@ -11,7 +11,7 @@
 # /tmp/pesquisai), UFVAI_WEBUI_LOG (padrão /tmp/webui-8003.log).
 set -u
 
-SRC="${UFVAI_WEBUI_SRC:-/tmp/pesquisai}"
+SRC="${UFVAI_WEBUI_SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PORT="${UFVAI_WEBUI_PORT:-8003}"
 LOG="${UFVAI_WEBUI_LOG:-/tmp/webui-8003.log}"
 

@@ -15,9 +15,11 @@ O navegador nunca recebe a senha do motor: a autenticação Basic é feita aqui.
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import socket
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -556,7 +558,65 @@ def start(port: int = DEFAULT_PORT) -> bool:
         )
         thread.start()
         _SERVER, _THREAD = server, thread
+        _inicia_recarregador()
         return True
+
+
+# ── recarregador de módulos (v0.7.11-web30) ─────────────────────────────────
+
+#: Módulos recarregáveis quando o código-fonte muda no disco.
+_RELOADAVEIS = ("webapi", "explorer")
+_RELOAD_MTIME: dict[str, float] = {}
+
+
+def _inicia_recarregador() -> None:
+    """Recarrega ``webapi``/``explorer`` quando a fonte muda no disco.
+
+    **Por que isso importa**
+
+    O servidor do boot (porta 8002) sobe **dentro do processo do OpenCode**,
+    no início da instância: o código Python ficava congelado até o próximo
+    reinício do Colab. Os arquivos estáticos (HTML/CSS/JS) são lidos a cada
+    requisição — por isso a interface atualizava — mas o *contrato* (rotas,
+    explorador, resolução de pastas) continuava velho. Os sintomas eram
+    confusos: o cliente novo com o servidor velho.
+
+    ``importlib.reload`` reexecuta o módulo **no lugar** — as referências já
+    existentes passam a ver o código novo, sem reiniciar o processo.
+    """
+    global _RELOAD_MTIME
+    for nome in _RELOADAVEIS:
+        modulo = sys.modules.get(f"{__package__}.{nome}")
+        arquivo = getattr(modulo, "__file__", None)
+        if not arquivo:
+            continue
+        try:
+            _RELOAD_MTIME[nome] = os.path.getmtime(arquivo)
+        except OSError:
+            _RELOAD_MTIME[nome] = 0.0
+
+    def _loop() -> None:
+        while True:
+            time.sleep(15.0)
+            for nome in _RELOADAVEIS:
+                modulo = sys.modules.get(f"{__package__}.{nome}")
+                arquivo = getattr(modulo, "__file__", None)
+                if not arquivo:
+                    continue
+                try:
+                    mtime = os.path.getmtime(arquivo)
+                except OSError:
+                    continue
+                if abs(mtime - _RELOAD_MTIME.get(nome, 0.0)) < 1e-6:
+                    continue
+                _RELOAD_MTIME[nome] = mtime
+                try:
+                    importlib.reload(modulo)
+                    print(f"[webui] módulo '{nome}' recarregado ({arquivo})", flush=True)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[webui] falha ao recarregar '{nome}': {exc}", flush=True)
+
+    threading.Thread(target=_loop, name="ufvai-webui-reload", daemon=True).start()
 
 
 def stop() -> None:
