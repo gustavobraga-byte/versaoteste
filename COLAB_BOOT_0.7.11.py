@@ -23,21 +23,54 @@ try:
 except Exception:
     pass
 
-# 2) Descobre a árvore de origem: a pasta DESTE arquivo (funciona mesmo
-#    que a pasta seja renomeada) e, sem __file__, a pasta atual se ela
-#    contiver o pacote `pesquisai/`.
+# 2) Descobre a árvore de origem.
+#
+# v0.7.11-web30 — ORDEM CORRIGIDA. Antes, o notebook aberto pelo GitHub
+# clonava a `main` e rodava o código **publicado** — ou seja, a versão
+# antiga da interface web (sem botão de parar, sem caminho clicável, sem
+# indicador de atividade), mesmo com as correções já aplicadas no Drive.
+# Agora a ordem é:
+#
+#   a) $UFVAI_BOOT_SRC — escolha explícita do autor;
+#   b) a árvore do PROJETO no Drive (a cópia de trabalho: tem as
+#      correções ainda não publicadas);
+#   c) a pasta deste arquivo (clone local);
+#   d) clone da `main` do GitHub;
+#   e) a árvore do Drive como último recurso (sem rede).
+#
+# Quem não tem a pasta no Drive (usuário novo) segue no clone do GitHub —
+# o comportamento de sempre.
+_DAY_DRIVE = "/content/drive/My Drive/PesquisAI/UFVAI-v0.7.11-web"
+
 _here = ""
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     _here = ""
 
-if _here and os.path.isfile(os.path.join(_here, "pesquisai", "ocweb.py")):
+_override = os.environ.get("UFVAI_BOOT_SRC", "").strip()
+if _override and os.path.isfile(os.path.join(_override, "pesquisai", "ocweb.py")):
+    SRC = _override
+elif os.path.isfile(os.path.join(_DAY_DRIVE, "pesquisai", "ocweb.py")):
+    SRC = _DAY_DRIVE
+elif _here and os.path.isfile(os.path.join(_here, "pesquisai", "ocweb.py")):
     SRC = _here
 elif os.path.isfile(os.path.join(os.getcwd(), "pesquisai", "ocweb.py")):
     SRC = os.getcwd()
 else:
-    SRC = "/content/drive/My Drive/PesquisAI/UFVAI-v0.7.11-web"
+    # Quando o arquivo é executado fora do clone (por exemplo, aberto pelo
+    # Drive), nunca use silenciosamente uma árvore antiga do Drive. Clone a
+    # main atual; o Drive fica apenas como fallback explícito sem rede.
+    SRC = "/tmp/ufvai-github-source"
+    _clone = subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", "main",
+         "https://github.com/gustavobraga-byte/PesquisAI.git", SRC],
+        capture_output=True, text=True, timeout=300,
+    )
+    if _clone.returncode or not os.path.isfile(os.path.join(SRC, "pesquisai", "ocweb.py")):
+        SRC = _DAY_DRIVE
+
+print(f"🌳 Árvore de origem: {SRC}")
 
 DST = "/tmp/pesquisai"
 

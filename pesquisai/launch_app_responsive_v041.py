@@ -706,6 +706,20 @@ def create_wrapper_html(
       width:7px; height:7px; border-radius:50%; background:var(--green);
       animation: pulse 2.4s ease infinite;
     }
+    /* v0.7.11-web30: o ponto reflete o estado REAL do agente — verde e
+       pulsante = trabalhando; cinza e parado = ocioso. */
+    .status-dot.idle {
+      background: var(--ink-dim);
+      animation: none;
+    }
+    .status-dot.busy {
+      background: var(--amber);
+      animation: pulse-amber 1.1s ease infinite;
+    }
+    @keyframes pulse-amber {
+      0%,100% { box-shadow:0 0 0 0 rgba(209,167,5,.55); }
+      50%     { box-shadow:0 0 0 6px rgba(209,167,5,0); }
+    }
     @keyframes pulse {
       0%,100% { box-shadow:0 0 0 0 rgba(93,186,126,.5); }
       50%      { box-shadow:0 0 0 5px rgba(93,186,126,0); }
@@ -1195,9 +1209,9 @@ def create_wrapper_html(
       <span>  <a href="https://github.com/gustavobraga-byte/PesquisAI/blob/main/CHANGELOG.md" target="_blank" class="logo-tag"> v{__VERSION__} </a> </span>
     </div>
 
-    <div class="status">
-      <span class="status-dot"></span>
-      <span data-i18n="ui.status_active">agente ativo</span>
+    <div class="status" id="agent-status" title="Estado do agente">
+      <span class="status-dot idle" id="agent-status-dot"></span>
+      <span data-i18n="ui.status_active" id="agent-status-text">agente ativo</span>
     </div>
 
     <div class="tb-icons">
@@ -1996,6 +2010,63 @@ def create_wrapper_html(
 
     let _currentLang = getCurrentLang();
 
+    // v0.7.11-web30: estado REAL do agente no cabeçalho do wrapper.
+    // O texto era fixo ("agente ativo") e não dizia nada sobre o que o
+    // modelo estava fazendo. Agora o ponto e o rótulo seguem o motor:
+    // verde pulsante = trabalhando · âmbar = ocupado · cinza = ocioso.
+    var _agentStateTimer = null;
+    var _agentStateBusy = null;
+
+    function _agentStateText(busy) {
+      var dict = I18N[_currentLang] || I18N["pt_BR"] || {};
+      var key = busy ? "ui.status_active" : "ui.status_idle";
+      var txt = dict[key];
+      if (!txt) txt = busy ? "agente ativo" : "agente ocioso";
+      return txt;
+    }
+
+    function _renderAgentState(busy) {
+      if (_agentStateBusy === busy) return;
+      _agentStateBusy = busy;
+      var dot = document.getElementById("agent-status-dot");
+      var txt = document.getElementById("agent-status-text");
+      if (dot) {
+        dot.classList.toggle("idle", !busy);
+        dot.classList.toggle("busy", !!busy);
+      }
+      if (txt) txt.textContent = _agentStateText(!!busy);
+    }
+
+    function _pollAgentState() {
+      // v0.7.11-web30: pergunta ao GATEWAY (a web nova), que é sempre a
+      // versão atual — o servidor do wrapper pode ser de um boot antigo.
+      var webUrl = "";
+      var frame = document.getElementById("web-frame");
+      if (frame) webUrl = frame.getAttribute("data-web-url") || "";
+      var urls = [];
+      if (webUrl) urls.push(webUrl.replace(/[/]+$/, "") + "/api/ufvai/agent-state");
+      urls.push(BASE + "/__ufvai/agent-state");
+      var i = 0;
+      function tentar() {
+        if (i >= urls.length) return;
+        var url = urls[i++];
+        fetch(url, { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (d) { _renderAgentState(!!d.busy); return; }
+            tentar();
+          })
+          .catch(function () { tentar(); });
+      }
+      tentar();
+    }
+
+    function _startAgentStatePoll() {
+      _pollAgentState();
+      if (_agentStateTimer) clearInterval(_agentStateTimer);
+      _agentStateTimer = setInterval(_pollAgentState, 2000);
+    }
+
     function applyLang(lang) {
       if (!LANGS[lang]) lang = "pt_BR";
       _currentLang = lang;
@@ -2008,6 +2079,10 @@ def create_wrapper_html(
         const key = el.getAttribute("data-i18n");
         if (dict[key]) el.textContent = dict[key];
       });
+      // 2.1 v0.7.11-web30: o rótulo do estado do agente depende do
+      // estado real (não é só a tradução) — reaplica com o texto certo.
+      var _st = document.getElementById("agent-status-text");
+      if (_st) _st.textContent = _agentStateText(!!_agentStateBusy);
       // 3. Atualiza títulos (data-i18n-title)
       document.querySelectorAll("[data-i18n-title]").forEach(el => {
         const key = el.getAttribute("data-i18n-title");
@@ -5140,6 +5215,9 @@ def create_wrapper_html(
       // 1. Aplica idioma (síncrono, sem flash)
       applyLang(_currentLang);
       buildLangMenu();
+      // 1.0 v0.7.11-web30: o cabeçalho passa a mostrar se o agente está
+      // ATIVO (trabalhando) ou OCIOSO — antes era um texto fixo.
+      _startAgentStatePoll();
       // 1.1 v0.7.0/v0.7.3: chave do autosave + timer de 1 min + pergunta de retomada
       setAutosaveUI(autosaveEnabled());
       setAutosaveAllUI(autosaveAllSessions());
@@ -6958,7 +7036,7 @@ def create_wrapper_html(
             "ui.sair": "SAIR",
             "sair.title": "Encerrar sessão", "sair.confirm_q": "Desconectar e excluir o ambiente de execução?", "sair.warn": "Tudo em memória será perdido — os arquivos no seu Google Drive continuam salvos. Não há como desfazer após confirmar.", "sair.yes": "SIM, SAIR", "sair.status": "Encerrando o ambiente… aguarde", "sair.fail": "Falha ao encerrar — use Runtime ▸ Desconectar e excluir ambiente.", "sair.done": "✅ Ambiente encerrado. Para usar o UFVAI de novo: reexecute a célula de boot.",
             "ui.drive": "Drive", "ui.close": "Fechar", "ui.cancel": "Cancelar",
-            "ui.loading": "Carregando…", "ui.status_active": "agente ativo",
+            "ui.loading": "Carregando…", "ui.status_active": "agente ativo", "ui.status_idle": "agente ocioso",
             "ui.exporting": "Exportando sessão…",
             "autosave.title": "Autosave", "autosave.saved": "Sessão salva no Drive",
             "autosave.unchanged": "Sem novidades — o autosave mais recente já é o atual.",
@@ -7178,7 +7256,7 @@ def create_wrapper_html(
             "ui.sair": "EXIT",
             "sair.title": "End session", "sair.confirm_q": "Disconnect and delete the execution environment?", "sair.warn": "Everything in memory will be lost — files on your Google Drive remain saved. Cannot be undone once confirmed.", "sair.yes": "YES, EXIT", "sair.status": "Shutting down the environment… please wait", "sair.fail": "Failed to shut down — use Runtime ▸ Disconnect and delete runtime.", "sair.done": "✅ Environment terminated. To use UFVAI again: re-run the boot cell.",
             "ui.drive": "Drive", "ui.close": "Close", "ui.cancel": "Cancel",
-            "ui.loading": "Loading…", "ui.status_active": "agent active",
+            "ui.loading": "Loading…", "ui.status_active": "agent active", "ui.status_idle": "agent idle",
             "ui.exporting": "Exporting session…",
             "autosave.title": "Autosave", "autosave.saved": "Session saved to Drive",
             "autosave.unchanged": "No changes — the latest autosave is already up to date.",
@@ -7398,7 +7476,7 @@ def create_wrapper_html(
             "ui.sair": "SALIR",
             "sair.title": "Cerrar sesión", "sair.confirm_q": "¿Desconectar y eliminar el entorno de ejecución?", "sair.warn": "Todo en memoria se perderá — los archivos de tu Google Drive siguen guardados. No se puede deshacer tras confirmar.", "sair.yes": "SÍ, SALIR", "sair.status": "Cerrando el entorno… espere", "sair.fail": "Error al cerrar — usa Runtime ▸ Desconectar y eliminar el entorno.", "sair.done": "✅ Entorno cerrado. Para usar UFVAI de nuevo: reejecuta la celda de arranque.",
             "ui.drive": "Drive", "ui.close": "Cerrar", "ui.cancel": "Cancelar",
-            "ui.loading": "Cargando…", "ui.status_active": "agente activo",
+            "ui.loading": "Cargando…", "ui.status_active": "agente activo", "ui.status_idle": "agente inactivo",
             "ui.exporting": "Exportando sesión…",
             "autosave.title": "Autoguardado", "autosave.saved": "Sesión guardada en Drive",
             "autosave.unchanged": "Sin novedades — el autoguardado más reciente ya es el actual.",
@@ -7618,7 +7696,7 @@ def create_wrapper_html(
             "ui.sair": "QUITTER",
             "sair.title": "Terminer la session", "sair.confirm_q": "Déconnecter et supprimer l'environnement d'exécution ?", "sair.warn": "Tout en mémoire sera perdu — les fichiers de votre Google Drive restent sauvegardés. Irréversible après confirmation.", "sair.yes": "OUI, QUITTER", "sair.status": "Arrêt de l'environnement… veuillez patienter", "sair.fail": "Échec de l'arrêt — utilisez Runtime ▸ Déconnecter et supprimer l'environnement.", "sair.done": "✅ Environnement terminé. Pour réutiliser UFVAI : relancez la cellule de démarrage.",
             "ui.drive": "Drive", "ui.close": "Fermer", "ui.cancel": "Annuler",
-            "ui.loading": "Chargement…", "ui.status_active": "agent actif",
+            "ui.loading": "Chargement…", "ui.status_active": "agent actif", "ui.status_idle": "agent inactif",
             "ui.exporting": "Exportation de la session…",
             "autosave.title": "Sauvegarde auto", "autosave.saved": "Session enregistrée sur Drive",
             "autosave.unchanged": "Aucune nouveauté — la sauvegarde auto la plus récente est déjà à jour.",
@@ -7838,7 +7916,7 @@ def create_wrapper_html(
             "ui.sair": "退出",
             "sair.title": "结束会话", "sair.confirm_q": "断开连接并删除执行环境？", "sair.warn": "内存中的所有内容都将丢失 — Google 云端硬盘中的文件仍会保存。确认后无法撤销。", "sair.yes": "确定，退出", "sair.status": "正在关闭环境…请稍候", "sair.fail": "关闭失败 — 请使用 Runtime ▸ 断开连接并删除环境。", "sair.done": "✅ 环境已终止。如需再次使用 UFVAI：重新运行引导单元。",
             "ui.drive": "云端硬盘", "ui.close": "关闭", "ui.cancel": "取消",
-            "ui.loading": "加载中…", "ui.status_active": "智能体运行中",
+            "ui.loading": "加载中…", "ui.status_active": "智能体运行中", "ui.status_idle": "智能体空闲",
             "ui.exporting": "正在导出会话…",
             "autosave.title": "自动保存", "autosave.saved": "会话已保存到 Drive",
             "autosave.unchanged": "没有新内容 —— 最近一次自动保存已是最新。",

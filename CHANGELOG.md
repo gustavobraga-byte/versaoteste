@@ -1,5 +1,24 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web31] — 2026-11-13 — O boot usava a árvore errada (e por isso as correções não apareciam), e o wrapper agora diz se o agente está ativo
+
+| Sintoma do autor | Causa real | Entregue |
+|---|---|---|
+| **"continuo sem ver o botão de cancelar"**, **"não sei se o agente está processando"**, **"ainda não consigo clicar no arquivo"** — as correções existiam mas **não apareciam** | **o boot clonava a `main` do GitHub** para `/tmp/pesquisai` e rodava **aquela** versão — ou seja, a web **antiga** (sem botão de parar, sem caminho clicável, sem indicador). As correções estavam no Drive e nos commits locais, não no GitHub | o boot agora usa, **nesta ordem**: `$UFVAI_BOOT_SRC` → **a árvore do Drive** (a cópia de trabalho) → a pasta do próprio arquivo → o clone do GitHub → o Drive como último recurso. E **imprime a árvore usada** (`🌳 Árvore de origem: …`), para não haver dúvida |
+| **"atualize o wrapper onde está 'agente ativo' e atualize se ele está ativo ou não"** | o texto era **fixo** — "agente ativo" aparecia mesmo com o agente ocioso | o cabeçalho do wrapper mostra o estado **real**: **ponto âmbar pulsante + "agente ativo"** quando o motor está executando; **ponto cinza + "agente ocioso"** quando está parado (5 idiomas). A consulta vai ao **gateway** (`/api/ufvai/agent-state`, com CORS) — que é sempre a versão atual — com fallback para o servidor do próprio wrapper |
+
+### Também nesta rodada
+
+- **`/api/ufvai/agent-state`** no gateway: `{"busy": true, "sid": …, "sessions": n}`.
+- **`/__ufvai/agent-state`** no servidor do wrapper (mesma informação, mesma origem).
+- **Testes**: `scripts/test_web31.py` → **7/7** ✓; `test_web30.py` → **20/20** ✓; `test_web29.py` → **13/13** ✓;
+  `test_web28.py` → **18/18** ✓; `test_acceptance.py` → **33/33** ✓; `test_web25.py` → **14/14** ✓;
+  `tests/test_drive_guard.py` → **20/20** ✓.
+
+> **Nota de operação:** depois de aplicar o pacote, é preciso **reiniciar a sessão do Colab e rodar
+> a célula de boot** — é o boot que copia a árvore para `/tmp/pesquisai`. A partir daí, a interface
+> web passa a ser a versão corrigida (e o supervisor mantém uma segunda cópia atualizada na 8003).
+
 ## [0.7.11-web30] — 2026-11-13 — Caminhos clicáveis (inclusive pastas), botão de parar sempre visível e indicador de atividade confiável
 
 | Pedido | Causa real | Entregue |

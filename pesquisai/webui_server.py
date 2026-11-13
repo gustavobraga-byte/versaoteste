@@ -211,6 +211,11 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
         return 200, explorer.resolve(name)
     if resource == "about" and method == "GET":
         return 200, webapi.about()
+    if resource == "agent-state" and method == "GET":
+        # v0.7.11-web30: estado do agente (ativo/ocioso) — o cabeçalho do
+        # wrapper pergunta aqui (o wrapper pode estar numa versão antiga,
+        # então o gateway é a fonte confiável).
+        return 200, webapi.agent_state()
     if resource == "locale" and method == "GET":
         lang = str(query.get("lang", [""])[0] or "")
         return 200, webapi.locale_info(lang or None)
@@ -338,12 +343,17 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
     # -- utilidades --
-    def _json(self, status: int, payload: Any) -> None:
+    def _json(self, status: int, payload: Any, cors: bool = False) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        if cors:
+            # v0.7.11-web30: o cabeçalho do wrapper (porta 8001) pergunta
+            # o estado do agente ao gateway (outra origem) — sem este
+            # cabeçalho o navegador bloqueia a leitura.
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
 
@@ -445,7 +455,9 @@ class _Handler(BaseHTTPRequestHandler):
                 status_code, payload = _handle_api("GET", path, query, {})
             except Exception as exc:  # noqa: BLE001
                 status_code, payload = 500, {"error": str(exc)}
-            self._json(status_code, payload)
+            # v0.7.11-web30: a rota de estado do agente é consultada pelo
+            # cabeçalho do wrapper (outra origem) → precisa de CORS.
+            self._json(status_code, payload, cors="agent-state" in path)
             return
         if path.startswith("/__ufvai/"):
             # compatibilidade com o plugin de sincronia do TUI

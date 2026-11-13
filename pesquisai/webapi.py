@@ -69,6 +69,7 @@ __all__ = [
     "permission_reply",
     "finalize_session",
     "about",
+    "agent_state",
     "normalize_event",
     "provider_available",
 ]
@@ -1100,6 +1101,18 @@ def pending_permissions(sid: str) -> list[dict]:
             }
         )
     return out
+
+
+def agent_state() -> dict:
+    """Estado do agente para o cabeçalho da interface (v0.7.11-web30).
+
+    ``busy`` = há execução em curso; ``sid`` = a sessão que trabalha.
+    """
+    ativos = active_sessions()
+    if isinstance(ativos, dict) and ativos.get("error"):
+        return {"busy": False, "sid": "", "sessions": 0, "error": str(ativos["error"])}
+    sids = list(ativos.keys()) if isinstance(ativos, dict) else []
+    return {"busy": bool(sids), "sid": sids[0] if sids else "", "sessions": len(sids)}
 
 
 def about() -> dict:

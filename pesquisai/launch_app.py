@@ -3048,6 +3048,28 @@ def _opencode_auth_export_text() -> "str | None":
     return r.stdout
 
 
+def _agent_state() -> dict:
+    """Estado do agente para o cabeçalho do wrapper (v0.7.11-web30).
+
+    ``busy`` = há execução em curso no motor; ``sid`` = a sessão que está
+    trabalhando; ``sessions`` = quantas estão ativas.
+    """
+    try:
+        from .webapi import active_sessions
+
+        ativos = active_sessions()
+        if isinstance(ativos, dict) and ativos.get("error"):
+            return {"busy": False, "sid": "", "sessions": 0, "error": str(ativos["error"])}
+        sids = list(ativos.keys()) if isinstance(ativos, dict) else []
+        return {
+            "busy": bool(sids),
+            "sid": sids[0] if sids else "",
+            "sessions": len(sids),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"busy": False, "sid": "", "sessions": 0, "error": str(exc)}
+
+
 def _json_has_items(text: "str | None") -> bool:
     """True se o texto é um JSON não vazio (lista ou objeto)."""
     if not text:
@@ -3630,6 +3652,13 @@ def start_wrapper_server():
             p = urlparse(self.path).path
             if p.startswith("/api/") and not self._authorized():
                 return self._reject_token()
+
+            if p == "/__ufvai/agent-state":
+                # v0.7.11-web30: o cabeçalho do wrapper passa a dizer se o
+                # agente está **ATIVO** (trabalhando) ou **ocioso** — antes
+                # era um texto fixo ("agente ativo"), que não dizia nada
+                # sobre o que o modelo estava fazendo.
+                return self._json(200, _agent_state())
 
             if p == "/vendor/marked.min.js":
                 # v0.6.0: asset embutido para funcionamento offline
