@@ -1326,7 +1326,7 @@ def create_wrapper_html(
     <img class="boot-logo" src="/assets/logo-oficial-288.jpg" alt="UFVAI"
          onerror="this.style.display='none'">
     <div class="boot-spinner" aria-hidden="true"></div>
-    <div class="boot-status" id="boot-status" data-i18n="boot.starting">Iniciando terminal…</div>
+    <div class="boot-status" id="boot-status" data-i18n="boot.starting_web">Carregando a interface…</div>
     <div class="boot-bar" aria-hidden="true"></div>
     <div class="boot-error" id="boot-error" style="display:none;"></div>
     <button class="boot-retry" id="boot-retry" style="display:none;"
@@ -2944,9 +2944,10 @@ def create_wrapper_html(
       const fr = document.getElementById("terminal-frame");
       if (!fr) return;
       const theme = document.documentElement.getAttribute("data-theme") || "pesquisai";
-      // v0.6.5: fonte da verdade agora é data-terminal-url (src pode ser
-      // about:blank enquanto o splash aguarda /api/ttyd_ready).
-      let origSrc = _frameUrl(_console);
+      // v0.7.11-web32: a moldura do TERMINAL aponta SEMPRE para o ttyd.
+      // Antes usava `_frameUrl(_console)`, que com a web à frente (novo
+      // padrão) colocava a WEB dentro da moldura do terminal.
+      let origSrc = _frameUrl("ttyd");
       if (!origSrc && fr.src && fr.src.indexOf("about:") !== 0) origSrc = fr.src;
       origSrc = (origSrc || "{__TERMINAL_URL__}").split("?")[0];
       if (!origSrc || origSrc === "about:blank") return;
@@ -2955,7 +2956,8 @@ def create_wrapper_html(
       _sessionsCache = { data: null, ts: 0 };
       // v0.6.5: reconecta somente com a porta respondendo (evita erro do
       // Chrome dentro do iframe); se morto, delega ao boot com splash.
-      const quick = await waitTerminalReady(3000);
+      // v0.7.11-web32: espera a PRONTIDÃO DO TTYD (não a da vista visível).
+      const quick = await waitTerminalReady(3000, _readyUrlTtyd());
       if (!quick) { bootTerminal(25000); return; }
       fr.src = origSrc + "?theme=" + theme + "&t=" + Date.now();
     }
@@ -4513,21 +4515,37 @@ def create_wrapper_html(
       if (/:8001$/.test(o)) return o.replace(":8001", ":8000") + "/";
       return "";
     })();
-    // v0.8.0 (web15): o TERMINAL é a visão padrão ao abrir a interface.
-    // A chave v2 ignora o "web" gravado por versões anteriores (migração
-    // única); depois disso, a escolha feita no botão continua valendo.
-    const _CONSOLE_KEY = "ufvai.console.v2";
+    // v0.7.11-web32: a VERSÃO WEB é a visão padrão ao abrir a interface.
+    //
+    // Antes (web15) o padrão era o TERMINAL e a escolha ficava gravada em
+    // "ufvai.console.v2" — o que mantinha o terminal à frente mesmo depois
+    // das correções da web (botão de parar, spirale, caminhos clicáveis).
+    // Agora:
+    //   · a WEB abre por padrão (a chave antiga é ignorada de propósito);
+    //   · ?view=terminal (ou ?view=ttyd) abre no terminal, sob demanda;
+    //   · o TERMINAL CONTINUA RODANDO em segundo plano (a moldura fica
+    //     carregada e o ttyd conectado) — a sessão do agente não morre
+    //     enquanto a web está à frente.
+    const _CONSOLE_KEY = "ufvai.console.v3";
     const READY_URL_WEB = "{__READY_URL__}";
-    let _console = (function () {
+    const READY_URL_TTYD = "/api/ttyd_ready";
+    const _VIEW_PARAM = (function () {
       try {
-        var saved = localStorage.getItem(_CONSOLE_KEY);
-        if (saved === "ttyd" || saved === "web") return saved;
-      } catch (e) {}
-      return TTYD_URL ? "ttyd" : "web";
+        return String(new URLSearchParams(location.search).get("view") || "").toLowerCase();
+      } catch (e) { return ""; }
+    })();
+    let _console = (function () {
+      if ((_VIEW_PARAM === "terminal" || _VIEW_PARAM === "ttyd") && TTYD_URL) return "ttyd";
+      return "web";
     })();
     function _readyUrl() {
-      return (_console === "ttyd" && TTYD_URL) ? "/api/ttyd_ready" : READY_URL_WEB;
+      return (_console === "ttyd" && TTYD_URL) ? READY_URL_TTYD : READY_URL_WEB;
     }
+    // v0.7.11-web32: o terminal tem endpoints PRÓPRIOS — a vigia do ttyd
+    // (e a recarga da moldura do terminal) nunca podem depender da vista
+    // visível, senão o terminal deixa de ser vigiado quando a web está à
+    // frente (e é exatamente quando ele precisa continuar vivo).
+    function _readyUrlTtyd() { return READY_URL_TTYD; }
     function _currentTheme() {
       return (document.documentElement.getAttribute("data-theme") === "pesquisai-light")
         ? "light" : "dark";
@@ -4584,24 +4602,43 @@ def create_wrapper_html(
       const sep = WEB_URL.indexOf("?") < 0 ? "?" : "&";
       return WEB_URL + sep + "theme=" + _currentTheme();
     }
-    function applyConsole(mode) {
+    // v0.7.11-web32: carrega uma moldura UMA vez e nunca a descarrega.
+    // O terminal é carregado SEMPRE (mesmo escondido) para que o ttyd
+    // fique conectado e a sessão do agente continue viva com a web à frente.
+    function _ensureFrameLoaded(mode, id) {
+      var fr = document.getElementById(id);
+      if (!fr || fr.dataset.loaded) return fr;
+      // v0.7.11-web32: sem URL do ttyd não há terminal para carregar —
+      // (nunca cai para a URL da web dentro da moldura do terminal).
+      if (mode === "ttyd" && !TTYD_URL) return fr;
+      fr.dataset.loaded = "1";
+      fr.src = _frameUrl(mode);
+      if (mode === "web") _watchWebFrame(fr);
+      return fr;
+    }
+    function applyConsole(mode, userInitiated) {
       const target = (mode === "ttyd" && TTYD_URL) ? "ttyd" : "web";
       _console = target;
-      try { localStorage.setItem(_CONSOLE_KEY, _console); } catch (e) {}
+      // v0.7.11-web32: a preferência só é gravada quando o USUÁRIO troca
+      // a visão — e ela não define a visão inicial (a web é o padrão).
+      try {
+        if (userInitiated) localStorage.setItem(_CONSOLE_KEY, _console);
+        else localStorage.removeItem("ufvai.console.v2");
+      } catch (e) {}
       const b = document.getElementById("console-toggle");
       if (b) { b.dataset.mode = _console; b.setAttribute("aria-label", _console); }
       // v0.7.11-web18: cada visão tem sua própria moldura e é carregada UMA
       // vez. Alternar só muda a visibilidade — o ttyd mantém a sessão do
       // agente e a web mantém o SSE aberto (nada recarrega, nada reconecta).
+      // v0.7.11-web32: as DUAS molduras são carregadas no boot (a web à
+      // frente, o terminal em segundo plano) — o terminal segue rodando.
+      [["ttyd", "terminal-frame"], ["web", "web-frame"]].forEach(function (pair) {
+        _ensureFrameLoaded(pair[0], pair[1]);
+      });
       [["ttyd", "terminal-frame"], ["web", "web-frame"]].forEach(function (pair) {
         const fr = document.getElementById(pair[1]);
         if (!fr) return;
         if (pair[0] === target) {
-          if (!fr.dataset.loaded) {
-            fr.dataset.loaded = "1";
-            fr.src = _frameUrl(pair[0]);
-            if (pair[0] === "web") _watchWebFrame(fr);
-          }
           fr.classList.remove("ufvai-hidden");
         } else {
           fr.classList.add("ufvai-hidden");
@@ -4624,7 +4661,7 @@ def create_wrapper_html(
       var d = e && e.data;
       if (!d) return;
       if (d.type === "ufvai-show-terminal") {
-        try { applyConsole("ttyd"); } catch (err) {}
+        try { applyConsole("ttyd", true); } catch (err) {}
         var cmd = String(d.command || "");
         if (!cmd) return;
         // escreve o comando no terminal (ttyd) — o TUI completa o resto
@@ -4710,7 +4747,7 @@ def create_wrapper_html(
         }, 4000);
       }, { once: true });
     }
-    function toggleConsole() { applyConsole(_console === "web" ? "ttyd" : "web"); }
+    function toggleConsole() { applyConsole(_console === "web" ? "ttyd" : "web", true); }
 
     function _bootEls() {
       return {
@@ -4751,12 +4788,15 @@ def create_wrapper_html(
     let _ttydPid = null;
     let _ttydWatch = null;
 
-    async function waitTerminalReady(maxMs) {
+    async function waitTerminalReady(maxMs, url) {
       const t0 = Date.now();
       maxMs = maxMs || 30000;
+      // v0.7.11-web32: o endpoint pode ser explicitado (prontidão do ttyd
+      // para a vigia do terminal, independentemente da vista visível).
+      const endpoint = url || _readyUrl();
       while (Date.now() - t0 < maxMs) {
         try {
-          const r = await fetch(BASE + _readyUrl(), { cache: "no-store" });
+          const r = await fetch(BASE + endpoint, { cache: "no-store" });
           if (r.ok) {
             const d = await r.json();
             if (d.ready) { if (d.pid) _ttydPid = d.pid; return true; }
@@ -4767,10 +4807,44 @@ def create_wrapper_html(
       return false;
     }
 
+    // v0.7.11-web32: vigia do TERMINAL. É armada SEMPRE (na inicialização),
+    // e não só quando o boot tem sucesso — se a web demorar ou falhar, o
+    // terminal continua Precisionado: é ele que religa a moldura quando o
+    // ttyd é reiniciado por baixo.
+    function _startTtydWatch() {
+      if (_ttydWatch) return;
+      _ttydWatch = setInterval(async () => {
+        try {
+          // v0.7.11-web32: a vigia do terminal SEMPRE consulta o ttyd —
+          // mesmo com a web à frente. É ela que mantém o terminal vivo.
+          const r = await fetch(BASE + _readyUrlTtyd(), { cache: "no-store" });
+          if (!r.ok) return;
+          const d = await r.json();
+          if (!d.ready || !d.pid) return;
+          if (_ttydPid === null) { _ttydPid = d.pid; return; }
+          if (d.pid === _ttydPid) return;
+          _ttydPid = d.pid;                 // ttyd reiniciado por baixo
+          const f = document.getElementById("terminal-frame");
+          // v0.7.11-web18: só mexe na moldura do terminal (e só se ela
+          // já tiver sido carregada uma vez).
+          if (f && f.dataset.loaded) {
+            try { f.contentWindow.location.reload(); }
+            catch (e) { f.src = _frameUrl("ttyd"); }
+          }
+        } catch (e) {}
+      }, 20000);
+    }
+
     async function bootTerminal(maxMs) {
       const el = _bootEls();
       if (!el.frame || !TERMINAL_URL) { hideBootSplash(); return; }
-      showBootSplash(_bootDict()["boot.starting"] || "Iniciando terminal…");
+      // v0.7.11-web32: o splash anuncia a VISÃO que está abrindo (a web, por
+      // padrão) — e o terminal sobe em paralelo, sem esperar.
+      const dict0 = _bootDict();
+      const webFirst = (_console !== "ttyd");
+      showBootSplash(webFirst
+        ? (dict0["boot.starting_web"] || "Carregando a interface…")
+        : (dict0["boot.starting"] || "Iniciando terminal…"));
       const ok = await waitTerminalReady(maxMs);
       if (!ok) {
         const dict = _bootDict();
@@ -4788,37 +4862,19 @@ def create_wrapper_html(
         return;
       }
       let loaded = false;
-      el.frame.onload = () => { loaded = true; hideBootSplash(); };
-      // v0.7.11-web18: applyConsole carrega a visão atual (uma vez só) e
-      // esconde a outra; o splash espera a moldura ativa.
-      applyConsole(_console);
+      // v0.7.11-web32: o splash espera a moldura VISÍVEL (a web, por padrão).
       const activeFrame = document.getElementById(
         _console === "web" ? "web-frame" : "terminal-frame");
-      if (activeFrame && activeFrame !== el.frame) {
-        activeFrame.addEventListener("load", function () {
-          loaded = true; hideBootSplash();
-        });
-      }
-      if (!_ttydWatch) {
-        _ttydWatch = setInterval(async () => {
-          try {
-            const r = await fetch(BASE + _readyUrl(), { cache: "no-store" });
-            if (!r.ok) return;
-            const d = await r.json();
-            if (!d.ready || !d.pid) return;
-            if (_ttydPid === null) { _ttydPid = d.pid; return; }
-            if (d.pid === _ttydPid) return;
-            _ttydPid = d.pid;                 // ttyd reiniciado por baixo
-            const f = document.getElementById("terminal-frame");
-            // v0.7.11-web18: só mexe na moldura do terminal (e só se ela
-            // já tiver sido carregada uma vez).
-            if (f && f.dataset.loaded) {
-              try { f.contentWindow.location.reload(); }
-              catch (e) { f.src = _frameUrl("ttyd"); }
-            }
-          } catch (e) {}
-        }, 20000);
-      }
+      const markLoaded = function () { loaded = true; hideBootSplash(); };
+      if (activeFrame) activeFrame.addEventListener("load", markLoaded);
+      // v0.7.11-web18/web32: applyConsole carrega as DUAS visões (uma vez
+      // só) e deixa visível a atual — o terminal segue rodando em segundo
+      // plano, com o ttyd conectado.
+      applyConsole(_console);
+      if (activeFrame === el.frame) el.frame.onload = markLoaded;
+      // v0.7.11-web32: a vigia do terminal é armada aqui (e também na
+      // inicialização) — nunca depende do sucesso do boot.
+      _startTtydWatch();
       setTimeout(() => { if (!loaded) hideBootSplash(); }, 8000); // fallback visual
     }
 
@@ -5218,6 +5274,9 @@ def create_wrapper_html(
       // 1.0 v0.7.11-web30: o cabeçalho passa a mostrar se o agente está
       // ATIVO (trabalhando) ou OCIOSO — antes era um texto fixo.
       _startAgentStatePoll();
+      // 1.05 v0.7.11-web32: a vigia do TERMINAL é armada já na abertura —
+      // o terminal precisa continuar rodando com a web à frente.
+      _startTtydWatch();
       // 1.1 v0.7.0/v0.7.3: chave do autosave + timer de 1 min + pergunta de retomada
       setAutosaveUI(autosaveEnabled());
       setAutosaveAllUI(autosaveAllSessions());
@@ -7125,7 +7184,7 @@ def create_wrapper_html(
             "theme.web_applied": "Tema aplicado na versão web",
             "theme.terminal_reloaded": "Terminal recarregado com novo tema",
             # v0.6.5 — Splash de carregamento do terminal
-            "boot.starting": "Iniciando terminal…",
+            "boot.starting": "Iniciando terminal…", "boot.starting_web": "Carregando a interface…",
             "boot.restarting": "Reiniciando terminal…",
             "boot.restoring": "Restaurando sessão…",
             "boot.timeout": "O terminal não respondeu. Verifique ~/PesquisAI/logs/ttyd.log e recarregue.",
@@ -7345,7 +7404,7 @@ def create_wrapper_html(
             "theme.web_applied": "Theme applied to the web version",
             "theme.terminal_reloaded": "Terminal reloaded with new theme",
             # v0.6.5 — Terminal boot splash
-            "boot.starting": "Starting the terminal…",
+            "boot.starting": "Starting the terminal…", "boot.starting_web": "Loading the interface…",
             "boot.restarting": "Restarting the terminal…",
             "boot.restoring": "Restoring session…",
             "boot.timeout": "The terminal did not respond. Check ~/PesquisAI/logs/ttyd.log and reload.",
@@ -7565,7 +7624,7 @@ def create_wrapper_html(
             "theme.web_applied": "Tema aplicado a la versión web",
             "theme.terminal_reloaded": "Terminal recargado con nuevo tema",
             # v0.6.5 — Splash de arranque del terminal
-            "boot.starting": "Iniciando el terminal…",
+            "boot.starting": "Iniciando el terminal…", "boot.starting_web": "Cargando la interfaz…",
             "boot.restarting": "Reiniciando el terminal…",
             "boot.restoring": "Restaurando sesión…",
             "boot.timeout": "El terminal no respondió. Revisa ~/PesquisAI/logs/ttyd.log y recarga.",
@@ -7785,7 +7844,7 @@ def create_wrapper_html(
             "theme.web_applied": "Thème appliqué à la version web",
             "theme.terminal_reloaded": "Terminal rechargé avec le nouveau thème",
             # v0.6.5 — Écran de démarrage du terminal
-            "boot.starting": "Démarrage du terminal…",
+            "boot.starting": "Démarrage du terminal…", "boot.starting_web": "Chargement de l’interface…",
             "boot.restarting": "Redémarrage du terminal…",
             "boot.restoring": "Restauration de la session…",
             "boot.timeout": "Le terminal n'a pas répondu. Consultez ~/PesquisAI/logs/ttyd.log puis rechargez.",
@@ -8005,7 +8064,7 @@ def create_wrapper_html(
             "theme.web_applied": "主题已应用到网页版",
             "theme.terminal_reloaded": "终端已应用新主题并重新加载",
             # v0.6.5 — 终端启动画面
-            "boot.starting": "正在启动终端…",
+            "boot.starting": "正在启动终端…", "boot.starting_web": "正在加载界面…",
             "boot.restarting": "正在重启终端…",
             "boot.restoring": "正在恢复会话…",
             "boot.timeout": "终端无响应。请查看 ~/PesquisAI/logs/ttyd.log 后重新加载。",

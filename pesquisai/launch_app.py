@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import time
 import threading
 import json
@@ -2341,6 +2342,73 @@ def _revive_ttyd(force: bool = False) -> bool:
     except Exception as exc:  # noqa: BLE001 — auto-cura nunca derruba a UI
         logger.warning("auto-cura do ttyd falhou: %s", exc)
         return False
+
+
+# v0.7.11-web32: vigia do TERMINAL no servidor.
+_TTYD_WATCHDOG: "threading.Thread | None" = None
+
+
+def _start_ttyd_watchdog(interval_s: float = 30.0) -> None:
+    """Mantém o TERMINAL sempre rodando, mesmo com a web à frente.
+
+    v0.7.11-web32: a versão web passou a ser a visão padrão. A vigia que
+    existia no cliente (``_ttydWatch``, em ``/api/ttyd_ready``) só roda
+    enquanto a aba do navegador estiver aberta — e ela existia para
+    recarregar a moldura do terminal. Aqui, no **servidor**, uma thread
+    checa a porta do ttyd de tempos em tempos e o religa (anexando à sessão
+    tmux, sem derrubar a conversa) se ele morrer.
+
+    Garantia: o terminal fica vivo com ou sem navegador aberto.
+    """
+    global _TTYD_WATCHDOG
+    if _TTYD_WATCHDOG is not None and _TTYD_WATCHDOG.is_alive():
+        return
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_s)
+            try:
+                if _wait_port_open(TERMINAL_PORT, timeout_s=0.5):
+                    continue
+                logger.warning(
+                    "vigia do terminal: ttyd fora do ar em %s — religando",
+                    TERMINAL_PORT,
+                )
+                _revive_ttyd(force=True)
+            except Exception as exc:  # noqa: BLE001 — a vigia nunca derruba a UI
+                logger.warning("vigia do terminal falhou: %s", exc)
+
+    _TTYD_WATCHDOG = threading.Thread(
+        target=_loop, daemon=True, name="ufvai-ttyd-watchdog")
+    _TTYD_WATCHDOG.start()
+    logger.info("vigia do terminal iniciada (a cada %ss)", int(interval_s))
+
+
+def _start_ttyd_watchdog_process() -> None:
+    """Sobe a vigia EXTERNA do terminal (v0.7.11-web32).
+
+    A vigia do processo (`_start_ttyd_watchdog`) morre junto com o
+    UFVAI. Esta — um script shell independente — sobrevive e religa o
+    ttyd se ele cair, com o mesmo comando (anexa à sessão tmux, sem
+    derrubar a conversa do agente).
+    """
+    try:
+        _script = Path(__file__).resolve().parent.parent / "scripts" / "ttyd_watchdog.py"
+        if not _script.exists():
+            return
+        import subprocess as _subprocess
+
+        _log = Path("/tmp/ufvai-ttyd-watchdog.log")
+        with open(_log, "ab") as _f:
+            _subprocess.Popen(
+                [sys.executable, str(_script)],
+                stdout=_f, stderr=_f, stdin=_subprocess.DEVNULL,
+                start_new_session=True,
+                env={**os.environ, "UFVAI_TTYD_PORT": str(TERMINAL_PORT)},
+            )
+        logger.info("vigia externa do terminal iniciada (porta %s)", TERMINAL_PORT)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("vigia externa do terminal não iniciou: %s", exc)
 
 
 def _seed_greeting_async(session_id: str, lang: str, delay: float = 0.8) -> None:
@@ -6874,6 +6942,11 @@ def launch():
             logger.info("Onboarding pendente: terminal não iniciado (sem chave).")
         elif _engine_ok:
             start_ttyd()
+            # v0.7.11-web32: o terminal tem de ficar RODANDO mesmo com a
+            # versão web à frente (e mesmo sem navegador aberto) — a vigia
+            # do servidor religa o ttyd se ele morrer.
+            _start_ttyd_watchdog()
+            _start_ttyd_watchdog_process()
         else:
             logger.info("Terminal não iniciado: motor OpenCode ausente.")
         boot.done(97)

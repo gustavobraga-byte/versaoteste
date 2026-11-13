@@ -1,5 +1,23 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web32] — 2026-11-13 — A versão web passa a ser o padrão ao iniciar, e o terminal nunca mais para
+
+| Pedido | Entregue |
+|---|---|
+| **"colocar a versão web como padrão ao iniciar"** | a interface **abre na versão web** (era o terminal). A preferência antiga (`ufvai.console.v2`, gravada quando o padrão era o terminal) é **ignorada e removida** — ela mantinha o terminal à frente mesmo depois das correções da web. O botão do cabeçalho continua alternando em tempo real, sem recarregar nada |
+| **"o terminal deve sempre estar rodando"** | **três vigias** ensurem isso: (1) a **moldura do terminal é carregada sempre**, mesmo escondida — o ttyd fica conectado e a sessão do agente continua viva; (2) a **vigia no servidor** (thread + script externo `scripts/ttyd_watchdog.py`) religa o ttyd se a porta cair, **com o mesmo comando e o mesmo ambiente** (anexa à sessão tmux — a conversa não é recriada); (3) a **vigia no navegador** consulta `/api/ttyd_ready` a cada 20 s, independentemente da vista visível, e recarrega a moldura quando o ttyd é reiniciado por baixo |
+
+### Também nesta rodada
+
+- **`?view=terminal`** (ou `?view=ttyd`): abre direto no terminal, sob demanda — escape hatch para quem prefere a TUI.
+- **`reloadTerminalFrame()`** corrigido: a moldura do terminal apontava para a URL da **web** quando a web estava à frente (bug herdado do padrão antigo).
+- **Splash** com a mensagem certa por vista ("Carregando a interface…" em 5 idiomas) — antes sempre dizia "Iniciando terminal…".
+- **Testes**: `scripts/test_web32.py` → **19/19** ✓ (inclui teste **funcional** da vigia: derruba o terminal e prova que ele volta); `test_web31.py` → 7/7 ✓; `test_web30.py` → 20/20 ✓; `test_web29.py` → 13/13 ✓; `test_web28.py` → 18/18 ✓; `test_web25.py` → 14/14 ✓; `test_acceptance.py` → 33/33 ✓; `tests/test_drive_guard.py` → 20/20 ✓.
+
+> **Verificado no ar:** interface aberta na web por padrão, terminal carregado em segundo plano
+> (`ttyd` respondendo HTTP 200), queda do ttyd simulada → religado pela vigia em ~25 s, com a
+> sessão tmux e a conversa **intactas** (o processo do `opencode` nunca morreu).
+
 ## [0.7.11-web31] — 2026-11-13 — O boot usava a árvore errada (e por isso as correções não apareciam), e o wrapper agora diz se o agente está ativo
 
 | Sintoma do autor | Causa real | Entregue |
