@@ -391,6 +391,11 @@
    * Monta o ``<table>``. As células passam por ``inline()`` — é o que faz o
    * **link** dentro da tabela virar ``<a href>`` de verdade (antes o texto
    * do link era escapado e saía cru).
+   *
+   * v0.7.11-web33: a tabela vai dentro de um ``.table-scroll`` — no
+   * telefone uma tabela larga estourava a largura da página (o campo de
+   * escrita saía da tela junto). Agora ela rola na horizontal, sem
+   * esmagar o layout.
    */
   function renderTable(head, aligns, body) {
     const alignAttr = (i) => (aligns[i] ? ` style="text-align:${aligns[i]}"` : '');
@@ -405,7 +410,7 @@
         return `<tr>${tds}</tr>`;
       })
       .join('');
-    return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
+    return `<div class="table-scroll"><table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function md(src) {
@@ -3526,6 +3531,15 @@
     });
     renderSettings();
     $('#settings-modal').hidden = false;
+    // v0.7.11-web33: no telefone as abas ficam numa faixa rolável — a aba
+    // ativa precisa aparecer (centralizada), senão "Sobre" ficava fora da
+    // tela e o menu parecia não funcionar.
+    try {
+      const active = document.querySelector('#settings-tabs .tab.active');
+      if (active && active.scrollIntoView) {
+        active.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+      }
+    } catch (e) {}
   }
 
   async function showContext() {
@@ -3867,6 +3881,19 @@
 
   /* ── eventos da interface ─────────────────────────────────────────── */
 
+  /* v0.7.11-web33: mede a área realmente visível da tela (viewport
+     visual) e publica em --app-h. É o que garante que o compositor
+     (com o campo de escrita) fique SEMPRE à vista no telefone — com a
+     barra de endereço aberta ou com o teclado na tela. */
+  function syncViewport() {
+    try {
+      const vv = window.visualViewport;
+      const h = vv && vv.height ? vv.height : window.innerHeight;
+      if (!h || h < 120) return;
+      document.documentElement.style.setProperty('--app-h', Math.round(h) + 'px');
+    } catch (e) {}
+  }
+
   function autoGrow() {
     const input = $('#input');
     input.style.height = 'auto';
@@ -4091,7 +4118,21 @@
     // v0.7.11-web23: o placeholder muda com a largura da tela
     window.addEventListener('resize', () => {
       applyPlaceholder();
+      syncViewport();
     });
+    // v0.7.11-web33: a altura do app segue o VIEWPORT VISUAL — a área
+    // realmente visível da tela. No telefone isso significa:
+    //   · com a barra de endereço aberta, o app ocupa só o que se vê
+    //     (o campo de escrita não fica atrás do rodapé);
+    //   · com o TECLADO aberto, o app encolhe e o campo sobe junto com
+    //     o teclado — antes ele ficava escondido atrás dele.
+    try {
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', syncViewport);
+        window.visualViewport.addEventListener('scroll', syncViewport);
+      }
+    } catch (e) {}
+    syncViewport();
   }
 
   bind();

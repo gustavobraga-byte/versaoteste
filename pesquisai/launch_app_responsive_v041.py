@@ -102,7 +102,9 @@ RESPONSIVE_CSS: str = """
     position: fixed;
     top: 50px; right: 0;
     width: 280px; max-width: 85vw;
-    height: calc(100vh - 50px);
+    /* v0.7.11-web33: o menu do celular acompanha o viewport visível. */
+    height: calc(100vh - var(--topbar-h));
+    height: calc(var(--vp-h, 100dvh) - var(--topbar-h));
     background: var(--rail);
     border-left: 1px solid var(--line);
     transform: translateX(100%);
@@ -163,7 +165,10 @@ RESPONSIVE_CSS: str = """
     .mobile-menu .tb-btn svg,
     .mobile-menu .btn-provider svg { display: none !important; }
     .hamburger { display: inline-flex; }
-    #footer { padding: 0 8px; height: 36px; gap: 12px; }
+    /* v0.7.11-web33: a altura do rodapé vira VARIÁVEL — assim a moldura
+       (que usa --footer-h) continua encaixada exatamente acima dele. */
+    :root { --footer-h: 36px; }
+    #footer { padding: 0 8px; height: calc(var(--footer-h) + var(--safe-b)); gap: 12px; }
     /* v0.6.20-fix: rodapé mobile = SOMENTE ÍCONES (todo texto escondido).
        - .footer-link font-size:0 colapsa o texto do link; o SVG mantém tamanho fixo em px.
        - .footer-loc ("UFV · Viçosa, MG") sai TAMBÉM no mobile intermediário (480–767px),
@@ -181,8 +186,11 @@ RESPONSIVE_CSS: str = """
     .footer-right { gap: 10px; }
     .footer-right .btn-provider { gap: 0; }
     .footer-right .btn-provider span { display: none; }  /* "+ provedor" vira só o ícone */
-    /* terminal: ocupa mais espaço em mobile */
-    #terminal-frame, #web-frame { height: calc(100vh - 50px - 36px) !important; }
+    /* terminal: ocupa mais espaço em mobile.
+       v0.7.11-web33: a altura NÃO é mais calculada com 100vh (que no
+       celular é a altura MÁXIMA, com a barra de endereço escondida) —
+       quem manda é --frame-h, medido pelo viewport REALMENTE visível. */
+    #terminal-frame, #web-frame { height: var(--frame-h) !important; }
     /* modais: largura quase total */
     #modal, #provider-overlay > div, #health-overlay > div,
     #sessions-overlay > div, #shortcuts-overlay > div, #lang-overlay > div {
@@ -213,10 +221,11 @@ RESPONSIVE_CSS: str = """
 
   /* === Landscape em mobile (altura < 500px) === */
   @media (max-height: 500px) and (orientation: landscape) {
-    #topbar { height: 40px; }
+    :root { --topbar-h: 40px; --footer-h: 28px; }
+    #topbar { height: var(--topbar-h); }
     .logo { font-size: 12px; }
-    #footer { height: 28px; font-size: 9px; }
-    #terminal-frame, #web-frame { height: calc(100vh - 40px - 28px) !important; }
+    #footer { height: calc(var(--footer-h) + var(--safe-b)); font-size: 9px; }
+    #terminal-frame, #web-frame { height: var(--frame-h) !important; }
   }
 
   /* === Tablet/iPad portrait: esconde UFV footer === */
@@ -502,7 +511,7 @@ RESPONSIVE_CSS: str = """
     #memory-editor-body #memory-preview:not([style*="display: none"]) { display:block !important; }
   }
   @media (max-width: 479px) {
-    #memory-overlay > div { width: 100vw !important; max-width: 100vw !important; height: 100vh !important; max-height: 100vh !important; border-radius: 0 !important; }
+    #memory-overlay > div { width: 100vw !important; max-width: 100vw !important; height: var(--vp-h, 100dvh) !important; max-height: var(--vp-h, 100dvh) !important; border-radius: 0 !important; }
     #memory-sidebar { max-height: 42vh; }
   }
   @media (max-width: 380px) {
@@ -665,6 +674,19 @@ def create_wrapper_html(
       --red:        #e07070;
       --red-dim:    rgba(224,112,112,.12);
       --ov-dim:     rgba(4,7,11,.8);      /* v0.6.5: backdrop de modais no escuro */
+      /* v0.7.11-web33: geometria da interface no TELEFONE.
+         --frame-top/--frame-h são reescritos por JS a partir do
+         "viewport visual" (a área realmente visível da tela, já fora a
+         barra de endereço/teclado). É isso que impede o campo de texto
+         de ficar ATRÁS do rodapé: antes as molduras usavam
+         `calc(100vh - …)`, e 100vh no celular é a altura MÁXIMA (sem a
+         barra de endereço) — o rodapé da interface acabava 100 px abaixo
+         da tela e o compositor (campo de escrita) ficava fora de vista. */
+      --topbar-h:   50px;
+      --footer-h:   40px;
+      --safe-b:     env(safe-area-inset-bottom, 0px);
+      --frame-top:  var(--topbar-h);
+      --frame-h:    calc(100dvh - var(--topbar-h) - var(--footer-h) - var(--safe-b));
       --radius:     5px;
       --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
       --font-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -684,7 +706,7 @@ def create_wrapper_html(
 
     #topbar {
       position: fixed; inset: 0 0 auto 0;
-      height: 50px;
+      height: var(--topbar-h);
       background: var(--rail);
       border-bottom: 1px solid var(--line);
       display: flex; align-items: center;
@@ -974,24 +996,30 @@ def create_wrapper_html(
     }
     .btn-ghost:hover { background: rgba(255,255,255,.08); color: var(--ink); }
 
-    #terminal-frame {
-      position: absolute;
-      inset: 50px 0 40px 0;
-      width: 100%; height: calc(100% - 90px);
+    /* v0.7.11-web33: as molduras são FIXAS e ocupam exatamente a faixa
+       visível entre o cabeçalho e o rodapé. Antes elas usavam
+       `inset: 50px 0 40px 0` + `height: calc(100% - 90px)`: a altura
+       vencia o `bottom` e, no telefone, 100% = altura MÁXIMA da tela —
+       o rodapé da interface ficava 100 px abaixo da área visível e o
+       CAMPO DE TEXTO (que fica no fim do compositor) ficava atrás do
+       rodapé, impossível de tocar. */
+    #terminal-frame, #web-frame {
+      position: fixed;
+      top: var(--frame-top);
+      left: 0; right: 0;
+      width: 100%;
+      height: var(--frame-h) !important;
       border: none;
     }
-    /* v0.7.11-web18: a web ocupa a mesma área; a visibilidade é alternada */
-    #web-frame {
-      position: absolute;
-      inset: 50px 0 40px 0;
-      width: 100%; height: calc(100% - 90px);
-      border: none;
-    }
+    #terminal-frame { }
     #terminal-frame.ufvai-hidden, #web-frame.ufvai-hidden { display: none; }
 
     #footer {
       position: fixed; inset: auto 0 0 0;
-      height: 40px;
+      /* v0.7.11-web33: a "safe area" do iPhone (o indicador home) é
+         somada ao rodapé — sem isso o rodapé cobre o compositor. */
+      height: calc(var(--footer-h) + var(--safe-b));
+      padding-bottom: var(--safe-b);
       background: var(--rail);
       border-top: 1px solid var(--line);
       display: flex; align-items: center;
@@ -2065,6 +2093,52 @@ def create_wrapper_html(
       _pollAgentState();
       if (_agentStateTimer) clearInterval(_agentStateTimer);
       _agentStateTimer = setInterval(_pollAgentState, 2000);
+    }
+
+    // ── v0.7.11-web33: a moldura (web OU terminal) ocupa exatamente a
+    // faixa VISÍVEL entre o cabeçalho e o rodapé.
+    //
+    // Por que isso importa no telefone: a barra de endereço do navegador
+    // (ou o teclado) come uma fatia da tela. Com `height: calc(100vh - …)`
+    // a moldura usava a altura MÁXIMA e o rodapé da interface ficava
+    // ~100 px ABAIXO da área visível — o campo de escrita (que fica no
+    // fim do compositor) ficava atrás do rodapé, impossível de tocar.
+    //
+    // Aqui a altura vem do "viewport visual" (a área realmente visível,
+    // já fora a barra de endereço e o teclado) e é medida a partir do
+    // cabeçalho/rodapé REAIS (renderizados) — com a "safe area" do
+    // iPhone já embutida.
+    function _syncViewport() {
+      try {
+        var vv = window.visualViewport;
+        var head = document.getElementById("topbar");
+        var foot = document.getElementById("footer");
+        var hh = head ? head.getBoundingClientRect().height : 50;
+        var fh = foot ? foot.getBoundingClientRect().height : 40;
+        var vh = vv ? vv.height : window.innerHeight;
+        var offTop = vv ? (vv.offsetTop || 0) : 0;
+        var frameTop = offTop + hh;
+        var frameH = Math.max(140, Math.round(vh - offTop - hh - fh));
+        var root = document.documentElement;
+        root.style.setProperty("--frame-top", frameTop + "px");
+        root.style.setProperty("--frame-h", frameH + "px");
+        /* a altura realmente visível (menu, folhas de tela cheia) */
+        root.style.setProperty("--vp-h", Math.round(vh - offTop) + "px");
+      } catch (err) {}
+    }
+    function _watchViewport() {
+      _syncViewport();
+      try {
+        window.addEventListener("resize", _syncViewport);
+        window.addEventListener("orientationchange", function () {
+          setTimeout(_syncViewport, 120);
+          setTimeout(_syncViewport, 400);
+        });
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener("resize", _syncViewport);
+          window.visualViewport.addEventListener("scroll", _syncViewport);
+        }
+      } catch (err) {}
     }
 
     function applyLang(lang) {
@@ -5277,6 +5351,10 @@ def create_wrapper_html(
       // 1.05 v0.7.11-web32: a vigia do TERMINAL é armada já na abertura —
       // o terminal precisa continuar rodando com a web à frente.
       _startTtydWatch();
+      // 1.06 v0.7.11-web33: a moldura passa a ocupar a faixa VISÍVEL
+      // (viewport real) — no telefone é o que mantém o campo de escrita
+      // acima do rodapé e dentro da tela.
+      _watchViewport();
       // 1.1 v0.7.0/v0.7.3: chave do autosave + timer de 1 min + pergunta de retomada
       setAutosaveUI(autosaveEnabled());
       setAutosaveAllUI(autosaveAllSessions());
@@ -7060,6 +7138,189 @@ def create_wrapper_html(
   }catch(e){}
 })();
 </script>
+<!-- ═══ web34 (2026-11-16): camada visual "Produtividade" ═══
+     ADITIVA: só pintura (cores, bordas, raios, sombras, foco, transições).
+     Não altera geometria (--topbar-h/--footer-h/--frame-h do web33),
+     não remove nenhum seletor, função ou comportamento existente.
+     As variáveis clássicas continuam sendo geridas pelo JS de tema
+     (applyWrapperTheme); aqui usam-se tokens novos --w34-*. -->
+<style id="ufvai-web34">
+  :root {
+    --w34-surface: #0f151c;
+    --w34-rail:    #151d26;
+    --w34-card:    #141c25;
+    --w34-card-2:  #1d2733;
+    --w34-accent:  #c2a057;
+    --w34-bright:  #d9bc7a;
+    --w34-grad:    linear-gradient(135deg, #d9bc7a 0%, #c2a057 48%, #a9883f 100%);
+    --w34-line:    rgba(255,255,255,.08);
+    --w34-line-2:  rgba(255,255,255,.17);
+    --w34-glass:   rgba(21,29,38,.82);
+    --w34-elev-1:  0 1px 2px rgba(0,0,0,.35), 0 4px 14px rgba(0,0,0,.25);
+    --w34-elev-2:  0 6px 24px rgba(0,0,0,.45), 0 18px 48px rgba(0,0,0,.35);
+    --w34-ring:    0 0 0 3px rgba(194,160,87,.28);
+    --w34-t:       .16s cubic-bezier(.4,0,.2,1);
+  }
+  html.theme-light {
+    --w34-surface: #f6f5f1;
+    --w34-rail:    #fdfdfb;
+    --w34-card:    #ffffff;
+    --w34-card-2:  #efeee8;
+    --w34-accent:  #8a6d33;
+    --w34-bright:  #a9883f;
+    --w34-grad:    linear-gradient(135deg, #b8944a 0%, #8a6d33 55%, #6d5626 100%);
+    --w34-line:    rgba(32,38,43,.10);
+    --w34-line-2:  rgba(32,38,43,.22);
+    --w34-glass:   rgba(253,253,251,.85);
+    --w34-elev-1:  0 1px 2px rgba(32,38,43,.07), 0 4px 14px rgba(32,38,43,.08);
+    --w34-elev-2:  0 6px 24px rgba(32,38,43,.14), 0 18px 48px rgba(32,38,43,.12);
+    --w34-ring:    0 0 0 3px rgba(138,109,51,.22);
+  }
+
+  html, body { background: var(--w34-surface); }
+  body {
+    background-image:
+      radial-gradient(1100px 500px at 85% -10%, rgba(194,160,87,.05), transparent 60%),
+      radial-gradient(900px 600px at -10% 110%, rgba(99,197,134,.035), transparent 55%);
+  }
+  html.theme-light body {
+    background-image:
+      radial-gradient(1100px 500px at 85% -10%, rgba(138,109,51,.06), transparent 60%),
+      radial-gradient(900px 600px at -10% 110%, rgba(46,125,50,.04), transparent 55%);
+  }
+  ::selection { background: rgba(194,160,87,.30); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--w34-line-2); border-radius: 99px;
+    border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: rgba(194,160,87,.55); }
+  :focus-visible { outline: none; box-shadow: var(--w34-ring); }
+
+  /* ── cabeçalho e rodapé: vidro fosco, hairline ── */
+  #topbar {
+    background: var(--w34-glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.25);
+    backdrop-filter: blur(14px) saturate(1.25);
+    border-bottom: 1px solid var(--w34-line);
+  }
+  #footer {
+    background: var(--w34-glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.25);
+    backdrop-filter: blur(14px) saturate(1.25);
+    border-top: 1px solid var(--w34-line);
+  }
+  .logo-p { letter-spacing: -.01em; }
+  .logo-ai { color: var(--w34-accent); }
+  .logo-tag { border-radius: 999px; border-color: var(--w34-line); padding: 2px 8px; }
+  .footer-brand { font-family: "Syne","Montserrat",sans-serif; letter-spacing: .02em; }
+  .footer-link:hover, .footer-oc a:hover { color: var(--w34-bright); }
+
+  /* ── botões do cabeçalho ── */
+  .tb-btn {
+    border-radius: 8px; font-weight: 600;
+    transition: background var(--w34-t), color var(--w34-t),
+                border-color var(--w34-t), transform var(--w34-t), box-shadow var(--w34-t);
+  }
+  .tb-btn:hover { box-shadow: var(--w34-elev-1); }
+  .btn-drive { color: var(--w34-accent); }
+  .tb-icon {
+    border-radius: 8px; border-color: transparent;
+    transition: background var(--w34-t), color var(--w34-t),
+                border-color var(--w34-t), transform var(--w34-t);
+  }
+  .tb-icon:hover { background: var(--w34-card-2); color: var(--w34-bright); border-color: var(--w34-line); }
+  .lang-btn, .hamburger { border-radius: 8px; }
+  .lang-menu, .mobile-menu {
+    background: var(--w34-glass);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    backdrop-filter: blur(16px) saturate(1.2);
+    border: 1px solid var(--w34-line-2);
+    border-radius: 12px;
+    box-shadow: var(--w34-elev-2);
+  }
+  .mobile-menu .tb-btn { border-radius: 8px; }
+
+  /* ── modais e cards ── */
+  #modal-overlay, #sair-overlay, #autosave-overlay {
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  #modal, #sair-modal, #autosave-modal {
+    background: var(--w34-card);
+    border: 1px solid var(--w34-line-2);
+    border-radius: 16px;
+    box-shadow: var(--w34-elev-2);
+  }
+  .modal-title { font-family: "Syne","Montserrat",sans-serif; letter-spacing: -.01em; }
+  .modal-close, .btn-ghost { border-radius: 8px; }
+  .modal-close:hover, .btn-ghost:hover { background: var(--w34-card-2); }
+  #terms-overlay .t-card, #welcome-overlay .w-card,
+  #vpn-ask-overlay .va-card, #vpn-overlay .va-card {
+    background: var(--w34-card);
+    border: 1px solid rgba(194,160,87,.35);
+    border-radius: 16px;
+    box-shadow: var(--w34-elev-2);
+  }
+  html.theme-light #terms-overlay .t-card, html.theme-light #welcome-overlay .w-card,
+  html.theme-light #vpn-ask-overlay .va-card, html.theme-light #vpn-overlay .va-card {
+    border-color: rgba(138,109,51,.35);
+  }
+  #terms-overlay .t-scroll { border-radius: 10px; border-color: var(--w34-line); }
+  #terms-overlay button, #welcome-overlay button { border-radius: 10px; }
+
+  /* ── listas (backups, sessões, saúde, atalhos) ── */
+  .backup-list, .restore-cal { border-radius: 10px; border-color: var(--w34-line); }
+  .backup-item:hover, .session-item:hover { background: var(--w34-card-2); }
+  .backup-item .restore-lbl { border-radius: 999px; }
+  .backup-item .b-badge { border-radius: 999px; }
+  .backup-item .b-del { border-radius: 6px; }
+  .restore-day { border-radius: 6px; }
+  .restore-months .rmonth-chip { transition: background var(--w34-t), color var(--w34-t); }
+  .restore-toolbar .rnav, .restore-toolbar .rghost,
+  .restore-toolbar input[type="date"] { border-radius: 8px; }
+  .shortcut-key {
+    border-radius: 5px; border: 1px solid var(--w34-line);
+    border-bottom-width: 2px; background: var(--w34-card-2);
+    padding: 2px 7px; font-family: "DM Mono",monospace;
+  }
+  .health-status { border-radius: 999px; }
+  .session-search { border-radius: 8px; transition: border-color var(--w34-t), box-shadow var(--w34-t); }
+  .session-search:focus { border-color: rgba(194,160,87,.55); box-shadow: var(--w34-ring); }
+
+  /* ── toast ── */
+  #toast {
+    border-radius: 10px;
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    box-shadow: var(--w34-elev-2);
+    font-weight: 500;
+  }
+
+  /* ── memória (Minha memória) ── */
+  #memory-overlay > div { border-radius: 16px; box-shadow: var(--w34-elev-2); }
+  .mem-note-item { border-radius: 7px; transition: background var(--w34-t); }
+  .mem-note-item:hover, .mem-folder-card:hover { background: var(--w34-card-2); }
+  .mem-note-item.active { background: rgba(194,160,87,.13); border-left-color: var(--w34-accent); }
+  html.theme-light .mem-note-item.active { background: rgba(138,109,51,.10); }
+  .mem-tab { transition: color var(--w34-t), border-color var(--w34-t); }
+  .mem-tab.active { border-bottom-color: var(--w34-accent); }
+  .mem-preview code { border-radius: 5px; }
+  .mem-preview pre { border-radius: 8px; border: 1px solid var(--w34-line); }
+  .mem-preview .wikilink, .mem-preview .tag { border-radius: 999px; }
+  #memory-search-input { border-radius: 8px; }
+
+  /* ── autosave e provedor ── */
+  .autosave-track { transition: background var(--w34-t), border-color var(--w34-t); }
+  .btn-provider { border-radius: 999px; }
+  #autosave-modal .as-btn { border-radius: 8px; }
+
+  /* ── splash de boot ── */
+  #boot-splash { background: var(--w34-surface); }
+  .boot-logo { border-radius: 16px; box-shadow: var(--w34-elev-2); }
+  .boot-retry { border-radius: 999px; font-weight: 600; }
+
+  /* ── markdown dos modais (Diretrizes/Manual) ── */
+  .markdown-body pre { border-radius: 10px; }
+  .markdown-body code { border-radius: 5px; }
+  .markdown-body table th, .markdown-body table td { border-color: var(--w34-line); }
+</style>
 </body>
 </html>"""
 

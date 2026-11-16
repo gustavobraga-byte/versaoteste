@@ -767,18 +767,26 @@ html[data-theme="pesquisai-light"] .send { color: #fff; }
 
 /* ── modais ─────────────────────────────────────────────────────────── */
 
+/* v0.7.11-web33: o modal ocupa a área REALMENTE visível (--app-h, o
+   viewport visual). Antes ele usava `inset: 0` (a altura máxima da
+   página) — no telefone, com a barra de endereço aberta, o menu de
+   ajustes ficava 100 px mais alto que a tela e o botão de fechar
+   caía fora do alcance. */
 .modal {
-  position: fixed; inset: 0;
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--app-h, 100dvh);
   background: var(--ov-dim);
   display: grid; place-items: center;
   padding: 20px;
   z-index: 40;
+  overflow: hidden;
 }
 .modal[hidden] { display: none; }
 
 .modal-card {
   width: min(680px, 100%);
-  max-height: min(78vh, 720px);
+  max-height: min(var(--app-h, 100dvh), 720px);
   display: flex; flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--line-strong);
@@ -1901,4 +1909,315 @@ details.block > summary .block-label { flex: 0 1 auto; min-width: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   v0.7.11-web33 — RESPONSIVO DE TELEFONE
+   ─────────────────────────────────────────────────────────────────────
+   O sintoma relatado: "no celular não consigo digitar o campo de
+   digitar — não aparece, fica atrás do footer".
+
+   Causa (duas, somadas):
+     a) o WRAPPER dimensionava a moldura com `calc(100vh - …)`. No
+        celular, 100vh é a altura MÁXIMA (sem a barra de endereço), então
+        a moldura ultrapassava a tela e o compositor — que fica no fim —
+        terminava atrás do rodapé;
+     b) dentro do cliente, `.app` usava 100vh (a altura máxima) e o
+        compositor não tinha folga para a "safe area" do iPhone.
+
+   Aqui: a altura passa a vir do VIEWPORT VISUAL (a área realmente
+   visível, já fora a barra de endereço e o teclado) e todos os
+   elementos ganham alvos de toque de 44 px, foco visível e rolagem
+   horizontal onde precisa (tabelas, código, abas).
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+/* a página NÃO rola: quem rola é a conversa (.thread) */
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* v0.7.11-web33: --app-h é reescrito por JS com a altura do viewport
+   visual (some quando o teclado abre). Sem JS, dvh é o melhor proxy. */
+.app {
+  height: 100vh;
+  height: var(--app-h, 100dvh);
+  min-height: 0;
+}
+
+/* ── o compositor: sempre acima do rodapé do aparelho ──────────────── */
+
+.composer {
+  padding: 10px 16px calc(12px + var(--safe-b));
+  position: relative;
+  z-index: 6;
+  flex: none;
+}
+
+/* o "ir para o fim" não pode ficar sob o compositor */
+.thread { padding-bottom: 12px; }
+
+/* ── tabelas: rolagem horizontal em vez de estourar a largura ───────── */
+
+.table-scroll {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 0 12px;
+  border-radius: var(--radius-sm);
+}
+.table-scroll > table {
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 0.93em;
+  min-width: 480px;
+}
+.table-scroll > table th,
+.table-scroll > table td {
+  border: 1px solid var(--line);
+  padding: 5px 9px;
+  text-align: left;
+}
+.table-scroll > table th { background: var(--panel-2); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   TELEFONE — até 900 px
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+
+  /* ── 1) campos de texto ────────────────────────────────────────────
+     Abaixo de 16 px o iOS dá zoom automático ao focar o campo — e a
+     página "desloca",_sumindo com o campo de escrita. */
+  #input,
+  #model-search,
+  #exp-search,
+  #session-search,
+  #prompt-input,
+  .search-wrap input {
+    font-size: 16px !important;
+  }
+
+  /* ── 2) alvos de toque (Apple HIG / WCAG 2.5.5 → 44×44 px) ─────── */
+  .send, .stop, .attach-btn {
+    width: 42px; height: 42px;
+  }
+  .top-actions .icon-btn {
+    width: 38px; height: 38px;
+    font-size: 15px;
+  }
+  .session-item { padding: 11px 10px; min-height: 44px; }
+  .new-session { padding: 11px 12px; min-height: 44px; }
+  .palette-item { min-height: 44px; }
+  .exp-item { min-height: 44px; }
+  .model-item { padding: 10px 9px; min-height: 44px; }
+  .perm-card button, .perm-actions button { min-height: 40px; }
+  .btn { min-height: 40px; }
+
+  /* o foco precisa ser visível no toque */
+  .icon-btn:focus-visible,
+  .tab:focus-visible,
+  .session-item:focus-visible,
+  .btn:focus-visible,
+  .exp-item:focus-visible,
+  .palette-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ── 3) cabeçalho: as ações não podem estourar a linha ─────────── */
+  .topbar { gap: 6px; }
+  .top-actions { gap: 3px; }
+  .title-row { gap: 6px; }
+
+  /* ── 4) gaveta das sessões ───────────────────────────────────────── */
+  .sidebar {
+    width: min(var(--sidebar-w), 88vw);
+    padding-bottom: var(--safe-b);
+  }
+  .side-head { padding-top: calc(12px + var(--safe-t)); }
+
+  /* ── 5) o MENU DE AJUSTES em tela cheia ─────────────────────────────
+     Antes: um cartão de 680 px no meio de uma tela de 390 px, com as
+     abas espremidas num rolagem horizontal minúscula. Agora o menu
+     ocupa a tela inteira, com cabeçalho fixo, abas roláveis com
+     "snap" e o painel rolando por baixo. */
+  #settings-modal {
+    padding: 0;
+    place-items: stretch;
+  }
+  #settings-modal .modal-card {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+  #settings-modal .modal-head {
+    flex: none;
+    padding: calc(10px + var(--safe-t)) 12px 10px;
+    background: var(--rail);
+  }
+  .settings-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    max-height: none;
+    height: 100%;
+  }
+  .settings-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex: none;
+  }
+  .settings-tabs::-webkit-scrollbar { display: none; }
+  .settings-tabs .tab {
+    width: auto;
+    flex: none;
+    white-space: nowrap;
+    scroll-snap-align: center;
+    padding: 8px 13px;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .settings-tabs .tab.active {
+    border-color: rgba(var(--accent-rgb), .5);
+  }
+  .settings-pane {
+    padding: 14px 14px calc(26px + var(--safe-b));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+  }
+  /* rótulo em cima, valor embaixo: em 390 px lado a lado não cabe */
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 0;
+  }
+  .setting-row .s-value { text-align: left; }
+  .setting-actions { flex-direction: column; align-items: stretch; }
+  .setting-actions .btn { width: 100%; min-height: 44px; }
+  .setting-item { padding: 9px 10px; }
+
+  /* ── 6) os outros modais (modelo, sessão, renomear, confirmar) ───── */
+  .modal { padding: 8px; }
+  .modal-card {
+    max-height: calc(var(--app-h, 100dvh) - 16px);
+    width: 100%;
+  }
+  .modal-head { padding: calc(10px + var(--safe-t)) 12px 10px; }
+  .modal-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: calc(9px + var(--safe-b));
+  }
+  .modal-foot .btn { flex: 1 1 auto; min-height: 44px; }
+  .modal-foot .s-value { text-align: left; }
+  .model-item .m-meta { display: none; }
+
+  /* ── 7) explorador em tela cheia ─────────────────────────────────── */
+  .explorer {
+    inset: 0;
+    width: 100vw;
+    max-width: 100vw;
+    z-index: 45;
+  }
+  .exp-head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--rail);
+    padding-top: calc(9px + var(--safe-t));
+  }
+  .exp-actions .icon-btn { width: 38px; height: 38px; }
+  .exp-preview { max-height: 55%; }
+  .exp-prev-pdf { height: 45vh; }
+
+  /* ── 8) conversa ─────────────────────────────────────────────────── */
+  .msg { margin-bottom: 14px; }
+  .answer pre { padding: 9px 10px; }
+  .answer pre code { font-size: 12px; }
+  .answer img { max-width: 100%; height: auto; }
+  .block-body { padding: 0 10px 10px; }
+
+  /* ── 9) painel de permissões e avisos ────────────────────────────── */
+  .perm-head { flex-wrap: wrap; }
+  .retry-banner { flex-wrap: wrap; }
+  .rb-text { flex: 1 1 100%; }
+  .rb-count { margin-left: auto; }
+
+  /* ── 10) paleta de comandos: não pode cobrir o campo ────────────── */
+  .palette {
+    max-height: min(42vh, 260px);
+    margin-bottom: 6px;
+  }
+  .palette-foot { font-size: 10px; }
+}
+
+/* ── telefones pequenos (≤ 560 px) ─────────────────────────────────── */
+
+@media (max-width: 560px) {
+  .top-actions .icon-btn { width: 36px; height: 36px; }
+  .top-actions .icon-btn.labelled { width: 36px; height: 36px; }
+  .composer { padding-left: 8px; padding-right: 8px; }
+  .composer-inner { padding: 6px 6px 6px 10px; }
+  .jump-btn { right: 12px; bottom: 10px; width: 40px; height: 40px; }
+  .settings-pane { padding-left: 12px; padding-right: 12px; }
+  .model-list { max-height: 100%; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TOQUE (pointer: coarse) — alvos maiores em qualquer tamanho
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (pointer: coarse) {
+  .send, .stop, .attach-btn { width: 42px; height: 42px; }
+  .icon-btn { min-width: 38px; min-height: 38px; }
+  .tab { min-height: 38px; }
+  .btn { min-height: 42px; }
+  /* o interruptor de 19 px era difícil de acertar com o dedo */
+  .switch { width: 46px; height: 26px; }
+  .switch::after { width: 19px; height: 19px; top: 2px; left: 2px; }
+  .switch.on::after { transform: translateX(20px); }
+  /* sem "hover" no toque: o realce fica só no toque */
+  .model-item:hover, .session-item:hover, .exp-item:hover { background: transparent; }
+  .model-item:active, .session-item:active, .exp-item:active { background: var(--panel-2); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TELA DEITADA (paisagem no telefone) — o alto é pouco
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .topbar { min-height: 42px; padding: 4px 10px 5px; }
+  .top-sub { display: none; }
+  .composer { padding-top: 6px; padding-bottom: calc(6px + var(--safe-b)); }
+  .composer-inner { padding: 5px 6px 5px 10px; }
+  #input { max-height: 96px; }
+  .palette { max-height: 38vh; }
+  .settings-tabs .tab { min-height: 34px; padding: 6px 11px; }
 }
