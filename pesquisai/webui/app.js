@@ -27,6 +27,14 @@
 
   const api = (p) => `${BASE}api/ufvai${p}`;
   const $ = (sel) => document.querySelector(sel);
+  const isVisible = () => !document.hidden;   // v0.7.11-web41
+  function debounce(fn, ms) {
+    let timer = 0;
+    return function debounced(...args) {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(this, args), ms);
+    };
+  }
 
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -100,6 +108,9 @@
     promptFavorites: [],   // prompts favoritos (v0.7.11-web40)
     queue: [],             // fila de mensagens enquanto o agente trabalha
     queueFlushing: false,
+    pinned: new Set(),     // sessões fixadas (v0.7.11-web41)
+    forms: [],             // formulários pendentes (v0.7.11-web42)
+    formsSig: '',          // assinatura para não re-renderizar à toa
     newSinceScroll: 0,     // mensagens novas fora da rolagem
     ctxDismissed: new Set(), // sessões em que o aviso de contexto foi fechado
     prefs: {
@@ -223,6 +234,11 @@
 
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
+  // v0.7.11-web41: só permite esquemas seguros em links (evita javascript:)
+  const safeUrl = (u) => {
+    const s = String(u || '').trim();
+    return /^(https?:|mailto:|\/|\.\/|#)/i.test(s) ? s : '#';
+  };
 
   // Extensões que, ao aparecerem como "nome.ext" ou "pasta/nome.ext", viram
   // referência clicável (abre o arquivo no explorador).
@@ -329,11 +345,11 @@
     out = out.replace(/\x01(\d+)\x01/g, (_, i) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
     out = out.replace(/\x02(\d+)\x02/g, (_, i) => {
       const url = bare[Number(i)];
-      return `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+      return `<a href="${escapeHtml(safeUrl(url))}" target="_blank" rel="noopener">${escapeHtml(url)}</a>`;
     });
     out = out.replace(/\x03(\d+)\x03/g, (_, i) => {
       const a = anchors[Number(i)];
-      return `<a href="${a.url}" target="_blank" rel="noopener">${a.label}</a>`;
+      return `<a href="${escapeHtml(safeUrl(a.url))}" target="_blank" rel="noopener">${escapeHtml(a.label)}</a>`;
     });
     out = out.replace(/\x04(\d+)\x04/g, (_, i) => {
       const path = files[Number(i)];
@@ -432,8 +448,12 @@
     return `<div class="table-scroll"><table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
+  const __mdCache = new Map();   // v0.7.11-web41: cache de Markdown por mensagem
   function md(src) {
-    const lines = String(src || '').split('\n');
+    const __key = String(src || '');
+    const __hit = __mdCache.get(__key);
+    if (__hit !== undefined) return __hit;
+    const lines = __key.split('\n');
     const out = [];
     let para = [];
     let list = null;
@@ -524,7 +544,10 @@
       para.push(raw);
     }
     flushPara(); flushList();
-    return out.join('\n');
+    const __html = out.join('\n');
+    if (__mdCache.size > 300) __mdCache.clear();
+    __mdCache.set(__key, __html);
+    return __html;
   }
 
   /* ── tema ─────────────────────────────────────────────────────────── */
@@ -938,10 +961,21 @@
     try {
       const data = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}/form`);
       const rows = data.forms || [];
+      state.forms = rows;
+      // v0.7.11-web42: só re-renderiza quando o conjunto de formulários muda
+      // (o polling não pode apagar a seleção que o usuário está fazendo).
+      const sig = rows
+        .map((f) => `${f.id}:${(f.fields || []).map((x) => x.key).join(',')}`)
+        .join('|');
+      if (sig === state.formsSig) return;
+      state.formsSig = sig;
       const box = $('#forms');
       if (box) box.innerHTML = '';
       rows.forEach(renderForm);
       if (box) box.hidden = rows.length === 0;
+      if (rows.length) {
+        console.info('[ufvai] formulário(s) pendente(s):', rows.length);
+      }
     } catch (e) { /* sem formulários pendentes */ }
   }
 
@@ -1717,18 +1751,46 @@
       list.appendChild(el('div', 'model-group', 'sem sessões'));
       return;
     }
+    // v0.7.11-web41: fixadas primeiro, depois por atualização
+    rows.sort((a, b) => {
+      const pa = state.pinned.has(a.id) ? 1 : 0;
+      const pb = state.pinned.has(b.id) ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return Number(b.updated || b.created || 0) - Number(a.updated || a.created || 0);
+    });
+    let lastGroup = '';
     rows.forEach((row) => {
       const inBulk = state.bulk.active;
+      if (!inBulk) {
+        const g = sessionGroup(row.updated || row.created);
+        if (g !== lastGroup) {
+          list.appendChild(el('div', 'session-group', t(`sessions.${g}`)));
+          lastGroup = g;
+        }
+      }
       const selected = state.bulk.selected.has(row.id);
+      const pinned = state.pinned.has(row.id);
       let cls = 'session-item' + (row.id === state.sessionId ? ' active' : '');
       if (inBulk) cls += ' bulk-mode';
       if (selected) cls += ' bulk-on';
+      if (pinned) cls += ' pinned';
       const item = el('button', cls);
       item.type = 'button';
       if (inBulk) item.appendChild(el('span', 's-check', selected ? '☑' : '☐'));
       if (state.active[row.id]) item.appendChild(el('span', 's-dot'));
       item.appendChild(el('span', 's-title', sessionTitle(row)));
       item.appendChild(el('span', 's-time', relativeTime(row.updated || row.created)));
+      if (!inBulk) {
+        const pin = el('span', 's-pin', pinned ? '📌' : '📍');
+        pin.title = pinned ? t('sessions.unpin') : t('sessions.pin');
+        pin.setAttribute('role', 'button');
+        pin.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          togglePin(row.id);
+        });
+        item.appendChild(pin);
+      }
       item.addEventListener('click', () => {
         if (state.bulk.active) { toggleBulk(row.id); return; }
         openSession(row.id, { focus: true });
@@ -1744,6 +1806,40 @@
       list.appendChild(item);
     });
     updateBulkBar();
+  }
+
+  /* ── agrupamento e fixação de sessões (v0.7.11-web41) ─────────────── */
+
+  function sessionGroup(ms) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const t = Number(ms) || 0;
+    if (t >= today) return 'today';
+    if (t >= today - 86400000) return 'yesterday';
+    if (t >= today - 6 * 86400000) return 'week';
+    return 'older';
+  }
+
+  function loadPinned() {
+    try {
+      const raw = localStorage.getItem('ufvai_pinned_sessions');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          state.pinned = new Set(arr.filter((x) => typeof x === 'string'));
+        }
+      }
+    } catch (e) { /* sem fixadas */ }
+  }
+
+  function togglePin(id) {
+    if (!id) return;
+    if (state.pinned.has(id)) state.pinned.delete(id);
+    else state.pinned.add(id);
+    try {
+      localStorage.setItem('ufvai_pinned_sessions', JSON.stringify([...state.pinned]));
+    } catch (e) { /* storage cheio */ }
+    renderSessions();
   }
 
   /* ── seleção em massa de sessões (v0.7.11-web39) ──────────────────── */
@@ -2683,6 +2779,7 @@
     switch (ev.type) {
       case 'run.started':
         setRunning(true);
+        setTimeout(loadForms, 600);   // v0.7.11-web42: pega o form cedo
         break;
       case 'run.finished':
       case 'run.failed':
@@ -2755,6 +2852,8 @@
         if (!slot.toolStarted) slot.toolStarted = {};
         slot.toolStarted[ev.callID] = Date.now();
         slot.toolInputs[ev.callID] = ev.input;
+        // v0.7.11-web42: a ferramenta "question" cria um form no motor
+        if (ev.name === 'question') setTimeout(loadForms, 400);
         block.__body.innerHTML = '';
         block.__body.appendChild(toolContent(ev.name, ev.input, null, null));
         slot.tools[ev.callID] = block;
@@ -2801,6 +2900,7 @@
         break;
       case 'form.created':
         // v0.7.11-web38: ferramenta "question" — busca e mostra as opções
+        console.info('[ufvai] form.created', ev);
         loadForms();
         break;
       case 'form.replied':
@@ -2895,7 +2995,7 @@
 
   function startElapsed() {
     if (elapsedTimer) return;
-    elapsedTimer = setInterval(atualizaTextoAtividade, 1000);
+    elapsedTimer = setInterval(() => { if (isVisible()) atualizaTextoAtividade(); }, 1000);
   }
 
   function stopElapsed() {
@@ -2959,7 +3059,7 @@
 
   function iniciaSondaAtividade() {
     if (atividadeTimer) return;
-    atividadeTimer = setInterval(sondaAtividade, ATIVIDADE_POLL_MS);
+    atividadeTimer = setInterval(() => { if (isVisible()) sondaAtividade(); }, ATIVIDADE_POLL_MS);
     sondaAtividade();
   }
 
@@ -3009,6 +3109,7 @@
   function watchRun() {
     if (runWatchTimer) return;
     runWatchTimer = setInterval(async () => {
+      if (!isVisible()) return;
       if (!state.running || !state.sessionId) return;
       try {
         await syncMessages();
@@ -4479,6 +4580,49 @@
     }
   }
 
+  /* ── exportar/copiar a conversa (v0.7.11-web41) ───────────────────── */
+
+  function conversationMarkdown() {
+    const row = currentSession();
+    const title = row ? sessionTitle(row) : 'UFVAI';
+    const lines = [`# ${title}`, ''];
+    (state.messages || []).forEach((m) => {
+      if (!m || !m.text) return;
+      const who = m.role === 'user' ? 'Usuário' : (m.agent || 'UFVAI');
+      const when = m.created
+        ? new Date(m.created).toLocaleString(state.locale || 'pt-BR')
+        : '';
+      lines.push(`## ${who}${when ? ` — ${when}` : ''}`, '', m.text, '');
+    });
+    return lines.join('\n');
+  }
+
+  function downloadText(name, text) {
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  }
+
+  function exportConversation() {
+    const row = currentSession();
+    const base = (row ? sessionTitle(row) : 'ufvai')
+      .replace(/[^\w.-]+/g, '-').slice(0, 60) || 'ufvai';
+    downloadText(`${base}.md`, conversationMarkdown());
+    toast(t('session.exported'));
+  }
+
+  function copyConversation() {
+    navigator.clipboard.writeText(conversationMarkdown()).then(
+      () => toast(t('session.copied')),
+      () => toast(t('warn.copyFailed'), 'err'),
+    );
+  }
+
   function openSessionMenu() {
     const list = $('#session-actions');
     list.innerHTML = '';
@@ -4490,6 +4634,8 @@
       [t('session.fork'), forkSession],
       [t('session.compact'), compactSession],
       [t('session.context'), showContext],
+      [t('session.exportMd'), exportConversation],
+      [t('session.copyAll'), copyConversation],
       [t('session.background'), backgroundSession],
       [t('session.finalize'), askFinalize],
     ];
@@ -4701,18 +4847,23 @@
     }
 
     connectEvents();
-    setInterval(refreshSessions, 20000);
-    setInterval(pollFocus, 2500);
-    setInterval(refreshUsage, 30000);
+    // v0.7.11-web41: nenhum poll roda com a aba oculta (economiza CPU/bateria)
+    setInterval(() => { if (isVisible()) refreshSessions(); }, 20000);
+    setInterval(() => { if (isVisible()) pollFocus(); }, 2500);
+    setInterval(() => { if (isVisible()) refreshUsage(); }, 30000);
+    // v0.7.11-web42: formulários da ferramenta "question" — busca periódica
+    // (não depende do evento form.created chegar).
+    setInterval(() => { if (isVisible() && state.sessionId) loadForms(); }, 3000);
     // v0.7.11-web30: sondagem do estado do motor — o indicador de atividade
     // e o botão de parar não podem depender só do SSE.
     iniciaSondaAtividade();
     // v0.7.11-web25: heartbeat — detecta a queda do ambiente mesmo sem SSE
-    setInterval(heartbeat, 10000);
+    setInterval(() => { if (isVisible()) heartbeat(); }, 10000);
     // v0.7.11-web28: FALLBACK de sincronização — a tela não pode depender
     // só do SSE. Enquanto o motor trabalha (ou enquanto o SSE está caído),
     // a web sonda a cauda da conversa e corrige o que ficou para trás.
     setInterval(() => {
+      if (!isVisible()) return;
       if (!state.sessionId) return;
       if (state.running || downSince) syncMessages();
     }, 3000);
@@ -4763,6 +4914,7 @@
       }
     } catch (e) { /* sem histórico */ }
     loadFavorites();
+    loadPinned();
     const input = $('#input');
     input.addEventListener('input', () => {
       autoGrow();
@@ -4828,7 +4980,7 @@
       await refreshSessions();
       toast('atualizado');
     });
-    $('#session-search').addEventListener('input', renderSessions);
+    $('#session-search').addEventListener('input', debounce(renderSessions, 150));
 
     // v0.7.11-web39: seleção em massa de sessões
     $('#bulk-toggle').addEventListener('click', () => toggleBulkMode());
@@ -4870,7 +5022,7 @@
     // v0.7.11-web39: busca na conversa (Ctrl+F)
     const findInput = $('#find-input');
     if (findInput) {
-      findInput.addEventListener('input', () => runFind(findInput.value));
+      findInput.addEventListener('input', debounce(() => runFind(findInput.value), 150));
       findInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') { event.preventDefault(); stepFind(event.shiftKey ? -1 : 1); }
         if (event.key === 'Escape') { event.preventDefault(); closeFind(); }
@@ -4890,7 +5042,7 @@
 
     $('#model-pill').addEventListener('click', openModels);
     $('#model-close').addEventListener('click', () => { $('#model-modal').hidden = true; });
-    $('#model-search').addEventListener('input', (e) => renderModelList(e.target.value));
+    $('#model-search').addEventListener('input', debounce((e) => renderModelList(e.target.value), 150));
 
     $('#agent-pill').addEventListener('click', openAgents);
     $('#variant-chip').addEventListener('click', openVariants);
@@ -5207,5 +5359,12 @@
     askConfirm,
     renderFavMenu,
     loadFavorites,
+    loadForms,   // v0.7.11-web42: diagnóstico/recarga manual de formulários
+    // v0.7.11-web41: sessões (grupo/fixar) e exportação
+    renderSessions,
+    togglePin,
+    sessionGroup,
+    conversationMarkdown,
+    exportConversation,
   };
 })();

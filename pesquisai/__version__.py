@@ -551,7 +551,7 @@ __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-11-17"
-__codename__: str = "Interface web40: editar/regenerar, ações por mensagem, fila, favoritos, LaTeX/Mermaid"
+__codename__: str = "Interface web42: formulários da question com busca periódica (robustez)"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"

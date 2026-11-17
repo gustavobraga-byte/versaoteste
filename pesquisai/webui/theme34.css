@@ -548,3 +548,11 @@ body.w34-compact .w34-hints { display: none; }
     transition-duration: .01ms !important;
   }
 }
+
+/* v0.7.11-web41 — no telefone, desliga o vidro fosco (backdrop-filter é caro) */
+@media (max-width: 900px) {
+  * {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
