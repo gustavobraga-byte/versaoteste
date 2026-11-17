@@ -298,6 +298,31 @@ def _handle_api(method: str, path: str, query: dict, body: dict) -> tuple[int, A
                 return 400, {"error": "pedido de permissão vazio"}
             result = webapi.permission_reply(sid, request_id, decision)
             return (200 if result.get("ok") else 502), result
+        if action == "form" and method == "GET":
+            # v0.7.11-web38: formulários da ferramenta "question"
+            return 200, {"forms": webapi.pending_forms(sid)}
+        if action == "form" and method == "POST":
+            # {formID, answer: {campo: valor}}
+            form_id = str(body.get("formID") or body.get("id") or "")
+            answer = body.get("answer") if isinstance(body.get("answer"), dict) else {}
+            if not form_id:
+                return 400, {"error": "formulário vazio"}
+            result = webapi.form_reply(sid, form_id, answer)
+            return (200 if result.get("ok") else 502), result
+        if action == "revert" and method == "POST":
+            # {messageID, files} — editar/regenerar (v0.7.11-web40)
+            message_id = str(body.get("messageID") or body.get("id") or "")
+            if not message_id:
+                return 400, {"error": "mensagem vazia"}
+            result = webapi.revert_to(sid, message_id, bool(body.get("files")))
+            return (200 if result.get("ok") else 502), result
+        if action == "memory" and method == "POST":
+            # {text, title, tags} — salvar na Minha memória
+            text = str(body.get("text") or "")
+            title = str(body.get("title") or "")
+            tags = body.get("tags") if isinstance(body.get("tags"), list) else None
+            result = webapi.save_memory(text, title, tags)
+            return (200 if result.get("ok") else 400), result
         if action == "fork" and method == "POST":
             result = webapi.fork_session(sid)
             return (200 if result.get("ok") else 502), result

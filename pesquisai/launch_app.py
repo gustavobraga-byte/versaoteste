@@ -6061,9 +6061,14 @@ def start_wrapper_server():
     # com ERR_CONNECTION_REFUSED (regressão v0.6.0; padrão herdado do
     # launcher 0.5.x). IPv4 principal + loopback IPv6 adicional (offline).
     _servers_started = 0
+
+    # v0.7.11-web35 (fix): o bind ocorre na THREAD PRINCIPAL (antes o construtor
+    # do servidor rodava dentro da thread, a exceção escapava e o contador
+    # marcava um listener que nunca subiu).
     try:
+        _v4 = ThreadingHTTPServer((_bind_host, WRAPPER_PORT), Handler)
         threading.Thread(
-            target=lambda: ThreadingHTTPServer((_bind_host, WRAPPER_PORT), Handler).serve_forever(),
+            target=_v4.serve_forever,
             daemon=True,
             name="ufvai-wrapper",
         ).start()
@@ -6071,15 +6076,27 @@ def start_wrapper_server():
     except OSError as e:
         logger.error("Falha ao bindar wrapper em %s:%s — %s", _bind_host, WRAPPER_PORT, e)
 
-    # v0.6.9-6: tenta IPv6 também — 0.0.0.0 só cobre IPv4, localhost pode ser ::1
+    # v0.6.9-6: tenta IPv6 também — 0.0.0.0 só cobre IPv4, localhost pode ser ::1.
+    # v0.7.11-web35 (fix): IPV6_V6ONLY=1 é obrigatório. Sem ele, o socket IPv6
+    # dual-stack (::) tenta cobrir o IPv4 já ligado em 0.0.0.0:WRAPPER_PORT e o
+    # bind falha com EADDRINUSE ("Address already in use"). Com V6ONLY=1, cada
+    # família fica no seu socket e as duas coexistem na mesma porta.
     try:
         import socket as _s
 
         class _LoopbackV6(ThreadingHTTPServer):
             address_family = _s.AF_INET6
 
+            def server_bind(self):
+                try:
+                    self.socket.setsockopt(_s.IPPROTO_IPV6, _s.IPV6_V6ONLY, 1)
+                except (AttributeError, OSError):
+                    pass  # kernel sem IPV6_V6ONLY: segue como antes
+                super().server_bind()
+
+        _v6 = _LoopbackV6(("::", WRAPPER_PORT), Handler)
         threading.Thread(
-            target=lambda: _LoopbackV6(("::", WRAPPER_PORT), Handler).serve_forever(),
+            target=_v6.serve_forever,
             daemon=True,
             name="ufvai-wrapper-v6",
         ).start()

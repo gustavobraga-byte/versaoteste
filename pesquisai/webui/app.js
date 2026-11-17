@@ -92,10 +92,21 @@
     pendingUsers: [],         // mensagens do usuário ainda provisórias (web28)
     usage: null,           // {used, limit, percent} — janela de contexto
     uploads: [],           // anexos já gravados em disco pelo gateway
+    // v0.7.11-web39
+    bulk: { active: false, selected: new Set() }, // seleção em massa de sessões
+    find: { open: false, q: '', hits: [], idx: -1 }, // busca na conversa
+    promptHistory: [],     // histórico de prompts (↑/↓)
+    historyIdx: -1,
+    promptFavorites: [],   // prompts favoritos (v0.7.11-web40)
+    queue: [],             // fila de mensagens enquanto o agente trabalha
+    queueFlushing: false,
+    newSinceScroll: 0,     // mensagens novas fora da rolagem
+    ctxDismissed: new Set(), // sessões em que o aviso de contexto foi fechado
     prefs: {
       expandReasoning: false,
       expandTools: false,
       autosaveEnabled: true,
+      ctrlEnter: false,   // v0.7.11-web40: Enter envia (padrão); Ctrl+Enter = nova linha
     },
   };
 
@@ -329,6 +340,14 @@
       return `<a class="file-ref" data-file="${escapeHtml(path)}" href="#" `
         + `title="${t('answer.openFile')}">${escapeHtml(path)}</a>`;
     });
+    // v0.7.11-web40: LaTeX inline — \( ... \) e $ ... $ (evita valores
+    // puramente numéricos, que costumam ser moeda).
+    out = out.replace(/\\\(([^\\\n]{1,200})\\\)/g,
+      (_, tex) => `<span class="math">${escapeHtml(tex)}</span>`);
+    out = out.replace(/\$([^$\n]{1,200})\$/g, (m, tex) => {
+      if (/^\s*\d+([.,]\d+)?\s*$/.test(tex)) return m;
+      return `<span class="math">${escapeHtml(tex)}</span>`;
+    });
     return out;
   }
 
@@ -429,10 +448,30 @@
 
       if (/^```/.test(raw)) {
         flushPara(); flushList();
+        const lang = raw.slice(3).trim().toLowerCase();
         const body = [];
         i++;
         while (i < lines.length && !/^```/.test(lines[i])) { body.push(lines[i]); i++; }
-        out.push(`<pre><code>${escapeHtml(body.join('\n'))}</code></pre>`);
+        out.push(codeBlockHtml(body.join('\n'), lang));
+        continue;
+      }
+      // v0.7.11-web40: LaTeX em bloco ($$ ... $$)
+      if (/^\s*\$\$/.test(raw)) {
+        flushPara(); flushList();
+        const tex = [];
+        let first = raw.replace(/^\s*\$\$/, '');
+        if (/\$\$\s*$/.test(first)) {
+          out.push(`<div class="math-block">${escapeHtml(first.replace(/\$\$\s*$/, ''))}</div>`);
+          continue;
+        }
+        if (first.trim()) tex.push(first);
+        i++;
+        while (i < lines.length && !/\$\$/.test(lines[i])) { tex.push(lines[i]); i++; }
+        if (i < lines.length) {
+          const tail = lines[i].replace(/\$\$.*$/, '');
+          if (tail.trim()) tex.push(tail);
+        }
+        out.push(`<div class="math-block">${escapeHtml(tex.join('\n').trim())}</div>`);
         continue;
       }
       if (/^\s*$/.test(raw)) { flushPara(); flushList(); continue; }
@@ -599,6 +638,7 @@
   // `allow="modals"` — por isso renomear a sessão não fazia nada na web.
   // Este modal resolve (e ainda funciona fora do iframe).
   let askResolve = null;
+  let pendingConfirm = null;   // v0.7.11-web39: ação pendente do modal de confirmação
 
   function askText(title, value, hint, okLabel) {
     const modal = $('#prompt-modal');
@@ -623,6 +663,31 @@
     const resolve = askResolve;
     askResolve = null;
     if (resolve) resolve(value);
+  }
+
+  /* ── confirmação genérica (v0.7.11-web40) ─────────────────────────── */
+
+  let askConfirmResolve = null;
+
+  function askConfirm(title, message, okLabel) {
+    const modal = $('#ask-modal');
+    if (!modal) return Promise.resolve(false);
+    $('#ask-title').textContent = title || '';
+    $('#ask-message').textContent = message || '';
+    const ok = $('#ask-ok');
+    ok.textContent = okLabel || t('key.ok');
+    modal.hidden = false;
+    setTimeout(() => ok.focus(), 30);
+    return new Promise((resolve) => { askConfirmResolve = resolve; });
+  }
+
+  function closeAskConfirm(value) {
+    const modal = $('#ask-modal');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    const resolve = askConfirmResolve;
+    askConfirmResolve = null;
+    if (resolve) resolve(!!value);
   }
 
   /* ── permissões (decisões do motor) ───────────────────────────────── */
@@ -713,6 +778,171 @@
       rows.forEach(renderPermission);
       if (box) box.hidden = rows.length === 0;
     } catch (e) { /* sem permissões pendentes */ }
+  }
+
+  /* ── formulários do agente (ferramenta "question") ─────────────────── */
+
+  /**
+   * v0.7.11-web38: a ferramenta ``question`` cria um FORM no motor
+   * (``/api/session/{sid}/form``) com as opções. Antes a interface web não
+   * mostrava nada e o turno ficava parado esperando uma resposta que o
+   * usuário não tinha como dar. Agora o formulário vira um cartão com as
+   * opções clicáveis; ao enviar, o gateway repassa ``{answer}`` ao motor.
+   */
+  function formText(field) {
+    return String(field.title || field.description || field.key || '');
+  }
+
+  function renderForm(form) {
+    const box = $('#forms');
+    if (!box) return;
+    const id = String(form.id || '');
+    if (!id) return;
+    const old = box.querySelector(`[data-fid="${id}"]`);
+    if (old) old.remove();
+
+    const card = el('div', 'form-card');
+    card.dataset.fid = id;
+    const meta = form.metadata || {};
+    if (meta.kind === 'question') card.classList.add('is-question');
+    if (form.title) card.appendChild(el('div', 'form-title', form.title));
+
+    const answers = {};
+    const fields = Array.isArray(form.fields) ? form.fields : [];
+
+    fields.forEach((field) => {
+      const key = String(field.key || '');
+      if (!key || field.hidden) return;
+      const wrap = el('div', 'form-field');
+      const label = formText(field);
+      if (label) wrap.appendChild(el('div', 'form-label', label));
+      if (field.description && field.description !== label) {
+        wrap.appendChild(el('div', 'form-desc', field.description));
+      }
+
+      const type = String(field.type || '');
+      const options = Array.isArray(field.options) ? field.options : [];
+
+      if (type === 'multiselect') {
+        const multiple = !(field.maxItems !== undefined && field.maxItems !== null
+          && Number(field.maxItems) <= 1);
+        const chosen = new Set(Array.isArray(field.default) ? field.default : []);
+        const optsBox = el('div', 'form-options');
+        options.forEach((opt) => {
+          const value = String(opt.value !== undefined ? opt.value : (opt.label || ''));
+          const btn = el('button', 'form-option', String(opt.label || value));
+          btn.type = 'button';
+          if (opt.description) btn.title = String(opt.description);
+          if (chosen.has(value)) btn.classList.add('on');
+          btn.addEventListener('click', () => {
+            if (multiple) {
+              if (chosen.has(value)) { chosen.delete(value); btn.classList.remove('on'); }
+              else { chosen.add(value); btn.classList.add('on'); }
+              answers[key] = Array.from(chosen);
+            } else {
+              // o motor exige ARRAY para campos multiselect, mesmo em
+              // escolha única ("Expected string array for form field").
+              chosen.clear(); chosen.add(value); answers[key] = [value];
+              optsBox.querySelectorAll('.form-option').forEach((n) => n.classList.remove('on'));
+              btn.classList.add('on');
+            }
+          });
+          optsBox.appendChild(btn);
+        });
+        wrap.appendChild(optsBox);
+        if (Array.isArray(field.default)) answers[key] = field.default.slice();
+      } else if (type === 'string' && options.length) {
+        const optsBox = el('div', 'form-options');
+        options.forEach((opt) => {
+          const value = String(opt.value !== undefined ? opt.value : (opt.label || ''));
+          const btn = el('button', 'form-option', String(opt.label || value));
+          btn.type = 'button';
+          if (opt.description) btn.title = String(opt.description);
+          if (field.default === value) { btn.classList.add('on'); answers[key] = value; }
+          btn.addEventListener('click', () => {
+            answers[key] = value;
+            optsBox.querySelectorAll('.form-option').forEach((n) => n.classList.remove('on'));
+            btn.classList.add('on');
+          });
+          optsBox.appendChild(btn);
+        });
+        wrap.appendChild(optsBox);
+      } else if (type === 'boolean') {
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = field.default === true;
+        answers[key] = cb.checked;
+        cb.addEventListener('change', () => { answers[key] = cb.checked; });
+        wrap.appendChild(cb);
+      } else {
+        const input = document.createElement('input');
+        input.type = (type === 'number' || type === 'integer') ? 'number' : 'text';
+        if (field.placeholder) input.placeholder = String(field.placeholder);
+        if (field.default !== undefined && field.default !== null) input.value = String(field.default);
+        input.addEventListener('input', () => {
+          answers[key] = (input.type === 'number') ? Number(input.value) : input.value;
+        });
+        wrap.appendChild(input);
+      }
+
+      if (field.custom) {
+        const custom = document.createElement('input');
+        custom.type = 'text';
+        custom.className = 'form-custom';
+        custom.placeholder = t('form.custom');
+        custom.addEventListener('input', () => {
+          const txt = String(custom.value || '');
+          if (txt.trim()) answers[key] = (type === 'multiselect') ? [txt] : txt;
+        });
+        wrap.appendChild(custom);
+      }
+
+      card.appendChild(wrap);
+    });
+
+    const actions = el('div', 'form-actions');
+    const submit = el('button', 'btn primary', t('form.submit'));
+    submit.type = 'button';
+    submit.addEventListener('click', () => replyForm(id, answers));
+    actions.appendChild(submit);
+    card.appendChild(actions);
+
+    box.appendChild(card);
+    box.hidden = false;
+    scrollToEnd(false);
+  }
+
+  function clearForm(id) {
+    const box = $('#forms');
+    if (!box) return;
+    const node = box.querySelector(`[data-fid="${id}"]`);
+    if (node) node.remove();
+    box.hidden = box.children.length === 0;
+  }
+
+  async function replyForm(id, answer) {
+    if (!state.sessionId) return;
+    try {
+      await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/form`, {
+        formID: id, answer,
+      });
+      clearForm(id);
+      toast(t('form.done'));
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
+  }
+
+  async function loadForms() {
+    if (!state.sessionId) return;
+    try {
+      const data = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}/form`);
+      const rows = data.forms || [];
+      const box = $('#forms');
+      if (box) box.innerHTML = '';
+      rows.forEach(renderForm);
+      if (box) box.hidden = rows.length === 0;
+    } catch (e) { /* sem formulários pendentes */ }
   }
 
   /* ── autosave (configuração do wrapper, via postMessage) ───────────── */
@@ -1070,12 +1300,26 @@
     css: 'important media supports keyframes from to inherit initial unset auto none flex grid block inline',
     html: 'html head body div span a img script style link meta title p ul li table tr td th',
     json: 'true false null',
+    yaml: 'true false null',
+    toml: 'true false',
+    sql: 'select from where join left right inner outer on group by order having limit offset insert into values update set delete create table drop alter index primary key foreign references not null default and or in like between is as distinct union all case when then else end count sum avg min max',
+    r: 'function if else for while repeat in next break return library require true false null na inf list data frame ggplot',
+    jl: 'function end if else elseif for while in return using import export struct mutable module begin let try catch finally true false nothing',
+    c: 'include define if else elif endif for while do return break continue struct typedef enum union switch case default sizeof static const void int char float double long short unsigned signed',
+    cpp: 'include using namespace class struct public private protected virtual override template typename return if else for while do switch case break continue new delete const static void int char float double bool auto nullptr true false',
+    java: 'class interface extends implements public private protected static final void int long double float boolean char String new return if else for while do switch case break continue try catch finally throw throws import package null true false',
+    go: 'package import func type struct interface map chan go defer select case switch default if else for range return var const nil true false',
+    rust: 'fn let mut struct enum trait impl pub use mod match if else for while loop return break continue self Self true false None Some Ok Err where as',
+    md: 'true false null',
   };
 
   const HL_EXT = {
     py: 'py', js: 'js', mjs: 'js', cjs: 'js', ts: 'ts', tsx: 'ts', jsx: 'js',
     sh: 'sh', bash: 'sh', zsh: 'sh', css: 'css', scss: 'css', html: 'html',
     htm: 'html', xml: 'html', json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+    sql: 'sql', r: 'r', jl: 'jl', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp',
+    cxx: 'cpp', hpp: 'cpp', java: 'java', go: 'go', rs: 'rust',
+    md: 'md', markdown: 'md',
   };
 
   function highlightCode(text, lang) {
@@ -1093,6 +1337,83 @@
     out = out.replace(/(&quot;[^&\n]*?&quot;|&#39;[^&\n]*?&#39;)/g, '<span class="hl-str">$1</span>');
     out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="hl-num">$1</span>');
     return out;
+  }
+
+  /** v0.7.11-web40: bloco de código com linguagem e números de linha. */
+  function codeBlockHtml(code, lang) {
+    const l = String(lang || '').toLowerCase();
+    if (l === 'mermaid') {
+      return `<div class="mermaid">${escapeHtml(code)}</div>`;
+    }
+    const lines = String(code).split('\n');
+    const rows = lines.map((line, idx) => {
+      const html = highlightCode(line, HL_EXT[l] || l);
+      return `<span class="cl"><span class="ln">${idx + 1}</span>`
+        + `<span class="lc">${html || ' '}</span></span>`;
+    }).join('');
+    return `<pre class="code" data-lang="${escapeHtml(l)}"><code>${rows}</code></pre>`;
+  }
+
+  /* ── KaTeX/Mermaid sob demanda (CDN, com fallback offline) ─────────── */
+
+  let katexPromise = null;
+  let mermaidPromise = null;
+
+  function ensureKatex() {
+    if (window.katex) return Promise.resolve(window.katex);
+    if (katexPromise) return katexPromise;
+    katexPromise = new Promise((resolve, reject) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css';
+      document.head.appendChild(css);
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js';
+      s.onload = () => resolve(window.katex);
+      s.onerror = () => { katexPromise = null; reject(new Error('katex')); };
+      document.head.appendChild(s);
+    });
+    return katexPromise;
+  }
+
+  function ensureMermaid() {
+    if (window.mermaid) return Promise.resolve(window.mermaid);
+    if (mermaidPromise) return mermaidPromise;
+    mermaidPromise = import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')
+      .then((mod) => {
+        const mermaid = mod.default || mod;
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+        window.mermaid = mermaid;
+        return mermaid;
+      })
+      .catch((e) => { mermaidPromise = null; throw e; });
+    return mermaidPromise;
+  }
+
+  /** Renderiza LaTeX/Mermaid dentro de um nó já desenhado. */
+  function decorateRich(root, isFinal) {
+    if (!root || !isFinal) return;
+    const maths = root.querySelectorAll('.math, .math-block');
+    if (maths.length) {
+      ensureKatex().then(() => {
+        maths.forEach((node) => {
+          if (node.dataset.texDone) return;
+          node.dataset.texDone = '1';
+          try {
+            window.katex.render(node.textContent || '', node, {
+              throwOnError: false,
+              displayMode: node.classList.contains('math-block'),
+            });
+          } catch (e) { /* mantém o texto */ }
+        });
+      }).catch(() => { /* offline: mostra o LaTeX cru */ });
+    }
+    const diagrams = root.querySelectorAll('.mermaid');
+    if (diagrams.length) {
+      ensureMermaid().then((mermaid) => {
+        mermaid.run({ nodes: [...diagrams] }).catch(() => {});
+      }).catch(() => { /* offline: mostra o código */ });
+    }
   }
 
   function csvToTable(text) {
@@ -1249,10 +1570,22 @@
     $('#confirm-title').textContent = t('session.finalize');
     $('#confirm-message').textContent = t('session.finalizeAsk')
       .replace('{title}', row ? sessionTitle(row) : '');
+    pendingConfirm = {
+      archive: () => finalizeSession('archive'),
+      delete: () => finalizeSession('delete'),
+    };
     modal.hidden = false;
   }
 
+  function runConfirm(mode) {
+    const action = pendingConfirm ? pendingConfirm[mode] : null;
+    pendingConfirm = null;
+    if (action) action();
+    else $('#confirm-modal').hidden = true;
+  }
+
   function closeConfirm() {
+    pendingConfirm = null;
     $('#confirm-modal').hidden = true;
   }
 
@@ -1376,6 +1709,7 @@
     const filter = ($('#session-search').value || '').trim().toLowerCase();
     list.innerHTML = '';
     const rows = state.sessions.filter((row) => {
+      if (!row || !row.id) return false;   // v0.7.11-web39: nunca quebra com item inválido
       if (!filter) return true;
       return (row.title || '').toLowerCase().includes(filter) || row.id.toLowerCase().includes(filter);
     });
@@ -1384,20 +1718,100 @@
       return;
     }
     rows.forEach((row) => {
-      const item = el('button', 'session-item' + (row.id === state.sessionId ? ' active' : ''));
+      const inBulk = state.bulk.active;
+      const selected = state.bulk.selected.has(row.id);
+      let cls = 'session-item' + (row.id === state.sessionId ? ' active' : '');
+      if (inBulk) cls += ' bulk-mode';
+      if (selected) cls += ' bulk-on';
+      const item = el('button', cls);
       item.type = 'button';
+      if (inBulk) item.appendChild(el('span', 's-check', selected ? '☑' : '☐'));
       if (state.active[row.id]) item.appendChild(el('span', 's-dot'));
       item.appendChild(el('span', 's-title', sessionTitle(row)));
       item.appendChild(el('span', 's-time', relativeTime(row.updated || row.created)));
-      item.addEventListener('click', () => openSession(row.id, { focus: true }));
-      // v0.7.11-web20: duplo clique no nome renomeia a sessão
-      item.addEventListener('dblclick', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        renameSession(row.id);
+      item.addEventListener('click', () => {
+        if (state.bulk.active) { toggleBulk(row.id); return; }
+        openSession(row.id, { focus: true });
       });
+      // v0.7.11-web20: duplo clique no nome renomeia a sessão
+      if (!inBulk) {
+        item.addEventListener('dblclick', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          renameSession(row.id);
+        });
+      }
       list.appendChild(item);
     });
+    updateBulkBar();
+  }
+
+  /* ── seleção em massa de sessões (v0.7.11-web39) ──────────────────── */
+
+  function toggleBulkMode(force) {
+    state.bulk.active = force !== undefined ? !!force : !state.bulk.active;
+    if (!state.bulk.active) state.bulk.selected.clear();
+    const bar = $('#bulk-bar');
+    if (bar) bar.hidden = !state.bulk.active;
+    const btn = $('#bulk-toggle');
+    if (btn) btn.classList.toggle('on', state.bulk.active);
+    renderSessions();
+  }
+
+  function toggleBulk(id) {
+    const set = state.bulk.selected;
+    if (set.has(id)) set.delete(id); else set.add(id);
+    renderSessions();
+  }
+
+  function updateBulkBar() {
+    const bar = $('#bulk-bar');
+    if (!bar) return;
+    const n = state.bulk.selected.size;
+    const count = $('#bulk-count');
+    if (count) count.textContent = String(n);
+    const arch = $('#bulk-archive');
+    const del = $('#bulk-delete');
+    if (arch) arch.disabled = n === 0;
+    if (del) del.disabled = n === 0;
+  }
+
+  function askBulk() {
+    const n = state.bulk.selected.size;
+    if (!n) return;
+    $('#confirm-title').textContent = t('bulk.title');
+    $('#confirm-message').textContent = t('bulk.confirm').replace('{n}', String(n));
+    pendingConfirm = {
+      archive: () => bulkFinalize('archive'),
+      delete: () => bulkFinalize('delete'),
+    };
+    $('#confirm-modal').hidden = false;
+  }
+
+  async function bulkFinalize(mode) {
+    const ids = [...state.bulk.selected];
+    if (!ids.length) { closeConfirm(); return; }
+    const activeWas = ids.includes(state.sessionId);
+    closeConfirm();
+    let done = 0;
+    for (const id of ids) {
+      try {
+        await apiPost(`/sessions/${encodeURIComponent(id)}/finalize`, { mode });
+        done += 1;
+      } catch (e) { /* segue com os demais */ }
+    }
+    toggleBulkMode(false);
+    await refreshSessions();
+    toast(t('bulk.done').replace('{n}', String(done)));
+    if (activeWas) {
+      if (mode === 'delete') {
+        const next = state.sessions.find((s) => !ids.includes(s.id));
+        if (next) await openSession(next.id);
+        else await newSession();
+      } else {
+        await openSession(state.sessionId);
+      }
+    }
   }
 
   function renderUsage() {
@@ -1428,7 +1842,24 @@
       const data = await apiGet(`/sessions/${encodeURIComponent(state.sessionId)}/usage`);
       state.usage = data || null;
       renderUsage();
+      maybeWarnContext();
     } catch (e) { /* motor fora do ar: mantém o último valor */ }
+  }
+
+  /** v0.7.11-web39: avisa quando a janela de contexto passa de 80%. */
+  function maybeWarnContext() {
+    const box = $('#context-warning');
+    if (!box) return;
+    const usage = state.usage;
+    const sid = state.sessionId;
+    const pct = usage && usage.limit ? Number(usage.percent) || 0 : 0;
+    if (pct >= 80 && !state.ctxDismissed.has(sid)) {
+      const text = $('#context-warning-text');
+      if (text) text.textContent = t('ctx.warning').replace('{pct}', pct.toFixed(0));
+      box.hidden = false;
+    } else {
+      box.hidden = true;
+    }
   }
 
   /* ── mensagens ────────────────────────────────────────────────────── */
@@ -1703,6 +2134,214 @@
     return actions;
   }
 
+  /* ── ações por mensagem, metadados e editar/regenerar (web40) ────── */
+
+  function actionButton(label, title, handler) {
+    const b = el('button', 'mini-btn', label);
+    b.type = 'button';
+    if (title) b.title = title;
+    b.addEventListener('click', handler);
+    return b;
+  }
+
+  function insertIntoComposer(text) {
+    const input = $('#input');
+    if (!input) return;
+    const current = input.value || '';
+    input.value = current ? `${current}\n${text}` : text;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    autoGrow();
+  }
+
+  function quoteMessage(text) {
+    const sel = window.getSelection ? String(window.getSelection() || '').trim() : '';
+    const base = sel || String(text || '');
+    if (!base) return;
+    insertIntoComposer(base.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n');
+    toast(t('msg.quoted'));
+  }
+
+  function useAsPrompt(text) {
+    const input = $('#input');
+    if (!input || !text) return;
+    input.value = text;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    autoGrow();
+  }
+
+  /* ── favoritos de prompts (v0.7.11-web40) ─────────────────────────── */
+
+  function loadFavorites() {
+    try {
+      const raw = localStorage.getItem('ufvai_prompt_favorites');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          state.promptFavorites = arr.filter((x) => typeof x === 'string').slice(0, 50);
+        }
+      }
+    } catch (e) { /* sem favoritos */ }
+  }
+
+  function saveFavorites() {
+    try {
+      localStorage.setItem('ufvai_prompt_favorites', JSON.stringify(state.promptFavorites));
+    } catch (e) { /* storage cheio */ }
+  }
+
+  function renderFavMenu() {
+    const menu = $('#fav-menu');
+    if (!menu) return;
+    menu.innerHTML = '';
+    const current = ($('#input').value || '').trim();
+    if (current) {
+      const add = el('button', 'fav-item fav-add', `＋ ${t('fav.save')}`);
+      add.type = 'button';
+      add.addEventListener('click', () => {
+        if (!state.promptFavorites.includes(current)) state.promptFavorites.unshift(current);
+        state.promptFavorites = state.promptFavorites.slice(0, 50);
+        saveFavorites();
+        renderFavMenu();
+        toast(t('fav.saved'));
+      });
+      menu.appendChild(add);
+    }
+    if (!state.promptFavorites.length) {
+      menu.appendChild(el('div', 'fav-empty', t('fav.empty')));
+    } else {
+      state.promptFavorites.forEach((text, idx) => {
+        const row = el('div', 'fav-row');
+        const use = el('button', 'fav-item', text.length > 80 ? `${text.slice(0, 80)}…` : text);
+        use.type = 'button';
+        use.title = text;
+        use.addEventListener('click', () => { useAsPrompt(text); menu.hidden = true; });
+        row.appendChild(use);
+        const del = el('button', 'fav-del', '×');
+        del.type = 'button';
+        del.title = t('fav.remove');
+        del.addEventListener('click', () => {
+          state.promptFavorites.splice(idx, 1);
+          saveFavorites();
+          renderFavMenu();
+        });
+        row.appendChild(del);
+        menu.appendChild(row);
+      });
+    }
+    menu.hidden = false;
+  }
+
+  async function saveMessageToMemory(text) {
+    if (!text || !state.sessionId) return;
+    try {
+      const res = await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/memory`, {
+        text,
+        title: String(text).split('\n')[0].slice(0, 120),
+      });
+      toast(res && res.path
+        ? `${t('msg.savedMemory')}: ${res.path}`
+        : t('msg.savedMemory'));
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
+  }
+
+  function messageMeta(message) {
+    const meta = el('div', 'msg-meta');
+    const created = Number(message.created || 0);
+    if (created) {
+      try {
+        meta.appendChild(el('span', 'meta-time',
+          new Date(created).toLocaleTimeString(state.locale || 'pt-BR',
+            { hour: '2-digit', minute: '2-digit' })));
+      } catch (e) { /* locale inválido */ }
+    }
+    const first = Number(message.firstToken || 0);
+    const done = Number(message.completed || 0);
+    if (created && done) {
+      const total = (done - created) / 1000;
+      let txt = `${total.toFixed(1)} s`;
+      if (first && first >= created) {
+        txt += ` · TTFT ${((first - created) / 1000).toFixed(1)} s`;
+      }
+      meta.appendChild(el('span', 'meta-dur', txt));
+    }
+    return meta;
+  }
+
+  function messageActions(message, isUser) {
+    const actions = el('div', 'msg-actions');
+    actions.appendChild(miniCopy(() => message.text || '', t('tool.copy')));
+    actions.appendChild(actionButton(t('msg.copyMd'), t('msg.copyMd'), () => {
+      navigator.clipboard.writeText(message.text || '').then(
+        () => toast(t('msg.copied')),
+        () => toast(t('warn.copyFailed'), 'err'),
+      );
+    }));
+    actions.appendChild(actionButton('❝', t('msg.quote'), () => quoteMessage(message.text)));
+    actions.appendChild(actionButton(t('msg.usePrompt'), t('msg.usePrompt'),
+      () => useAsPrompt(message.text)));
+    actions.appendChild(actionButton('🧠', t('msg.saveMemory'),
+      () => saveMessageToMemory(message.text)));
+    if (isUser) {
+      actions.appendChild(actionButton(t('msg.edit'), t('msg.edit'),
+        () => editMessage(message)));
+    } else {
+      actions.appendChild(actionButton(t('msg.regenerate'), t('msg.regenerate'),
+        () => regenerate(message)));
+    }
+    return actions;
+  }
+
+  async function editMessage(message) {
+    if (!message || !message.id) return;
+    const edited = await askText(t('msg.edit'), message.text || '',
+      t('msg.editHint'), t('msg.resend'));
+    if (edited === null || edited === undefined) return;
+    const trimmed = String(edited).trim();
+    if (!trimmed || trimmed === String(message.text || '').trim()) return;
+    try {
+      await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/revert`, {
+        messageID: message.id, files: false,
+      });
+      await syncMessages({ force: true });
+      const input = $('#input');
+      input.value = trimmed;
+      autoGrow();
+      await send();
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
+  }
+
+  async function regenerate(message) {
+    if (!message || !message.id) return;
+    const msgs = state.messages || [];
+    const idx = msgs.findIndex((m) => m.id === message.id);
+    let user = null;
+    for (let i = idx - 1; i >= 0; i -= 1) {
+      if (msgs[i] && msgs[i].role === 'user') { user = msgs[i]; break; }
+    }
+    if (!user) { toast(t('msg.noUser'), 'err'); return; }
+    const ok = await askConfirm(t('msg.regenerate'), t('msg.regenerateAsk'),
+      t('msg.regenerate'));
+    if (!ok) return;
+    try {
+      await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/revert`, {
+        messageID: user.id, files: false,
+      });
+      await syncMessages({ force: true });
+      const input = $('#input');
+      input.value = user.text || '';
+      autoGrow();
+      await send();
+    } catch (e) {
+      toast(String(e.message || e), 'err');
+    }
+  }
+
   /** Abre/fecha TODOS os blocos (raciocínio e ferramentas) da conversa. */
   function setAllExpanded(open) {
     document.querySelectorAll('#messages details.block').forEach((block) => {
@@ -1723,7 +2362,8 @@
       const wrap = el('div', 'msg msg-user');
       if (message.id) wrap.dataset.mid = message.id;
       wrap.appendChild(el('div', 'bubble', message.text || ''));
-      wrap.appendChild(copyButton(() => message.text || ''));
+      wrap.appendChild(messageMeta(message));
+      wrap.appendChild(messageActions(message, true));
       return wrap;
     }
 
@@ -1731,7 +2371,9 @@
     if (message.id) wrap.dataset.mid = message.id;
     const answer = el('div', 'answer');
     answer.innerHTML = md(message.text || '');
+    decorateRich(answer, true);
     wrap.appendChild(answer);
+    wrap.appendChild(messageMeta(message));
 
     if (message.reasoning) {
       const block = textBlock(t('tool.reasoning'), message.reasoning, 'reasoning');
@@ -1785,7 +2427,7 @@
       card.appendChild(el('span', 'ec-detail', message.error));
       wrap.appendChild(card);
     }
-    wrap.appendChild(copyButton(() => message.text || '', t('session.copyResponse')));
+    wrap.appendChild(messageActions(message, false));
     return wrap;
   }
 
@@ -1828,12 +2470,111 @@
     // v0.7.11-web25: sem animação — a rolagem automática acontece a cada
     // fragmento de texto e a animação a deixava sempre "a caminho".
     thread.scrollTop = thread.scrollHeight;
+    state.newSinceScroll = 0;
     showJump(false);
   }
 
   function showJump(visible) {
     const btn = $('#jump-btn');
-    if (btn) btn.hidden = !visible;
+    if (!btn) return;
+    btn.hidden = !visible;
+    btn.textContent = (visible && state.newSinceScroll > 0)
+      ? `↓ ${state.newSinceScroll}`
+      : '↓';
+  }
+
+  /* ── busca na conversa (v0.7.11-web39) ─────────────────────────────── */
+
+  function clearFindMarks() {
+    document.querySelectorAll('#messages mark.find-hit').forEach((m) => {
+      const parent = m.parentNode;
+      if (!parent) return;
+      parent.replaceChild(document.createTextNode(m.textContent || ''), m);
+      parent.normalize();
+    });
+    state.find.hits = [];
+    state.find.idx = -1;
+  }
+
+  function openFind() {
+    const bar = $('#find-bar');
+    if (!bar) return;
+    state.find.open = true;
+    bar.hidden = false;
+    const input = $('#find-input');
+    if (input) { input.focus(); input.select(); }
+  }
+
+  function closeFind() {
+    state.find.open = false;
+    const bar = $('#find-bar');
+    if (bar) bar.hidden = true;
+    clearFindMarks();
+    const count = $('#find-count');
+    if (count) count.textContent = '';
+  }
+
+  function highlightTextNode(node, q, hits) {
+    const text = node.nodeValue || '';
+    const lower = text.toLowerCase();
+    let idx = 0;
+    let last = 0;
+    const frag = document.createDocumentFragment();
+    while ((idx = lower.indexOf(q, last)) !== -1) {
+      if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+      const mark = document.createElement('mark');
+      mark.className = 'find-hit';
+      mark.textContent = text.slice(idx, idx + q.length);
+      frag.appendChild(mark);
+      hits.push(mark);
+      last = idx + q.length;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    if (frag.childNodes.length) node.parentNode.replaceChild(frag, node);
+  }
+
+  function runFind(q) {
+    clearFindMarks();
+    const box = $('#messages');
+    const needle = String(q || '').trim().toLowerCase();
+    state.find.q = needle;
+    const count = $('#find-count');
+    if (!box || needle.length < 2) {
+      if (count) count.textContent = '';
+      return;
+    }
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, {
+      acceptNode(t) {
+        if (!t.nodeValue || !t.nodeValue.toLowerCase().includes(needle)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        const p = t.parentElement;
+        if (p && p.closest('script,style,mark.find-hit')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    const hits = [];
+    nodes.forEach((n) => highlightTextNode(n, needle, hits));
+    state.find.hits = hits;
+    state.find.idx = hits.length ? 0 : -1;
+    if (hits.length) hits[0].classList.add('current');
+    if (count) count.textContent = hits.length ? `1/${hits.length}` : '0';
+    if (hits.length) hits[0].scrollIntoView({ block: 'center' });
+  }
+
+  function stepFind(dir) {
+    const hits = state.find.hits;
+    if (!hits.length) return;
+    if (state.find.idx >= 0 && hits[state.find.idx]) {
+      hits[state.find.idx].classList.remove('current');
+    }
+    state.find.idx = (state.find.idx + dir + hits.length) % hits.length;
+    const hit = hits[state.find.idx];
+    if (hit) { hit.classList.add('current'); hit.scrollIntoView({ block: 'center' }); }
+    const count = $('#find-count');
+    if (count) count.textContent = `${state.find.idx + 1}/${hits.length}`;
   }
 
   function onThreadScroll() {
@@ -1896,10 +2637,17 @@
       wrap.appendChild(who);
       const answer = el('div', 'answer');
       wrap.appendChild(answer);
-      const slot = { wrap, answer, text: '', reasoning: '', tools: {}, toolInputs: {}, reasoningBlock: null, __tools: '' };
+      const slot = {
+        wrap, answer, text: '', reasoning: '', tools: {}, toolInputs: {},
+        reasoningBlock: null, __tools: '',
+        startedAt: Date.now(), firstTokenAt: 0, meta: null,   // v0.7.11-web40
+      };
       // v0.7.11-web24: as mensagens em streaming também precisam do botão
       // de copiar (antes ele só existia nas mensagens do histórico).
       wrap.appendChild(copyButton(() => slot.text || '', t('session.copyResponse')));
+      const meta = el('div', 'msg-meta');
+      wrap.appendChild(meta);
+      slot.meta = meta;
       state.stream[messageID] = slot;
       $('#messages').appendChild(wrap);
       $('#empty-state').hidden = true;
@@ -1913,7 +2661,17 @@
     requestAnimationFrame(() => {
       slot.__pending = false;
       slot.answer.innerHTML = md(slot.text);
+      decorateRich(slot.answer, false);
       if (slot.reasoningBlock) slot.reasoningBlock.__body.textContent = slot.reasoning;
+      if (slot.meta) {
+        const now = Date.now();
+        const elapsed = (now - slot.startedAt) / 1000;
+        let txt = `${elapsed.toFixed(1)} s`;
+        if (slot.firstTokenAt) {
+          txt += ` · TTFT ${((slot.firstTokenAt - slot.startedAt) / 1000).toFixed(1)} s`;
+        }
+        slot.meta.textContent = txt;
+      }
       scrollToEnd(false);
     });
   }
@@ -1948,6 +2706,7 @@
         break;
       case 'text.delta': {
         const slot = streamSlot(ev.messageID);
+        if (!slot.firstTokenAt) slot.firstTokenAt = Date.now();
         slot.text += ev.delta || '';
         hideRetryNotice();
         scheduleRender(slot);
@@ -1993,6 +2752,8 @@
       case 'tool.started': {
         const slot = streamSlot(ev.messageID);
         const block = toolBlock(ev.name, t('tool.running'));
+        if (!slot.toolStarted) slot.toolStarted = {};
+        slot.toolStarted[ev.callID] = Date.now();
         slot.toolInputs[ev.callID] = ev.input;
         block.__body.innerHTML = '';
         block.__body.appendChild(toolContent(ev.name, ev.input, null, null));
@@ -2005,8 +2766,12 @@
         const slot = streamSlot(ev.messageID);
         const block = slot.tools[ev.callID];
         if (block) {
-          // v0.7.11-web28: verde quando conclui, vermelho quando falha
-          setBlockStatus(block, ev.status === 'error' ? 'error' : 'done');
+          // v0.7.11-web40: duração real da ferramenta (início → fim)
+          const started = slot.toolStarted && slot.toolStarted[ev.callID];
+          const ms = started ? (Date.now() - started) : 0;
+          const base = ev.status === 'error' ? t('tool.error') : t('tool.done');
+          const label = ms ? `${base} · ${(ms / 1000).toFixed(1)} s` : base;
+          setBlockStatus(block, ev.status === 'error' ? 'error' : 'done', label);
           // v0.7.11-web23: o diff do arquivo alterado chega no fim da chamada
           const input = slot.toolInputs && slot.toolInputs[ev.callID];
           block.__body.innerHTML = '';
@@ -2033,6 +2798,14 @@
         break;
       case 'permission.replied':
         clearPermission(ev.id);
+        break;
+      case 'form.created':
+        // v0.7.11-web38: ferramenta "question" — busca e mostra as opções
+        loadForms();
+        break;
+      case 'form.replied':
+      case 'form.cancelled':
+        clearForm(ev.id);
         break;
       case 'error':
         // v0.7.11-web27: sobrecarga → avisa com retry; demais erros → vermelho
@@ -2085,13 +2858,28 @@
     atualizaTextoAtividade();
     setAgentBusy(state.running, estavaRodando);
     if (state.running) { watchRun(); startElapsed(); } else { stopElapsed(); }
+    // v0.7.11-web40: turno terminou → envia a próxima mensagem da fila
+    if (!state.running && !state.stopping) setTimeout(flushQueue, 0);
   }
 
-  /** Texto do indicador: "Trabalhando… 12 s" / "interrompendo…". */
+  /**
+   * v0.7.11-web35: formata segundos decorridos como HH:MM:SS
+   * (horas:minutos:segundos), com zero à esquerda. Ex.: 3725 → "01:02:05".
+   * Horas e minutos aparecem mesmo quando zero, para leitura inequívoca.
+   */
+  function formataCronometro(totalSeg) {
+    const s = Math.max(0, Math.floor(totalSeg || 0));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const seg = s % 60;
+    return [h, m, seg].map(n => String(n).padStart(2, '0')).join(':');
+  }
+
+  /** Texto do indicador: "Trabalhando… · 00:01:23" / "interrompendo…". */
   function atualizaTextoAtividade() {
     const seg = state.runningSince ? Math.floor((Date.now() - state.runningSince) / 1000) : 0;
     const base = state.stopping ? t('status.interrupting') : t('status.working');
-    const texto = seg > 0 ? `${base} · ${seg}s` : base;
+    const texto = seg > 0 ? `${base} · ${formataCronometro(seg)}` : base;
     const status = $('#status-text');
     if (status) status.textContent = state.running ? texto : '';
     const busy = $('#agent-busy');
@@ -2496,6 +3284,7 @@
       // — relê a cauda da conversa e reidrata as permissões pendentes.
       syncMessages({ force: true });
       loadPermissions();
+      loadForms();
       const waiters = state.sseWaiters.splice(0, state.sseWaiters.length);
       waiters.forEach((fn) => fn());
     };
@@ -2604,6 +3393,12 @@
       if (state.model.id && state.model.providerID) body.model = state.model;
       const data = await apiPost('/sessions', body);
       const row = data.session;
+      if (!row || !row.id) {
+        // v0.7.11-web39: o motor pode devolver corpo vazio/erro — não insere
+        // um item inválido na lista (isso quebrava a renderização).
+        toast(String(data.error || 'não foi possível criar a sessão'), 'err');
+        return;
+      }
       state.sessions.unshift(row);
       renderSessions();
       await openSession(row.id, { focus: true });
@@ -2615,10 +3410,26 @@
 
   /* ── envio ────────────────────────────────────────────────────────── */
 
-  async function send() {
+  async function send(opts) {
     const input = $('#input');
     const text = input.value.trim();
     if (!text && !state.attachments.length) return;
+
+    // v0.7.11-web39: histórico de prompts (↑/↓)
+    if (text) {
+      const h = state.promptHistory;
+      if (h[h.length - 1] !== text) h.push(text);
+      while (h.length > 50) h.shift();
+      state.historyIdx = -1;
+      try { localStorage.setItem('ufvai_prompt_history', JSON.stringify(h)); } catch (e) {}
+    }
+
+    // v0.7.11-web40: fila — se o agente está trabalhando, guarda a mensagem
+    if (state.running && !(opts && opts.force) && !state.stopping) {
+      queueMessage(text);
+      return;
+    }
+
     if (!state.sessionId) { await newSession(); }
 
     // v0.7.11-web27: novo turno → limpa os avisos do anterior
@@ -2677,6 +3488,44 @@
     } catch (e) {
       toast(String(e.message || e), 'err');
       setRunning(false);
+    }
+  }
+
+  /* ── fila de mensagens (v0.7.11-web40) ────────────────────────────── */
+
+  function queueMessage(text) {
+    const files = state.attachments.slice();
+    const skills = state.pendingSkills.slice();
+    if (!text && !files.length) return;
+    const node = el('div', 'msg msg-user queued');
+    node.appendChild(el('div', 'bubble', text || `(${t('composer.attached')})`));
+    node.appendChild(el('span', 'q-badge', `${t('queue.badge')} ${state.queue.length + 1}`));
+    $('#messages').appendChild(node);
+    state.queue.push({ text, attachments: files, skills, node });
+    state.attachments = [];
+    state.pendingSkills = [];
+    renderAttachments();
+    const input = $('#input');
+    input.value = '';
+    input.style.height = 'auto';
+    toast(t('queue.added'));
+    scrollToEnd(true);
+  }
+
+  async function flushQueue() {
+    if (state.queueFlushing || state.running || !state.queue.length) return;
+    state.queueFlushing = true;
+    const item = state.queue.shift();
+    try {
+      if (item.node && item.node.parentNode) item.node.remove();
+      const input = $('#input');
+      input.value = item.text || '';
+      state.attachments = item.attachments || [];
+      state.pendingSkills = item.skills || [];
+      renderAttachments();
+      await send({ force: true });
+    } finally {
+      state.queueFlushing = false;
     }
   }
 
@@ -3261,6 +4110,9 @@
         () => { renderMessages(); }));
       pane.appendChild(switchRow(t('settings.expandTools'), 'expandTools',
         () => { renderMessages(); }));
+      // v0.7.11-web40: Enter envia (desligado) ou Ctrl+Enter envia (ligado)
+      pane.appendChild(switchRow(t('settings.ctrlEnter'), 'ctrlEnter'));
+      pane.appendChild(el('p', null, t('settings.ctrlEnterNote')));
       pane.appendChild(el('p', null, t('settings.expandAllNote')));
       const actions = el('div', 'setting-actions');
       const bAll = el('button', 'btn', t('tool.expandAll'));
@@ -3901,9 +4753,20 @@
   }
 
   function bind() {
+    try {
+      const raw = localStorage.getItem('ufvai_prompt_history');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          state.promptHistory = arr.filter((x) => typeof x === 'string').slice(-50);
+        }
+      }
+    } catch (e) { /* sem histórico */ }
+    loadFavorites();
     const input = $('#input');
     input.addEventListener('input', () => {
       autoGrow();
+      state.historyIdx = -1;
       const trig = triggerAtCaret();
       if (!trig) { closePalette(); return; }
       if (state.palette && state.palette.kind === trig.kind && state.palette.query === trig.query) {
@@ -3922,7 +4785,37 @@
         if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); choosePalette(); return; }
         if (event.key === 'Escape') { event.preventDefault(); closePalette(); return; }
       }
-      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      // v0.7.11-web39: histórico de prompts (↑/↓) quando o campo está vazio
+      if (!state.palette && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        const h = state.promptHistory;
+        if (h.length) {
+          const editing = input.value.length > 0 && state.historyIdx < 0;
+          if (event.key === 'ArrowUp' && !editing) {
+            event.preventDefault();
+            state.historyIdx = Math.min(state.historyIdx + 1, h.length - 1);
+            input.value = h[h.length - 1 - state.historyIdx] || '';
+            input.setSelectionRange(input.value.length, input.value.length);
+            autoGrow();
+            return;
+          }
+          if (event.key === 'ArrowDown' && state.historyIdx >= 0) {
+            event.preventDefault();
+            state.historyIdx -= 1;
+            input.value = state.historyIdx >= 0
+              ? (h[h.length - 1 - state.historyIdx] || '')
+              : '';
+            input.setSelectionRange(input.value.length, input.value.length);
+            autoGrow();
+            return;
+          }
+        }
+      }
+      // v0.7.11-web40: Enter envia (padrão) ou Ctrl+Enter envia (preferência)
+      const sendOnCtrl = !!state.prefs.ctrlEnter;
+      const wantsSend = sendOnCtrl
+        ? (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing)
+        : (event.key === 'Enter' && !event.shiftKey && !event.isComposing);
+      if (wantsSend) {
         event.preventDefault();
         send();
       }
@@ -3937,10 +4830,62 @@
     });
     $('#session-search').addEventListener('input', renderSessions);
 
+    // v0.7.11-web39: seleção em massa de sessões
+    $('#bulk-toggle').addEventListener('click', () => toggleBulkMode());
+    $('#bulk-all').addEventListener('click', () => {
+      const filter = ($('#session-search').value || '').trim().toLowerCase();
+      const rows = state.sessions.filter((row) => !filter
+        || (row.title || '').toLowerCase().includes(filter)
+        || row.id.toLowerCase().includes(filter));
+      const all = rows.length && rows.every((r) => state.bulk.selected.has(r.id));
+      rows.forEach((r) => {
+        if (all) state.bulk.selected.delete(r.id);
+        else state.bulk.selected.add(r.id);
+      });
+      renderSessions();
+    });
+    $('#bulk-archive').addEventListener('click', askBulk);
+    $('#bulk-delete').addEventListener('click', askBulk);
+    $('#bulk-cancel').addEventListener('click', () => toggleBulkMode(false));
+
+    $('#fav-btn').addEventListener('click', () => {
+      const menu = $('#fav-menu');
+      if (!menu) return;
+      if (menu.hidden) renderFavMenu(); else menu.hidden = true;
+    });
+    document.addEventListener('click', (event) => {
+      const menu = $('#fav-menu');
+      if (!menu || menu.hidden) return;
+      if (event.target.closest && (event.target.closest('#fav-menu')
+          || event.target.closest('#fav-btn'))) return;
+      menu.hidden = true;
+    });
+
     $('#attach-btn').addEventListener('click', () => $('#file-input').click());
     $('#file-input').addEventListener('change', (event) => {
       attachLocalFiles([...event.target.files]);
       event.target.value = '';
+    });
+
+    // v0.7.11-web39: busca na conversa (Ctrl+F)
+    const findInput = $('#find-input');
+    if (findInput) {
+      findInput.addEventListener('input', () => runFind(findInput.value));
+      findInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); stepFind(event.shiftKey ? -1 : 1); }
+        if (event.key === 'Escape') { event.preventDefault(); closeFind(); }
+      });
+    }
+    $('#find-prev').addEventListener('click', () => stepFind(-1));
+    $('#find-next').addEventListener('click', () => stepFind(1));
+    $('#find-close').addEventListener('click', closeFind);
+
+    // v0.7.11-web39: aviso de contexto
+    $('#context-compact').addEventListener('click', compactSession);
+    $('#context-dismiss').addEventListener('click', () => {
+      state.ctxDismissed.add(state.sessionId);
+      const box = $('#context-warning');
+      if (box) box.hidden = true;
     });
 
     $('#model-pill').addEventListener('click', openModels);
@@ -3973,6 +4918,49 @@
 
     $('#thread').addEventListener('scroll', onThreadScroll, { passive: true });
     $('#thread').addEventListener('wheel', onScrollIntent, { passive: true });
+
+    // v0.7.11-web39: arrastar/soltar e colar arquivos no compositor
+    const threadBox = $('#thread');
+    ['dragenter', 'dragover'].forEach((ev) => {
+      threadBox.addEventListener(ev, (event) => {
+        const types = event.dataTransfer && event.dataTransfer.types;
+        if (!types || ![...types].includes('Files')) return;
+        event.preventDefault();
+        document.body.classList.add('dragging');
+      });
+    });
+    ['dragleave', 'dragend', 'drop'].forEach((ev) => {
+      threadBox.addEventListener(ev, () => document.body.classList.remove('dragging'));
+    });
+    threadBox.addEventListener('drop', (event) => {
+      const files = [...((event.dataTransfer && event.dataTransfer.files) || [])];
+      if (!files.length) return;
+      event.preventDefault();
+      document.body.classList.remove('dragging');
+      attachLocalFiles(files);
+    });
+    document.addEventListener('paste', (event) => {
+      const items = [...((event.clipboardData && event.clipboardData.items) || [])];
+      const files = items
+        .filter((it) => it.kind === 'file')
+        .map((it) => it.getAsFile())
+        .filter(Boolean);
+      if (files.length) { event.preventDefault(); attachLocalFiles(files); }
+    });
+
+    // v0.7.11-web39: contador de mensagens novas quando o usuário lê o histórico
+    const messagesBox = $('#messages');
+    if (messagesBox && window.MutationObserver) {
+      new MutationObserver((mutations) => {
+        if (state.autoScroll) return;
+        let added = 0;
+        mutations.forEach((m) => { added += m.addedNodes ? m.addedNodes.length : 0; });
+        if (added > 0) {
+          state.newSinceScroll += added;
+          showJump(true);
+        }
+      }).observe(messagesBox, { childList: true });
+    }
     // v0.7.11-web28: referência a arquivo citada na resposta → abre no
     // explorador (delegado: vale para qualquer mensagem já renderizada).
     document.addEventListener('click', (event) => {
@@ -4013,6 +5001,7 @@
     loadPreviewHeight();
     $('#jump-btn').addEventListener('click', () => {
       state.autoScroll = true;
+      state.newSinceScroll = 0;
       const thread = $('#thread');
       if (thread && thread.scrollTo) {
         thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
@@ -4029,8 +5018,8 @@
     // v0.7.11-web26: confirmação de finalização da sessão
     $('#confirm-close').addEventListener('click', closeConfirm);
     $('#confirm-cancel').addEventListener('click', closeConfirm);
-    $('#confirm-archive').addEventListener('click', () => finalizeSession('archive'));
-    $('#confirm-delete').addEventListener('click', () => finalizeSession('delete'));
+    $('#confirm-archive').addEventListener('click', () => runConfirm('archive'));
+    $('#confirm-delete').addEventListener('click', () => runConfirm('delete'));
 
     $('#menu-btn').addEventListener('click', () => {
       // v0.7.11-web21: no desktop o botão OCULTA as sessões (a coluna
@@ -4064,7 +5053,18 @@
       if (event.key === 'Escape') { event.preventDefault(); closeAsk(null); }
     });
 
+    // v0.7.11-web40: modal de confirmação genérico
+    $('#ask-ok').addEventListener('click', () => closeAskConfirm(true));
+    $('#ask-cancel').addEventListener('click', () => closeAskConfirm(false));
+    $('#ask-close').addEventListener('click', () => closeAskConfirm(false));
+
     document.addEventListener('keydown', (event) => {
+      // v0.7.11-web39: Esc fecha a busca na conversa
+      if (event.key === 'Escape' && state.find.open) {
+        event.preventDefault();
+        closeFind();
+        return;
+      }
       // v0.7.11-web30: **Esc** interrompe a execução quando ela está em
       // curso (e nada mais está aberto). As outras camadas de Esc
       // (paleta, modais) marcam `defaultPrevented` — por isso o guarda.
@@ -4079,10 +5079,22 @@
         $('#model-modal').hidden = true;
         $('#settings-modal').hidden = true;
         $('#session-modal').hidden = true;
+        const fav = $('#fav-menu');
+        if (fav) fav.hidden = true;
+        closeAskConfirm(false);
       }
       if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
         event.preventDefault();
         $('#session-search').focus();
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+        event.preventDefault();
+        openFind();
+      }
+      if (event.key === '?' && !isDigitando(event.target)
+          && !document.querySelector('.modal:not([hidden])')) {
+        event.preventDefault();
+        openSettings('atalhos');
       }
       if ((event.ctrlKey || event.metaKey) && event.key === 'l') {
         event.preventDefault();
@@ -4109,6 +5121,27 @@
       if ((event.ctrlKey || event.metaKey) && event.key === 'u') {
         event.preventDefault();
         $('#file-input').click();
+      }
+    });
+
+    // v0.7.11-web39: prende o foco no modal visível (acessibilidade)
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Tab') return;
+      const modals = [...document.querySelectorAll('.modal')].filter((m) => !m.hidden);
+      if (!modals.length) return;
+      const modal = modals[modals.length - 1];
+      const focusables = [...modal.querySelectorAll(
+        'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      )].filter((n) => n.offsetParent !== null);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     });
 
@@ -4159,5 +5192,20 @@
     stop,
     sondaAtividade,
     iniciaSondaAtividade,
+    // v0.7.11-web39: seleção em massa, busca na conversa e aviso de contexto
+    toggleBulkMode,
+    openFind,
+    closeFind,
+    runFind,
+    maybeWarnContext,
+    // v0.7.11-web40: mensagens, fila, favoritos e confirmação
+    renderMessage,
+    renderMessages,
+    send,
+    queueMessage,
+    flushQueue,
+    askConfirm,
+    renderFavMenu,
+    loadFavorites,
   };
 })();

@@ -67,6 +67,10 @@ __all__ = [
     "context_usage",
     "session_diff",
     "permission_reply",
+    "pending_forms",
+    "form_reply",
+    "revert_to",
+    "save_memory",
     "finalize_session",
     "about",
     "agent_state",
@@ -545,6 +549,8 @@ def normalize_message(row: dict) -> dict:
             "variant": str(model.get("variant") or ""),
         },
         "created": int(time_info.get("created") or 0),
+        "firstToken": int(time_info.get("firstToken") or 0),
+        "streamed": int(time_info.get("streamed") or 0),
         "completed": int(time_info.get("completed") or 0),
         "tokens": row.get("tokens") or {},
         "cost": row.get("cost") or 0,
@@ -1174,6 +1180,99 @@ def permission_reply(sid: str, request_id: str, decision: str) -> dict:
     return {"ok": True, "decision": decision}
 
 
+def pending_forms(sid: str) -> list[dict]:
+    """Formulários em aberto da sessão (v0.7.11-web38).
+
+    A ferramenta ``question`` do agente cria um FORM no motor
+    (``GET /api/session/{sid}/form``) com os campos/opções. Sem isto, a
+    interface web não mostrava a pergunta e o turno ficava parado.
+    """
+    data = engine_json(f"/api/session/{sid}/form", timeout=12)
+    rows = data.get("data") if isinstance(data, dict) else data
+    rows = rows if isinstance(rows, list) else []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        out.append(
+            {
+                "id": str(row.get("id")),
+                "title": str(row.get("title") or ""),
+                "metadata": row.get("metadata") or {},
+                "fields": row.get("fields") or [],
+            }
+        )
+    return out
+
+
+def form_reply(sid: str, form_id: str, answer: dict) -> dict:
+    """Responde um formulário pendente (ferramenta ``question``).
+
+    ``answer`` é ``{chave_do_campo: valor}`` (string, número, booleano ou
+    lista de strings, conforme o tipo do campo).
+    """
+    if not isinstance(answer, dict) or not answer:
+        return {"ok": False, "error": "resposta vazia"}
+    status, data = engine_request(
+        "POST",
+        f"/api/session/{sid}/form/{form_id}/reply",
+        {"answer": answer},
+        timeout=20,
+    )
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    return {"ok": True}
+
+
+def revert_to(sid: str, message_id: str, files: bool = False) -> dict:
+    """Reverte a sessão até (e incluindo) ``message_id``.
+
+    Semântica validada no motor [DADO CONFIRMADO]: ``stage`` + ``commit``
+    removem a mensagem-alvo e tudo que veio depois. Serve para **editar e
+    reenviar** (reverte à mensagem do usuário e envia o texto editado) e
+    **regenerar** (reverte à mesma mensagem e reenvia o texto original).
+    ``files=False`` evita reverter alterações no workspace.
+    """
+    if not message_id:
+        return {"ok": False, "error": "mensagem vazia"}
+    status, data = engine_request(
+        "POST",
+        f"/api/session/{sid}/revert/stage",
+        {"messageID": message_id, "files": bool(files)},
+        timeout=20,
+    )
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    status, data = engine_request(
+        "POST", f"/api/session/{sid}/revert/commit", {}, timeout=20
+    )
+    if not _ok(status):
+        return {"ok": False, "error": _error_text(data) or f"HTTP {status}"}
+    return {"ok": True}
+
+
+def save_memory(text: str, title: str = "", tags: list[str] | None = None) -> dict:
+    """Salva um trecho na Minha memória (vault Obsidian).
+
+    Usa o autopilot (``save_finding``), que é no-op quando o vault não está
+    disponível — nesse caso devolve erro para a interface avisar.
+    """
+    body = str(text or "").strip()
+    if not body:
+        return {"ok": False, "error": "texto vazio"}
+    try:
+        from .obsidian.autopilot import save_finding  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        return {"ok": False, "error": f"memória indisponível: {exc}"}
+    try:
+        path = save_finding(body, source="interface web", tags=tags or None)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    if not path:
+        return {"ok": False, "error": "vault indisponível"}
+    return {"ok": True, "path": str(path), "title": str(title or body.splitlines()[0])[:120]}
+
+
 def fork_session(sid: str) -> dict:
     """Cria uma cópia (fork) da sessão."""
     status, data = engine_request("POST", f"/api/session/{sid}/fork", {}, timeout=20)
@@ -1441,6 +1540,22 @@ def normalize_event(event: dict) -> dict | None:
             "errorType": str(error.get("type") or ""),
             "message": str(error.get("message") or ""),
             "reason": _error_reason(error),
+        }
+    if kind == "form.created":
+        # v0.7.11-web38: a ferramenta ``question`` cria um formulário — o
+        # cliente precisa buscá-lo e mostrar as opções para o usuário.
+        form = data.get("form") or {}
+        fsid = str(form.get("sessionID") or sid) if isinstance(form, dict) else sid
+        return {
+            "type": "form.created",
+            "sid": fsid,
+            "id": str(form.get("id") or "") if isinstance(form, dict) else "",
+        }
+    if kind in ("form.replied", "form.cancelled"):
+        return {
+            "type": kind,
+            "sid": sid or str(data.get("sessionID") or ""),
+            "id": str(data.get("id") or ""),
         }
     if kind == "permission.asked":
         # v0.7.11-web24: o motor pede licença para agir — a web precisa

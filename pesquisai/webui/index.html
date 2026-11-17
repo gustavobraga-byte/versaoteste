@@ -20,6 +20,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="side-head">
       <span class="side-label" data-i18n="sidebar.sessions">sessões</span>
+      <button class="icon-btn bulk-toggle" id="bulk-toggle" title="Selecionar sessões" aria-label="Selecionar sessões" data-i18n-title="bulk.select">☑</button>
     </div>
 
     <button class="new-session" id="new-session">
@@ -28,6 +29,15 @@
 
     <div class="search-wrap">
       <input id="session-search" type="search" placeholder="Buscar sessão…" autocomplete="off" data-i18n-placeholder="sidebar.search">
+    </div>
+
+    <!-- v0.7.11-web39: seleção em massa de sessões -->
+    <div class="bulk-bar" id="bulk-bar" hidden>
+      <button class="mini-btn" id="bulk-all" data-i18n="bulk.all">Todas</button>
+      <span class="bulk-count" id="bulk-count">0</span>
+      <button class="mini-btn" id="bulk-archive" data-i18n="bulk.archive">Arquivar</button>
+      <button class="mini-btn danger" id="bulk-delete" data-i18n="bulk.delete">Excluir</button>
+      <button class="mini-btn" id="bulk-cancel" data-i18n="bulk.cancel">Cancelar</button>
     </div>
 
     <nav class="sessions" id="sessions" aria-label="Sessões"></nav>
@@ -114,6 +124,14 @@
     </div>
 
     <div class="thread" id="thread">
+      <!-- v0.7.11-web39: busca dentro da conversa (Ctrl+F) -->
+      <div class="find-bar" id="find-bar" hidden>
+        <input id="find-input" type="search" placeholder="Buscar na conversa…" autocomplete="off" data-i18n-placeholder="find.placeholder">
+        <span class="find-count" id="find-count"></span>
+        <button class="mini-btn" id="find-prev" title="Anterior" aria-label="Ocorrência anterior">↑</button>
+        <button class="mini-btn" id="find-next" title="Próxima" aria-label="Próxima ocorrência">↓</button>
+        <button class="mini-btn" id="find-close" title="Fechar" aria-label="Fechar busca">✕</button>
+      </div>
       <div id="messages"></div>
       <div class="empty" id="empty-state">
         <div class="empty-logo">
@@ -139,12 +157,22 @@
         <span class="rb-count" id="retry-count"></span>
       </div>
 
+      <!-- v0.7.11-web39: aviso de contexto (80%+) com compactação rápida -->
+      <div class="context-warning" id="context-warning" hidden>
+        <span id="context-warning-text"></span>
+        <button class="mini-btn" id="context-compact" data-i18n="ctx.compact">Compactar</button>
+        <button class="mini-btn" id="context-dismiss" aria-label="Fechar" title="Fechar">✕</button>
+      </div>
+
       <!-- v0.7.11-web27: erros comuns (vermelhos), distintos da sobrecarga -->
       <div class="errors" id="errors" hidden></div>
 
       <!-- v0.7.11-web24: pedidos de permissão do motor (as "decisões" que
            não apareciam na versão web) -->
       <div class="permissions" id="permissions" hidden></div>
+
+      <!-- v0.7.11-web38: formulários da ferramenta "question" do agente -->
+      <div class="forms" id="forms" hidden></div>
 
       <!-- paleta de comandos (/) e de habilidades/arquivos (@) -->
       <div class="palette" id="palette" hidden>
@@ -155,8 +183,12 @@
 
       <div class="attachments" id="attachments" hidden></div>
 
+      <!-- v0.7.11-web40: prompts favoritos -->
+      <div class="fav-menu" id="fav-menu" hidden></div>
+
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="Pergunte ao UFVAI… (/ para comandos, @ para habilidades e arquivos)" autocomplete="off" data-i18n-placeholder="composer.placeholder"></textarea>
+        <button class="icon-btn fav-btn" id="fav-btn" title="Prompts favoritos" aria-label="Prompts favoritos" data-i18n-title="fav.title">★</button>
         <button class="icon-btn attach-btn" id="attach-btn" title="Anexar arquivos" aria-label="Anexar arquivos" data-i18n-title="composer.attach">📎</button>
         <input id="file-input" type="file" multiple hidden>
         <button class="send" id="send-btn" title="Enviar (Enter)" aria-label="Enviar" data-i18n-title="composer.send">➤</button>
@@ -166,7 +198,7 @@
              comando nenhum para interromper. -->
         <button class="stop" id="stop-btn" title="Interromper (Esc)" aria-label="Interromper" data-i18n-title="composer.stop">■</button>
       </div>
-      <div class="status-line" id="status" hidden><span class="spinner"></span><span id="status-text">Trabalhando…</span></div>
+      <div class="status-line" id="status" hidden><span class="spinner"></span><span id="status-text" role="status" aria-live="polite">Trabalhando…</span></div>
     </div>
   </main>
 
@@ -209,7 +241,7 @@
 </div>
 
 <!-- ── seletor de modelo ────────────────────────────────────────────── -->
-<div class="modal" id="model-modal" hidden>
+<div class="modal" id="model-modal" role="dialog" aria-modal="true" hidden>
   <div class="modal-card">
     <div class="modal-head">
       <h2 data-i18n="modal.model">Modelo</h2>
@@ -222,7 +254,7 @@
 </div>
 
 <!-- ── ajustes ──────────────────────────────────────────────────────── -->
-<div class="modal" id="settings-modal" hidden>
+<div class="modal" id="settings-modal" role="dialog" aria-modal="true" hidden>
   <div class="modal-card settings-card">
     <div class="modal-head">
       <h2 data-i18n="modal.settings">Ajustes</h2>
@@ -246,7 +278,7 @@
 </div>
 
 <!-- ── menu da sessão / variante ────────────────────────────────────── -->
-<div class="modal" id="session-modal" hidden>
+<div class="modal" id="session-modal" role="dialog" aria-modal="true" hidden>
   <div class="modal-card modal-sm">
     <div class="modal-head">
       <h2 id="session-modal-title" data-i18n="modal.session">Sessão</h2>
@@ -256,10 +288,25 @@
   </div>
 </div>
 
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+<!-- ── confirmação genérica (web40: regenerar, fila, etc.) ─────────────── -->
+<div class="modal" id="ask-modal" role="dialog" aria-modal="true" aria-labelledby="ask-title" hidden>
+  <div class="modal-card modal-sm">
+    <div class="modal-head">
+      <h2 id="ask-title">—</h2>
+      <button class="icon-btn" id="ask-close" aria-label="Fechar" data-i18n-title="modal.close">✕</button>
+    </div>
+    <div class="prompt-body"><p id="ask-message"></p></div>
+    <div class="modal-foot">
+      <button class="btn" id="ask-cancel" data-i18n="key.cancel">Cancelar</button>
+      <button class="btn primary" id="ask-ok" data-i18n="key.ok">OK</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── entrada de texto (substitui prompt(): bloqueado em iframe) ───── -->
-<div class="modal" id="prompt-modal" hidden>
+<div class="modal" id="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="prompt-title" hidden>
   <div class="modal-card modal-sm">
     <div class="modal-head">
       <h2 id="prompt-title">—</h2>
@@ -277,7 +324,7 @@
 </div>
 
 <!-- ── confirmação (finalizar sessão) ────────────────────────────────── -->
-<div class="modal" id="confirm-modal" hidden>
+<div class="modal" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title" hidden>
   <div class="modal-card modal-sm">
     <div class="modal-head">
       <h2 id="confirm-title">—</h2>
