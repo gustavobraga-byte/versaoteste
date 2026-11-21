@@ -550,8 +550,8 @@ __brand__: str = "UFVAI"
 __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
-__release_date__: str = "2026-11-17"
-__codename__: str = "Interface web42: formulários da question com busca periódica (robustez)"
+__release_date__: str = "2026-11-21"
+__codename__: str = "Interface web45: expandir tudo persistente (streaming + mensagens novas) + boot Colab + 9 melhorias web44"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
@@ -587,6 +587,10 @@ __components__: dict[str, str] = {
     "lang_aware_greeting": "0.1.0",       # NOVO v0.4.2.2: saudação no idioma
     "drive_guard": "0.7.7",               # NOVO v0.7.7: My Drive só em PesquisAI
     "vpn_ufv": "0.7.11",                  # NOVO v0.7.11: OpenVPN em namespace + SOCKS5
+    "web44_chat": "0.7.11-web44",         # NOVO web44: fila inbox + reasoning + jump
+    "web44_explorer": "0.7.11-web44",     # NOVO web44: excluir + ordenar
+    "web44_models": "0.7.11-web44",       # NOVO web44: filtros + aviso <50k
+    "web45_expand_all": "0.7.11-web45",   # NOVO web45: expandir tudo persistente
 }
 
 # ── Idiomas suportados ─────────────────────────────────────────
@@ -683,6 +687,7 @@ __api_endpoints__: list[str] = [
     "POST /api/vpn/test",           # NOVO v0.7.11: testa acesso interno
     "POST /api/vpn/forget",         # NOVO v0.7.11: apaga credenciais
     "POST /api/vpn/answer",         # NOVO v0.7.11: resposta da tela inicial
+    "POST /api/ufvai/explorer/delete",  # NOVO web44: excluir arquivo/pasta
 ]
 
 

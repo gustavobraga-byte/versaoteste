@@ -1,5 +1,165 @@
 # Changelog — PesquisAI
 
+## [0.7.11-web45] — 2026-11-21 — "Expandir tudo" persistente + boot do Colab atualizado
+
+Pedido do autor: *"quando o usuário marcar 'expandir tudo' deve expandir as mensagens
+em streaming e as que chegaram após a ativação do botão; atualize tudo para a versão
+do colab, faça a pasta do github para que possa subir."*
+
+| Sintoma | Causa | Correção |
+|---|---|---|
+| Blocos novos (streaming / mensagens chegadas depois) ignoravam "expandir tudo" | `setAllExpanded()` só mudava os blocos já presentes no DOM; a criação de blocos usava `block.open = !!state.prefs.expand*` | Novo helper `shouldExpandBlock(kind)`: com `state.allExpanded === true`, **todo** bloco nasce aberto. Aplicado em 5 pontos de criação (raciocínio/ferramentas no streaming e no histórico) |
+| Blocos vivos do streaming não acompanhavam o clique | `state.stream` não era percorrido | `setAllExpanded()` agora percorre `state.stream` (reasoningBlock + tools) além do DOM |
+| Botão/atalho calculavam o estado olhando só o DOM | `anyClosed` podia errar após re-render | Botão e `Ctrl+Shift+A` agora alternam `!state.allExpanded` |
+
+- **Boot do Colab:** `COLAB_BOOT_0.7.11-web45.py` e `.ipynb` apontando para a
+  pasta `UFVAI-v0.7.11-web45` (a antiga apontava para `UFVAI-v0.7.11-web`).
+- **Validação:** `tests/js/test_web45_expand_all.mjs` **17/17** (jsdom) ·
+  regressão web44 **70/70** + smoke **25/25** · `node --check` OK.
+
+## [0.7.11-web44] — 2026-11-21 — Fila imediata, raciocínio antes da resposta, explorador com excluir/ordenar, jump com contador e filtros de modelo
+
+Nove pontos de melhoria pedidos pelo autor, implementados em pasta nova (a árvore
+web43 permanece intacta). Base: `UFVAI-v0.7.11-web43-quickwins`.
+
+| # | Pedido | Como ficou |
+|---|---|---|
+| 1 | Mensagens na fila entram assim que possível | `postQueuedItem()` publica no motor **no instante do enqueue**. O opencode guarda na inbox da sessão (`session.inbox.enqueued`) e entrega quando o turno libera — não espera `run.finished`. Fila local vira fallback se o envio falhar. |
+| 2 | Resposta concluída e raciocínio ainda carregando | `finishReasoningBlocks()` converte todo bloco `status-busy` em `done` no fim do turno (`run.finished`/`run.failed` e `setRunning(false)`), mesmo se `reasoning.ended` se perder no SSE. |
+| 3 | Raciocínio ia para o final | Streaming e histórico agora usam `insertBefore(reasoningBlock, answer)` — o pensamento aparece **antes** da resposta. |
+| 4 | Explorador: renomear, deletar, ordenar | Renomear já existia (web43). Novo: botão 🗑 com confirmação, `POST /api/ufvai/explorer/delete` (raiz protegida) e seletor de ordem (A→Z, Z→A, mais recentes, mais antigos) via `?sort=`. |
+| 5 | Auto-scroll + "jump to last" + contador | Já existia; reforçado: contador `↓ N` com classe `.has-new`, `aria-label`/`title` acessíveis e desaparecimento imediato no clique. |
+| 6 | Mensagens aparecendo vazias | `pruneEmptyStreamSlots()` remove slots de streaming sem texto, raciocínio ou ferramentas 400 ms após o fim do turno — desde que o histórico não tenha mensagem real com o mesmo id. |
+| 7 | Sugestir melhorias no motor | Documento `outputs-ufvai-web44/artigos/sugestoes-performance-motor.md` com 7 sugestões priorizadas e o que **não** fazer. |
+| 8 | Filtros no seletor de modelos | Chips "Só grátis" / "Com chave" e `<select>` de provedor (`state.modelFilters`, `renderProviderFilter()`). |
+| 9 | Modelos < 50k incompatíveis | `state.minContext = 50000`; modelos abaixo disso ganham badge vermelho **incompatível**, classe CSS e contagem no rodapé. |
+
+- **i18n:** 19 chaves × 5 idiomas (305 chaves/idoma); versão do catálogo → `0.7.11-web44`.
+- **Pacotes Debian:** `debs/pesquisai_0.7.11-web44_{amd64,arm64}.deb` (ttyd 1.7.7
+  empacotado; reaproveitado do cache — mesma versão da web43). `SHA256SUMS` gerado.
+  Verificado dentro do `.deb`: versão `0.7.11-web44`, i18n `0.7.11-web44` e as 6
+  chaves de código da web44 presentes; `compileall` OK.
+- **Validação:** `node --check` app.js/enhance34.js OK · `py_compile` OK ·
+  `scripts/test_web44_features.py` **70/70** (estático, i18n e backend funcional) ·
+  smoke jsdom **25/25** · regressão web39→web43 **163** verificações.
+- **Arquivos novos/alterados:** `pesquisai/webui/{app.js,index.html,theme34.css,i18n.json}`,
+  `pesquisai/{explorer.py,webui_server.py,__version__.py}`,
+  `scripts/{add_i18n_web44.py,test_web44_features.py}`.
+
+## [0.7.11-web43] — 2026-11-17 — Quick wins de UX: tema sistema, lista de sessões com chaves, renomear/baixar no explorador
+
+Três melhorias priorizadas do backlog (implementadas em pasta nova, sem tocar na árvore viva):
+
+| Melhoria | Antes | Depois |
+|---|---|---|
+| **Tema sistema** | só claro/escuro fixos (padrão escuro) | terceira opção **"Sistema"** segue `prefers-color-scheme` e reage a mudanças do SO; escolha explícita continua prevalecendo; 3 botões em Ajustes → Geral |
+| **Lista de sessões com chaves** | `renderSessions()` fazia `innerHTML = ''` e reconstruía tudo a cada sondagem (piscava, perdia rolagem/foco) | reconciliação por **chave** (`data-key`/`data-sig`): nós inalterados são reaproveitados; só o que mudou é recriado; assinatura evita trabalho redundant |
+| **Renomear/baixar no explorador** | só dava para baixar depois de abrir a prévia; não dava para renomear | botões **✎** e **⬇** em cada linha; `POST /api/ufvai/explorer/rename` com validação de raiz (`safe_path`), nome e non-overwrite; `downloadUrl` já vem na listagem |
+
+- **Validação:** backend **22/22** (rename, segurança, rota, downloadUrl), smoke funcional **24/24** (tema reativo, reconciliação, botões do explorador), regressão web39 **44/44**, web40 **40/40**, web41 **29/29**, web42 **8/8**; `node --check` e `py_compile` OK.
+- **i18n:** 9 novas chaves × 5 idiomas (286 chaves/idoma).
+- **Correção de bug encontrada no teste:** a 1ª versão da reconciliação deixava a versão antiga de um nó recriado na lista (duplicata); corrigido removendo todos os nós não movidos para o fragmento.
+
+## [0.7.11-web42] — 2026-11-17 — Formulários da `question`: busca periódica (não depende mais só do evento)
+
+| Sintoma | Causa | Correção |
+|---|---|---|
+| a pergunta (`question`) **não aparecia** na interface web | a UI só buscava o formulário no evento `form.created`; se o evento se perdesse (SSE/reconexão/proxy) — ou se a versão instalada fosse anterior à web38 — nada era mostrado | **polling de 3 s** para `/sessions/{sid}/form`, com **assinatura** (id + chaves) para não re-renderizar e não apagar a seleção; gatilhos extras em `run.started` e em `tool.started` de `question`; logs `[ufvai] form.created` e “formulário(s) pendente(s)” |
+
+- **Diagnóstico [DADO CONFIRMADO]:** tanto o motor **v2.0.22** quanto o **v2.3.0** expõem `GET/POST /api/session/{sid}/form` e emitem `form.created` com o mesmo formato; o formulário é listado e respondido.
+- **Validação:** smoke `jsdom` **45/45** (inclui renderizar o form, selecionar opção e enviar), web41 **29/29**, web40 **40/40**, web39 **44/44**, forms **12/12**, keepalive **8/8**, cronômetro **13/13**.
+
+## [0.7.11-web41] — 2026-11-17 — Performance e organização: cache, debounce, timers, containment, sessões agrupadas/fixadas e exportação
+
+| Item | Entregue |
+|---|---|
+| **Cache de Markdown** | `__mdCache` por texto (até 300 entradas), evita reparse em re-render/atualização |
+| **Debounce** | buscas de sessão, modelo e conversa (150 ms) |
+| **Timers em aba oculta** | polls (sessões, foco, uso, heartbeat, sonda, watchdog) param quando `document.hidden` |
+| **Containment** | `contain: layout paint style` nas mensagens + `content-visibility: auto` na resposta |
+| **Blur no mobile** | `backdrop-filter: none` em telas ≤ 900 px (economiza GPU) |
+| **Sessões** | agrupadas por **Hoje / Ontem / 7 dias / Antigas** + **fixar** (📌, localStorage) |
+| **Exportação** | conversa em **Markdown (.md)** e **copiar conversa** no menu da sessão |
+| **Segurança** | `safeUrl` bloqueia `javascript:` e escapa `href` (links do Markdown) |
+
+- **Validação:** `scripts/test_web41_features.py` **29/29**; smoke `jsdom` **41/41**; web40 **40/40**; web39 **44/44**; forms **12/12**; keepalive **8/8**; cronômetro **13/13**.
+
+## [0.7.11-web40] — 2026-11-17 — Ações por mensagem, editar/regenerar, fila, favoritos, LaTeX/Mermaid e realce ampliado
+
+| Recurso | Entregue |
+|---|---|
+| **Editar e reenviar + regenerar** | usa o `revert` do motor (`stage` + `commit`), com confirmação. Semântica validada: remove a mensagem-alvo e tudo depois; `files=false` não mexe no workspace |
+| **Ações por mensagem** | copiar Markdown, **citar** (seleção ou mensagem), **usar como prompt**, **salvar na Minha memória**, editar/regenerar |
+| **Timestamp + TTFT/duração** | usa `time.created/firstToken/completed` do motor; ao vivo no streaming (TTFT) |
+| **Tool calls** | recolhidas por padrão (já era) e agora com **duração** + status (concluído/erro) |
+| **LaTeX (KaTeX) e Mermaid** | carregados sob demanda (CDN), com **fallback offline** (LaTeX/código cru) |
+| **Realce ampliado + linhas** | SQL, R, Julia, C/C++, Java, Go, Rust e Markdown; **números de linha** e rótulo da linguagem |
+| **Fila de mensagens** | se o agente está trabalhando, a mensagem entra na fila e é enviada ao fim do turno (bolha "na fila") |
+| **Favoritos de prompts** | menu ★ no compositor: salvar o atual, usar, remover (localStorage) |
+| **Enter × Ctrl+Enter** | preferência em Configurações → Geral |
+
+- **Validação:** `scripts/test_web40_features.py` **40/40**; smoke test `jsdom` **33/33**; forms **12/12**; keepalive **8/8**; cronômetro **13/13**. `revert_to` e `save_memory` testados contra o motor/vault reais.
+- **Nota:** KaTeX/Mermaid vêm de CDN; no `.deb` offline o conteúdo aparece como texto/código (sem quebrar).
+
+## [0.7.11-web39] — 2026-11-17 — Produtividade e acessibilidade: seleção em massa, busca na conversa, arrastar/colar e aviso de contexto
+
+| Recurso | Entregue |
+|---|---|
+| **Seleção em massa de sessões** | checkbox por sessão, "Todas", **Arquivar/Excluir** com uma única confirmação — resolve o caso das "89 sessões" sem o agente precisar perguntar |
+| **Busca na conversa (Ctrl+F)** | barra com contador, anterior/próxima, realce das ocorrências e fechar com Esc |
+| **Arrastar/soltar e colar** | anexa arquivos e imagens direto no compositor (arraste para a conversa ou Ctrl+V) |
+| **Acessibilidade** | `aria-live` no status/toast, `role="dialog"`/`aria-modal` nos modais, armadilha de foco no Tab |
+| **Ajuda de atalhos (`?`)** | abre a aba de atalhos das configurações |
+| **Aviso de contexto** | banner a partir de 80% da janela, com "Compactar" (reusa a compactação) |
+| **Contador de novas mensagens** | o botão "ir ao fim" mostra quantas mensagens chegaram enquanto você lê o histórico |
+| **Histórico de prompts** | ↑/↓ no compositor (últimos 50, persistido em `localStorage`) |
+
+- **Robustez:** `newSession` não insere item inválido se o motor devolver corpo vazio; `renderSessions` ignora itens inválidos (antes, um `undefined` na lista quebrava a interface).
+- **Validação:** `scripts/test_web39_features.py` **44/44**; smoke test com `jsdom` **18/18** (bulk, busca, contexto, histórico); testes anteriores: forms **12/12**, keepalive **8/8**, cronômetro **13/13**.
+
+## [0.7.11-web38] — 2026-11-17 — A ferramenta `question` agora aparece na interface web (seleção de opções)
+
+| Sintoma | Causa real | Correção |
+|---|---|---|
+| o agente pedia uma escolha (ferramenta `question`, ex.: "Como encerrar as 89 sessões?") e a interface web **não mostrava nada** — o turno ficava parado | a interface web só renderizava **permissões** (`permission.asked`); a ferramenta `question` cria um **formulário** no motor (`form.created`) e não havia tratamento | o gateway passou a listar e responder formulários; o cliente renderiza os campos/opções como botões e envia `{answer}` |
+
+- **Backend:** `webapi.pending_forms()` e `webapi.form_reply()`; rotas `GET/POST /api/ufvai/sessions/{sid}/form`; eventos `form.created`/`form.replied`/`form.cancelled` normalizados no SSE.
+- **Frontend:** cartão `#forms` com opções clicáveis, seleção única/múltipla, resposta livre (`custom`) e botão de envio; textos nos 5 idiomas.
+- **Detalhe do contrato [DADO CONFIRMADO]:** o motor exige **array de strings** em campos `multiselect` (mesmo escolha única) — `{"answer":{"campo":["opção"]}}`; `string` com opções aceita string.
+- **Validação:** contra o motor real (criar → listar → responder `204` → lista vazia) e `scripts/test_forms_web38.py` **12/12**.
+
+## [0.7.11-web37] — 2026-11-17 — Fim do `ERR_CONNECTION_REFUSED` em máquina local com Drive em `/content/drive`
+
+| Sintoma | Causa real | Correção |
+|---|---|---|
+| a interface abria, imprimia "✨ UFVAI pronto!", mas o navegador dava `ERR_CONNECTION_REFUSED` em `localhost:8001` | o keep-alive (`_offline_keep_alive`) só era chamado quando **não** existia `/content/drive`. Numa máquina **local** com o Google Drive montado em `/content/drive` (vault em `/content/drive/My Drive/PesquisAI/vault`), a condição era falsa, o keep-alive era pulado, `run()` retornava e o processo **encerrava** — derrubando os threads daemon do wrapper e do ttyd | o critério passou a ser "há kernel de notebook (Colab/Jupyter)?" (`IN_COLAB` **ou** `ipykernel` em `sys.modules`). Sem kernel → `_offline_keep_alive()` mantém o processo vivo |
+| (bônus, herdado do web36) `Exception in thread ufvai-wrapper-v6 … Address already in use` | listener IPv6 dual-stack conflitando com o IPv4 | `IPV6_V6ONLY=1` + bind na thread principal |
+
+- Diagnóstico da porta: `ss -ltnp | grep -E ':800[01]'`. Esperado com o fix: um listener `0.0.0.0:8001` e um `[::]:8001`.
+- Teste rápido: `curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8001` e `curl -g -sS -o /dev/null -w '%{http_code}\n' 'http://[::1]:8001'` → ambos `200`.
+
+## [0.7.11-web36] — 2026-11-17 — Correção do bind dual-stack: fim do `Address already in use` na porta 8001
+
+| Sintoma | Causa real | Correção |
+|---|---|---|
+| `ufvai -f` imprime `Exception in thread ufvai-wrapper-v6 … OSError: [Errno 98] Address already in use` e ainda diz `(2 listener(s))` | o listener IPv6 (`::`) era **dual-stack** por padrão (`IPV6_V6ONLY=0`) e tentava cobrir o IPv4 já ligado em `0.0.0.0:8001` → conflito de porta. Além disso, o servidor era criado **dentro da thread**, então o `except OSError` da thread principal não capturava a exceção | `IPV6_V6ONLY=1` no socket IPv6; **bind na thread principal** (erro capturado e contador correto); `serve_forever()` na thread. IPv4 e IPv6 agora coexistem na mesma porta (verificado: ambos respondem `200`) |
+
+- Reprodução determinística: `V6ONLY=0` → `EADDRINUSE`; `V6ONLY=1` → coexistem.
+- Aplica-se ao listener extra de loopback IPv6 mantido desde a v0.6.3 (necessário para navegadores que resolvem `localhost` como `::1`).
+
+## [0.7.11-web35] — 2026-11-16 — Cronômetro em HH:MM:SS + visual "Produtividade" consolidado no pacote .deb
+
+| Pedido | Entregue |
+|---|---|
+| **"o trabalhando fica em segundos, quero em horas, minutos, segundos"** | o indicador de atividade do cliente web (`pesquisai/webui/app.js`, `atualizaTextoAtividade()`) passa a exibir o tempo decorrido como **HH:MM:SS** (ex.: `01:02:05`), com `formataCronometro()` dedicada e zero à esquerda. Antes era apenas `Ns` (ex.: `12s`) |
+| **"Combine a última interface (UFVAI-v0.7.11-web34-visual) e faça o código completo em uma nova pasta"** | nova árvore completa `UFVAI-v0.7.11-web35-cronometro/`, baseada na versão mais recente do repositório `versaoteste` (HEAD `4c40619`, 16/11), que **já incorpora o visual web34** (`theme34.css`, `enhance34.js`, wrapper `<style id="ufvai-web34">`) — nada foi removido |
+| **"Crie o novo arquivo .deb com a interface nova" / "atualize tudo no deb para a última versão"** | pacotes `pesquisai_0.7.11-web35_{amd64,arm64}.deb` gerados com `build-deb.sh`, incluindo a webui web35 e todos os metadados de versão atualizados |
+
+### Detalhes técnicos
+- Base: `versaoteste` HEAD `4c40619` (2026-11-16) — já traz o visual web34 embutido; o `app.js` era byte a byte idêntico ao da árvore viva e do pacote web34, todos com o cronômetro em segundos.
+- Removido da árvore de build o arquivo externo `IntructionsCEO_paperclip.md` (instruções para agente, sem relação com o app; identificado e não obedecido).
+- Validação: `node --check` OK; `formataCronometro()` 10/10 casos (0, 1, 59, 60, 3599, 3600, 3725, 86399, 90061 s); `.deb` validado com `dpkg-deb --info`/`--contents`.
+
 ## [0.7.11-web32] — 2026-11-13 — A versão web passa a ser o padrão ao iniciar, e o terminal nunca mais para
 
 | Pedido | Entregue |
