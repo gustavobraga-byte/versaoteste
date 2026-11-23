@@ -551,7 +551,7 @@ __brand_tagline__: str = "Pesquisa científica com integridade."
 
 # ── Metadados do release ───────────────────────────────────────
 __release_date__: str = "2026-11-21"
-__codename__: str = "Interface web45: expandir tudo persistente (streaming + mensagens novas) + boot Colab + 9 melhorias web44"
+__codename__: str = "Interface web46: onboarding com opção 'não adicionar chave' + modelos gratuitos disponíveis + expandir tudo persistente"
 
 # ── Identidade do projeto ──────────────────────────────────────
 __author__: str = "Gustavo Bastos Braga"
@@ -591,6 +591,7 @@ __components__: dict[str, str] = {
     "web44_explorer": "0.7.11-web44",     # NOVO web44: excluir + ordenar
     "web44_models": "0.7.11-web44",       # NOVO web44: filtros + aviso <50k
     "web45_expand_all": "0.7.11-web45",   # NOVO web45: expandir tudo persistente
+    "web46_onboarding_nokey": "0.7.11-web46",  # NOVO web46: "não adicionar chave" + gratuitos
 }
 
 # ── Idiomas suportados ─────────────────────────────────────────
@@ -688,6 +689,7 @@ __api_endpoints__: list[str] = [
     "POST /api/vpn/forget",         # NOVO v0.7.11: apaga credenciais
     "POST /api/vpn/answer",         # NOVO v0.7.11: resposta da tela inicial
     "POST /api/ufvai/explorer/delete",  # NOVO web44: excluir arquivo/pasta
+    "POST /api/onboarding/skip",        # NOVO web46: optar por não adicionar chave
 ]
 
 
