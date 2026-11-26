@@ -76,20 +76,23 @@ document.getElementById('privIcon').innerHTML = ufvaiIcon('chip');
 document.getElementById('cpuIcon').innerHTML = ufvaiIcon('chip');
 document.getElementById('footIcon').innerHTML = ufvaiIcon('spark');
 
+let googleReady=false;
 async function checkGoogle(){
   try{
     const d = await (await fetch(ufvaiVoiceBase+'/api/status')).json();
     const b=document.getElementById('googleBadge'), s=document.getElementById('googleStatus');
-    if(d.live_key_configured){
+    googleReady=!!d.live_key_configured;
+    if(googleReady){
       b.className='badge free'; b.textContent='RECOMENDADO';
       s.textContent='Chave já configurada — entra direto na conversa.';
     } else {
       b.className='badge recommended'; b.textContent='RECOMENDADO';
-      s.textContent='Chave gratuita será solicitada ao entrar.';
+      s.textContent='Sem chave — você será solicitado a informá-la (grátis).';
     }
   }catch{ document.getElementById('googleStatus').textContent='Servidor de voz indisponível.'; }
 }
-document.getElementById('cardGoogle').onclick=()=>location.href=ufvaiVoiceBase+'/live';
+// Sem chave -> tela de pedido de chave (igual ao início do UFVAI); com chave -> direto.
+document.getElementById('cardGoogle').onclick=()=>location.href=ufvaiVoiceBase+(googleReady?'/live':'/key');
 document.getElementById('cardLocal').onclick=()=>location.href=ufvaiVoiceBase+'/local';
 checkGoogle();
 </script>

@@ -78,6 +78,47 @@ def common_js():
     )
 
 
+# Arquivo onde a chave Gemini informada pelo usuário é guardada (somente leitura
+# pelo processo local; nunca enviada a terceiros além da própria Gemini API).
+_GEMINI_KEY_FILE = BASE / ".gemini_key"
+
+
+def _saved_gemini_key() -> str:
+    try:
+        return _GEMINI_KEY_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+@app.get("/api/gemini/key")
+def gemini_key_status():
+    """Informa se há chave Gemini (valor nunca é devolvido ao navegador)."""
+    configured = bool(
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY")
+        or _saved_gemini_key()
+    )
+    return {"configured": configured, "source": "ambiente" if (
+        os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        or os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY")) else ("arquivo" if _saved_gemini_key() else "nenhuma")}
+
+
+@app.post("/api/gemini/key")
+def gemini_key_save(payload: dict):
+    """Salva a chave Gemini digitada pelo usuário (equivale ao onboarding)."""
+    key = str(payload.get("key", "")).strip()
+    if not key:
+        return {"ok": False, "error": "Cole uma chave da Gemini API para continuar."}
+    try:
+        _GEMINI_KEY_FILE.write_text(key, encoding="utf-8")
+        os.environ["GEMINI_API_KEY"] = key
+        os.environ["GOOGLE_API_KEY"] = key
+        return {"ok": True, "configured": True}
+    except OSError as exc:
+        return {"ok": False, "error": f"Não foi possível salvar a chave: {exc}"}
+
+
 @app.get("/start", response_class=HTMLResponse)
 def start_page():
     """Página inicial: usuário escolhe Google Live ou LFM local."""
@@ -88,6 +129,12 @@ def start_page():
 def local_page():
     """Página do LFM local — download do modelo é sob demanda."""
     return (BASE / "static" / "local.html").read_text(encoding="utf-8")
+
+
+@app.get("/key", response_class=HTMLResponse)
+def key_page():
+    """Pedido da chave Gemini (mesmo padrão do onboarding do UFVAI)."""
+    return (BASE / "static" / "key.html").read_text(encoding="utf-8")
 
 
 @app.get("/api/local/status")
@@ -173,6 +220,7 @@ async def live_ws(ws: WebSocket):
         or os.environ.get("GOOGLE_API_KEY")
         or os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY")
         or ws.query_params.get("key", "")
+        or _saved_gemini_key()
     )
     if not api_key:
         await ws.send_json({
@@ -204,6 +252,7 @@ def status():
             os.environ.get("GEMINI_API_KEY")
             or os.environ.get("GOOGLE_API_KEY")
             or os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY")
+            or _saved_gemini_key()
         ),
     }
 
