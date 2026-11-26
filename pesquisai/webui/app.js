@@ -3051,8 +3051,50 @@
     });
   }
 
+  /**
+   * web48: confirmações da inbox são roteadas pelo sid do evento, não pela
+   * sessão que a interface está exibindo. Assim a bolha de uma sessão A some
+   * quando o motor confirma A, mesmo que o usuário já tenha aberto B.
+   */
+  function handleInboxEvent(ev) {
+    const sidEv = ev.sid || '';
+    if (ev.type === 'inbox.enqueued') {
+      if (ev.text) {
+        clearQueuedBubble(ev.text, sidEv);
+        if (!sidEv || !state.sessionId || sidEv === state.sessionId) {
+          const wrap = el('div', 'msg msg-user');
+          wrap.appendChild(el('div', 'bubble', ev.text));
+          wrap.style.opacity = '0.65';
+          $('#messages').appendChild(wrap);
+          scrollToEnd(false);
+        }
+      }
+    } else if (ev.type === 'inbox.delivered') {
+      const nodes = document.querySelectorAll('#messages .msg-user.queued');
+      for (const node of nodes) {
+        if (sidEv && node.dataset.sid && node.dataset.sid !== sidEv) continue;
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
+    }
+    if (ev.type === 'inbox.enqueued') {
+      const idx = state.queue.findIndex((it) =>
+        (!sidEv || !it.sid || it.sid === sidEv) &&
+        (!ev.text || !it.text || it.text === ev.text));
+      if (idx !== -1) {
+        const [item] = state.queue.splice(idx, 1);
+        if (item.node && item.node.parentNode) item.node.remove();
+        rebadgeQueue();
+      }
+    }
+  }
+
   function handleEvent(ev) {
     if (!ev || !ev.type) return;
+    // Confirmações da inbox valem para a sessão de destino mesmo quando a
+    // interface está em outra sessão (filtragem de sid abaixo vem depois).
+    if (ev.type === 'inbox.enqueued' || ev.type === 'inbox.delivered') {
+      handleInboxEvent(ev);
+    }
     if (ev.sid && state.sessionId && ev.sid !== state.sessionId) return;
 
     switch (ev.type) {
@@ -3164,24 +3206,8 @@
         break;
       }
       case 'inbox.enqueued':
-        if (ev.text) {
-          // v0.7.11-web44: a bolha local "na fila" já foi desenhada por
-          // queueMessage — removê-la evita mostrar a mesma mensagem duas vezes.
-          clearQueuedBubble(ev.text);
-          const wrap = el('div', 'msg msg-user');
-          wrap.appendChild(el('div', 'bubble', ev.text));
-          wrap.style.opacity = '0.65';
-          $('#messages').appendChild(wrap);
-          scrollToEnd(false);
-        }
-        break;
       case 'inbox.delivered':
-        // v0.7.11-web44: o motor pegou o item da inbox → a bolha provisória
-        // (se o evento enqueued se perdeu) não deve ficar órfã na tela.
-        {
-          const residual = document.querySelector('#messages .msg-user.queued');
-          if (residual && residual.parentNode) residual.parentNode.removeChild(residual);
-        }
+        // web48: tratados por handleInboxEvent() antes do filtro de sid.
         break;
       case 'retry.scheduled':
         // v0.7.11-web27: servidor sobrecarregado — o retry está em curso
@@ -3667,11 +3693,13 @@
     }
   }
 
-  function connectEvents() {
+  function connectEvents(sid) {
+    const eventsSid = sid || state.sessionId;
     if (state.source) { state.source.close(); state.source = null; }
-    const url = api(`/events${state.sessionId ? `?sid=${encodeURIComponent(state.sessionId)}` : ''}`);
+    const url = api(`/events${eventsSid ? `?sid=${encodeURIComponent(eventsSid)}` : ''}`);
     const source = new EventSource(url);
     state.source = source;
+    state.eventsSid = eventsSid || null;
     source.onmessage = (event) => {
       try { handleEvent(JSON.parse(event.data)); } catch (e) { /* frame inválido */ }
     };
@@ -3700,11 +3728,15 @@
    * (``run.started``, ``text.delta``) se perdiam — a resposta aparecia
    * vazia ou truncada.
    */
-  function ensureEvents() {
-    if (state.source && state.source.readyState === 1) return Promise.resolve();
+  function ensureEvents(sid) {
+    const desejado = sid || state.sessionId;
+    // web48: um SSE aberto para OUTRA sessão não serve — reconecta no sid
+    // de destino antes de publicar.
+    if (state.source && state.source.readyState === 1 &&
+        (state.eventsSid || state.sessionId) === desejado) return Promise.resolve();
     return new Promise((resolve) => {
       state.sseWaiters.push(resolve);
-      connectEvents();
+      connectEvents(desejado);
       // não bloqueia o envio se o motor estiver fora do ar
       setTimeout(() => {
         const waiters = state.sseWaiters.splice(0, state.sseWaiters.length);
@@ -3773,6 +3805,8 @@
     renderUsage();
     refreshUsage();
     connectEvents();
+    // web48: ao voltar para esta sessão, descarrega a fila que era dela.
+    setTimeout(flushQueue, 0);
     // Só uma escolha explícita do usuário move o terminal: abrir a página não
     // deve arrastar a TUI para outra sessão.
     if (options.focus) {
@@ -3818,6 +3852,9 @@
     const input = $('#input');
     const text = input.value.trim();
     if (!text && !state.attachments.length) return;
+    // web48: destino explícito (fila multi-sessão). Quando o chamador informa
+    // o sid, ele prevalece sobre a sessão corrente da interface.
+    const sidEnvio = (opts && opts.sid) || state.sessionId;
 
     // v0.7.11-web39: histórico de prompts (↑/↓)
     if (text) {
@@ -3834,7 +3871,7 @@
       return;
     }
 
-    if (!state.sessionId) { await newSession(); }
+    if (!sidEnvio) { await newSession(); }
 
     // v0.7.11-web27: novo turno → limpa os avisos do anterior
     clearErrorNotices();
@@ -3884,8 +3921,8 @@
     try {
       // v0.7.11-web24: garante o SSE aberto antes de publicar (evita perder
       // os eventos do turno).
-      await ensureEvents();
-      await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/message`, {
+      await ensureEvents(sidEnvio);
+      await apiPost(`/sessions/${encodeURIComponent(sidEnvio || state.sessionId)}/message`, {
         text, files, skills: skills.length ? skills : undefined,
         uploads: uploads.length ? uploads : undefined,
       });
@@ -3914,7 +3951,10 @@
    * na fila local e o ``flushQueue`` tradicional assume como fallback.
    */
   async function postQueuedItem(item) {
-    if (!state.sessionId) return false;
+    // web48: congela o destino ANTES de qualquer await. Ler state.sessionId
+    // depois de ensureEvents() era a causa da mensagem cair na sessão ativa.
+    const sid = item.sid || state.sessionId;
+    if (!sid) return false;
     const files = (item.attachments || [])
       .filter((a) => a.uri)
       .map((a) => ({ uri: a.uri, source: { type: 'inline' }, name: a.name }));
@@ -3922,8 +3962,8 @@
       .filter((a) => a.path)
       .map((a) => ({ name: a.name, path: a.path, size: a.size }));
     try {
-      await ensureEvents();
-      await apiPost(`/sessions/${encodeURIComponent(state.sessionId)}/message`, {
+      await ensureEvents(sid);
+      await apiPost(`/sessions/${encodeURIComponent(sid)}/message`, {
         text: item.text || '',
         files,
         skills: (item.skills || []).length ? item.skills : undefined,
@@ -3935,7 +3975,7 @@
     }
   }
 
-  function queueMessage(text) {
+  function queueMessage(text, sid) {
     const files = state.attachments.slice();
     const skills = state.pendingSkills.slice();
     if (!text && !files.length) return;
@@ -3943,7 +3983,10 @@
     node.appendChild(el('div', 'bubble', text || `(${t('composer.attached')})`));
     node.appendChild(el('span', 'q-badge', `${t('queue.badge')} ${state.queue.length + 1}`));
     $('#messages').appendChild(node);
-    const item = { text, attachments: files, skills, node };
+    // web48: o destino é capturado no instante do enqueue e viaja com o item.
+    const destino = sid || state.sessionId || null;
+    const item = { sid: destino, text, attachments: files, skills, node };
+    node.dataset.sid = destino || '';
     state.queue.push(item);
     state.attachments = [];
     state.pendingSkills = [];
@@ -3962,10 +4005,11 @@
   }
 
   /** Remove a bolha provisória da fila quando o motor confirma o enqueue. */
-  function clearQueuedBubble(text) {
+  function clearQueuedBubble(text, sid) {
     const alvo = String(text || '').trim();
     const nodes = document.querySelectorAll('#messages .msg-user.queued');
     for (const node of nodes) {
+      if (sid && node.dataset.sid && node.dataset.sid !== sid) continue;
       const bubble = node.querySelector('.bubble');
       if (!bubble || String(bubble.textContent || '').trim() !== alvo) continue;
       if (node.parentNode) node.parentNode.removeChild(node);
@@ -3974,17 +4018,27 @@
   }
 
   async function flushQueue() {
-    if (state.queueFlushing || state.running || !state.queue.length) return;
+    if (state.queueFlushing || !state.queue.length) return;
+    // web48: só publica itens destinados à sessão aberta. Itens de outras
+    // sessões ficam esperando até que ela volte a ser exibida.
+    const idx = state.queue.findIndex(
+      (it) => !it.sid || !state.sessionId || it.sid === state.sessionId,
+    );
+    if (idx === -1) return;
     state.queueFlushing = true;
-    const item = state.queue.shift();
+    const [item] = state.queue.splice(idx, 1);
     try {
       if (item.node && item.node.parentNode) item.node.remove();
-      const input = $('#input');
-      input.value = item.text || '';
-      state.attachments = item.attachments || [];
-      state.pendingSkills = item.skills || [];
-      renderAttachments();
-      await send({ force: true });
+      const aceito = await postQueuedItem(item);
+      if (!aceito) {
+        // Fallback pelo fluxo normal, MAS com o sid de destino explícito.
+        const input = $('#input');
+        input.value = item.text || '';
+        state.attachments = item.attachments || [];
+        state.pendingSkills = item.skills || [];
+        renderAttachments();
+        await send({ force: true, sid: item.sid || state.sessionId });
+      }
     } finally {
       state.queueFlushing = false;
     }
@@ -5829,6 +5883,8 @@
     // explorador (excluir/ordenar) e filtros de modelos
     postQueuedItem,
     clearQueuedBubble,
+    handleInboxEvent,
+    ensureEvents,
     rebadgeQueue,
     finishReasoningBlocks,
     pruneEmptyStreamSlots,

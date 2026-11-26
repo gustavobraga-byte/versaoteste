@@ -165,10 +165,15 @@ async function connect(){
     else if(m.type==='models'){
       const titulos=(m.models||[]).slice(0,6).map(x=>x.name+(x.free?' (grátis)':'')).join(', ');
       log('sys','Modelos disponíveis: '+titulos);}
+    else if(m.type==='final_status'){
+      const st=document.getElementById('executeStatus');st.style.display='block';
+      st.textContent='✅ '+m.message;
+      log('sys',m.message);
+      st.scrollIntoView({behavior:'smooth'});}
     else if(m.type==='command_result'){
       const b=document.getElementById('resultBox');b.style.display='block';
       document.getElementById('resultText').textContent=m.result;
-      document.getElementById('executeStatus').textContent='Comando executado no UFVAI.';
+      // Não sobrescreve o aviso de "já em execução — confira no Drive".
       b.scrollIntoView({behavior:'smooth'});}
     else if(m.type==='error'){log('sys','⚠️ '+m.message);stateEl.textContent=m.message;}};
   ws.onclose=()=>{connected=false;micActive=false;setOrb(false);

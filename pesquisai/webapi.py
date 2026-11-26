@@ -1579,11 +1579,17 @@ def normalize_event(event: dict) -> dict | None:
             "decision": str(data.get("reply") or ""),
         }
     if kind == "session.inbox.enqueued":
-        payload = item.get("payload") or {}
+        # web48: `item` era a variável local do ramo tool.success e aqui
+        # disparava UnboundLocalError, derrubando o SSE. Lê o texto de qualquer
+        # formato usado pelo motor e preserva o sid da sessão de destino.
+        enqueued = data.get("item") or data.get("payload") or data.get("message") or {}
+        if not isinstance(enqueued, dict):
+            enqueued = {}
+        texto = data.get("text") or enqueued.get("text") or enqueued.get("content") or ""
         return {
             "type": "inbox.enqueued",
             "sid": sid,
-            "text": str(payload.get("text") or ""),
+            "text": str(texto),
         }
     if kind == "session.inbox.delivered":
         return {"type": "inbox.delivered", "sid": sid}

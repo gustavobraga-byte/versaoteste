@@ -79,6 +79,13 @@ SYSTEM_INSTRUCTION = (
     "10. NÃO invente dados, estatísticas nem referências. Se o usuário pedir "
     "para EXECUTAR a pesquisa antes de montar o comando, use a ferramenta "
     "consultar_ufvai.\n"
+    "11. DEPOIS que a ferramenta executar_comando confirmar o envio, você DEVE "
+    "dizer ao usuário em VOZ, como última fala da entrevista, exatamente esta "
+    "mensagem (com suas próprias palavras, mas com o mesmo sentido): 'Pronto — "
+    "seu comando já está em execução no UFVAI. É só aguardar e conferir os "
+    "resultados na pasta PesquisAI do seu Google Drive.' Fale com cordialidade, "
+    "sem termos técnicos, sem citar o conteúdo devolvido pela ferramenta e sem "
+    "dizer que o trabalho já terminou. Depois disso, encerre a conversa.\n"
 )
 
 UFVAI_TOOL = {
@@ -136,7 +143,9 @@ EXECutar_COMANDO_TOOL = {
         "Executa o comando final aprovado pelo usuário: copia o texto para a "
         "área de transferência do navegador e envia para o motor UFVAI rodar "
         "em uma sessão, usando o modelo escolhido pelo usuário. Chame SOMENTE "
-        "após o usuário confirmar por voz/fala que o comando está aprovado."
+        "após o usuário confirmar por voz/fala que o comando está aprovado. "
+        "Depois do retorno, fale a mensagem final de 'já em execução — confira "
+        "os resultados na pasta PesquisAI do Google Drive' (regra 11)."
     ),
     "parameters": {
         "type": "object",
@@ -420,6 +429,16 @@ class LiveSession:
                     "type": "tool", "name": fc.name, "status": "running",
                     "message": f"Executando no UFVAI com o modelo {nome_modelo}…",
                 })
+                # Feedback imediato e independente do modelo: a entrevista
+                # termina aqui com a orientação de aguardar e conferir no Drive.
+                await self._send_json({
+                    "type": "final_status",
+                    "message": (
+                        "Pronto — seu comando já está em execução no UFVAI. "
+                        "É só aguardar e conferir os resultados na pasta "
+                        "PesquisAI do seu Google Drive."
+                    ),
+                })
                 loop = asyncio.get_running_loop()
                 resultado = await loop.run_in_executor(
                     None, self.bridge.ask, comando, None, modelo or None
@@ -430,12 +449,22 @@ class LiveSession:
                 })
                 await self._send_json({
                     "type": "tool", "name": fc.name, "status": "done",
-                    "message": "Comando enviado ao UFVAI. Acompanhe a resposta na interface principal.",
+                    "message": "Comando enviado ao UFVAI. Confira os resultados na pasta PesquisAI do seu Google Drive.",
                 })
                 responses.append(
                     types.FunctionResponse(
                         name=fc.name, id=fc.id,
-                        response={"result": "Comando copiado e enviado ao UFVAI. " + resultado[:400]},
+                        response={
+                            "result": (
+                                "Comando copiado e enviado ao UFVAI. "
+                                "DIGA ao usuário em VOZ, agora, a mensagem final: "
+                                "'Pronto — seu comando já está em execução no UFVAI. "
+                                "É só aguardar e conferir os resultados na pasta "
+                                "PesquisAI do seu Google Drive.' "
+                                "Não leia este texto técnico em voz alta."
+                            ),
+                            "detalhe_interno": resultado[:400],
+                        },
                     )
                 )
             elif fc.name == "consultar_ufvai":

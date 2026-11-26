@@ -34,6 +34,18 @@ sua pergunta e clique em parar. O texto será transcrito e preenchido no chat.
 ### 3. Interface dedicada (opcional)
 Se preferir uma interface só de voz, acesse `http://127.0.0.1:8010`.
 
+## Conversa ao vivo (grill-me)
+
+A página `/voz/live` conduz uma entrevista falada: uma pergunta por vez, até
+montar um **comando** completo para o UFVAI (nunca use a palavra "prompt").
+Ao final, a assistente pergunta por voz qual modelo usar e se o comando está
+aprovado; com a confirmação, ele é copiado e executado automaticamente.
+
+Após o envio, a assistente **sempre** encerra dizendo em voz alta que o comando
+já está em execução e que basta aguardar e conferir os resultados na pasta
+**PesquisAI do Google Drive**. O mesmo aviso aparece na tela via evento
+`final_status`, mesmo que a fala seja interrompida.
+
 ## Fine-tuning
 
 O script `finetune/train.py` aplica adaptadores **LoRA** no backbone de linguagem.
