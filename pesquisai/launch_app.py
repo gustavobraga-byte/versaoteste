@@ -3710,6 +3710,64 @@ def start_wrapper_server():
             except Exception:
                 pass
 
+        # ── proxy do assistente de voz (porta 8010) ───────────────
+        def _voice_proxy(self, method: str = "GET") -> bool:
+            """Encaminha /voz/* ao servidor de voz. Devolve True se tratou."""
+            import urllib.request
+            import urllib.error
+
+            suffix = urlparse(self.path).path[len("/voz"):]
+            query = urlparse(self.path).query
+            if not suffix:
+                suffix = "/start"
+            url = f"http://127.0.0.1:8010{suffix}" + (f"?{query}" if query else "")
+            body = None
+            if method == "POST":
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(length) if length else None
+            try:
+                req = urllib.request.Request(url, data=body, method=method)
+                ctype = self.headers.get("Content-Type")
+                if ctype:
+                    req.add_header("Content-Type", ctype)
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = resp.read()
+                    self.send_response(resp.status)
+                    self.send_header(
+                        "Content-Type",
+                        resp.headers.get("Content-Type", "application/octet-stream"),
+                    )
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(data)
+                return True
+            except (urllib.error.URLError, OSError):
+                # Tenta iniciar o servidor de voz automaticamente (novo usuário).
+                try:
+                    from . import voice_autostart
+
+                    if voice_autostart.ensure_server():
+                        req = urllib.request.Request(url, data=body, method=method)
+                        if ctype:
+                            req.add_header("Content-Type", ctype)
+                        with urllib.request.urlopen(req, timeout=60) as resp:
+                            data = resp.read()
+                            self.send_response(resp.status)
+                            self.send_header("Content-Type", resp.headers.get("Content-Type", "application/octet-stream"))
+                            self.send_header("Content-Length", str(len(data)))
+                            self.send_header("Cache-Control", "no-store")
+                            self.end_headers()
+                            self.wfile.write(data)
+                        return True
+                except Exception:  # noqa: BLE001
+                    pass
+                self._json(503, {
+                    "error": "O servidor de voz não pôde ser iniciado automaticamente. "
+                    "Verifique se a pasta voice/ está no projeto.",
+                })
+                return True
+
         def do_GET(self):
             try:
                 self._do_GET_impl()
@@ -3718,6 +3776,9 @@ def start_wrapper_server():
 
         def _do_GET_impl(self):
             p = urlparse(self.path).path
+            if p.startswith("/voz"):
+                if self._voice_proxy("GET"):
+                    return
             if p.startswith("/api/") and not self._authorized():
                 return self._reject_token()
 
@@ -4680,6 +4741,9 @@ def start_wrapper_server():
 
         def _do_POST_impl(self):
             p = urlparse(self.path).path
+            if p.startswith("/voz"):
+                if self._voice_proxy("POST"):
+                    return
             # v0.6.0: rate limit generoso nos mutantes (120/min/IP)
             ip = self.client_address[0] if self.client_address else "?"
             now = time.time()

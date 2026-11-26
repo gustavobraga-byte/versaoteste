@@ -527,11 +527,35 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
         except (urllib.error.URLError, OSError):
+            # Novo usuário: o servidor de voz ainda não está rodando.
+            # Tenta iniciá-lo automaticamente e repete a requisição uma vez.
+            from . import voice_autostart
+
+            if voice_autostart.ensure_server():
+                try:
+                    req = urllib.request.Request(url, data=body, method=method)
+                    ctype = self.headers.get("Content-Type")
+                    if ctype:
+                        req.add_header("Content-Type", ctype)
+                    with urllib.request.urlopen(req, timeout=60) as resp:
+                        data = resp.read()
+                        self.send_response(resp.status)
+                        self.send_header(
+                            "Content-Type",
+                            resp.headers.get("Content-Type", "application/octet-stream"),
+                        )
+                        self.send_header("Content-Length", str(len(data)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
+                except (urllib.error.URLError, OSError):
+                    pass
             self._json(
                 503,
                 {
-                    "error": "servidor de voz offline — inicie com: "
-                    "cd agentes/lfm3-voz && python3 server.py"
+                    "error": "O servidor de voz não pôde ser iniciado automaticamente. "
+                    "Verifique se a pasta voice/ está no projeto.",
                 },
             )
 
